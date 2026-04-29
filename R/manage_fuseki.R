@@ -58,23 +58,24 @@ start_fuseki <- function(ttl_path, dataset_name, port = 3030) {
   stop("Fuseki did not become ready within 60 seconds")
 }
 
-with_fuseki_session <- function(ttl_path, config, assessment_id, port_base = 3030L, code) {
-  if (!identical(config$sparql_url, "fuseki")) {
+with_fuseki_session <- function(ttl_path, sparql_url, assessment_id,
+                               port_base = 3030L, port_offset = 1L, code) {
+  if (!identical(sparql_url, "fuseki")) {
     return(code(NULL))
   }
 
   session <- start_fuseki(
     ttl_path = ttl_path,
     dataset_name = assessment_id,
-    port = port_base + assessment_index(config, assessment_id) - 1L
+    port = port_base + port_offset - 1L
   )
   on.exit(stop_fuseki_session(session), add = TRUE)
   code(session)
 }
 
-resolve_lod_endpoint <- function(config, fuseki_state, assessment_id) {
-  if (!identical(config$sparql_url, "fuseki")) {
-    return(config$sparql_url)
+resolve_lod_endpoint <- function(sparql_url, fuseki_state, assessment_id) {
+  if (!identical(sparql_url, "fuseki")) {
+    return(sparql_url)
   }
 
   if (is.null(fuseki_state) || is.null(fuseki_state$endpoint)) {

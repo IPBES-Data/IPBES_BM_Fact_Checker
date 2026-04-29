@@ -56,15 +56,17 @@ list(
     format = "file"
   ),
 
-  # Re-run downstream targets when config changes
+  # Config — split into fine-grained targets so unrelated changes don't cascade
   tar_target(config_file, "input/config.yaml", format = "file"),
   tar_target(config, yaml::read_yaml(config_file)),
+  tar_target(sparql_url, config[["sparql_url"]]),
+  tar_target(assessments_list, config[["assessments"]]),
   tar_target(
     assessment,
     {
-      x <- config$assessments
-      names(x) <- assessment_ids(config)
-      x
+      x <- assessments_list
+      names(x) <- vapply(x, `[[`, character(1), "id")
+      Map(function(a, i) c(a, list(index = i)), x, seq_along(x))
     },
     iteration = "list"
   ),
@@ -80,7 +82,7 @@ list(
   # Target 2a: DB1 — refs written directly to output/refs/
   tar_target(
     refs_parquet,
-    build_refs_parquet(config, assessment, ttl_path, "output/refs"),
+    build_refs_parquet(sparql_url, assessment, ttl_path, "output/refs"),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),
@@ -88,7 +90,7 @@ list(
   # Target 2b: DB2 — section content written directly to output/sections/
   tar_target(
     sections_parquet,
-    build_sections_parquet(config, assessment, ttl_path, "output/sections"),
+    build_sections_parquet(sparql_url, assessment, ttl_path, "output/sections"),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),
@@ -96,7 +98,7 @@ list(
   # Target 2b2: DB3 — KM and BM descriptive text written directly to output/key_messages/
   tar_target(
     key_messages_parquet,
-    build_key_messages_parquet(config, assessment, ttl_path, "output/key_messages"),
+    build_key_messages_parquet(sparql_url, assessment, ttl_path, "output/key_messages"),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),

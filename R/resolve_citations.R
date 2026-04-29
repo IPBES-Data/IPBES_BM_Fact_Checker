@@ -28,7 +28,7 @@ resolve_citations <- function(
       w_id     = sub("^https://openalex\\.org/", "", id)
     )
 
-  lookup_df <- dplyr::inner_join(zotero_df, works_df, by = "doi_norm") |>
+  lookup_df <- dplyr::inner_join(zotero_df, works_df, by = "doi_norm", relationship = "many-to-many") |>
     dplyr::mutate(
       author_key = tolower(trimws(first_author)),
       year_key   = as.character(year)
@@ -59,7 +59,7 @@ resolve_citations <- function(
     dataset = sections,
     path = output_path,
     format = "parquet",
-    partitioning = c("assessment", "km", "bm", "section", "subsection"),
+    partitioning = c("assessment"),
     existing_data_behavior = "delete_matching"
   )
 
