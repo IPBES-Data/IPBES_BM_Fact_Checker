@@ -1,0 +1,14 @@
+# SPARQL endpoint to use for queries.
+# "fuseki" = start a local Fuseki server automatically (requires: brew install fuseki).
+# Any URL = query that endpoint directly (e.g. a remote SPARQL endpoint).
+sparql_url: fuseki
+
+assessments:
+  - id: GA1
+    ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v09.ttl
+  - id: IAS
+    ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Invasive%20Alien%20Species%20Assessment/IAS_v04.ttl
+
+  # Future assessments (uncomment when TTL files are available):
+  # - id: VA
+  #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Values%20Assessment/VA.ttl

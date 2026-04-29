@@ -1,0 +1,25 @@
+graph TD
+  subgraph Graph
+    direction TD
+    x20aa1e7dd2a106e5(["config"]) --> x7096e63b1af7fc2e(["assessment"])
+    x9909b451a6a56060(["config_file"]) --> x20aa1e7dd2a106e5(["config"])
+    xda2ef7d9d7074388["ttl_path"] --> x1b5c1cdf9ba064e4["key_messages_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x1b5c1cdf9ba064e4["key_messages_parquet"]
+    x20aa1e7dd2a106e5(["config"]) --> x1b5c1cdf9ba064e4["key_messages_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x4c5608b5b57c599b["refs_parquet"]
+    xda2ef7d9d7074388["ttl_path"] --> x4c5608b5b57c599b["refs_parquet"]
+    x20aa1e7dd2a106e5(["config"]) --> x4c5608b5b57c599b["refs_parquet"]
+    xc27197d40d6acf57["sections_parquet"] --> x65df84899286d535["resolved_sections_parquet"]
+    xe6d26d705b0e239b["zotero_parquet"] --> x65df84899286d535["resolved_sections_parquet"]
+    x31e4fc98a3c6921c["works_parquet"] --> x65df84899286d535["resolved_sections_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x65df84899286d535["resolved_sections_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> xc27197d40d6acf57["sections_parquet"]
+    x20aa1e7dd2a106e5(["config"]) --> xc27197d40d6acf57["sections_parquet"]
+    xda2ef7d9d7074388["ttl_path"] --> xc27197d40d6acf57["sections_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> xda2ef7d9d7074388["ttl_path"]
+    x7096e63b1af7fc2e(["assessment"]) --> x31e4fc98a3c6921c["works_parquet"]
+    xe6d26d705b0e239b["zotero_parquet"] --> x31e4fc98a3c6921c["works_parquet"]
+    x4c5608b5b57c599b["refs_parquet"] --> xe6d26d705b0e239b["zotero_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> xe6d26d705b0e239b["zotero_parquet"]
+    
+  end

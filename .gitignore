@@ -53,3 +53,12 @@ output/snowballs/*
 output/nodes/*
 output/edges/*
 output/dois/*
+output/zotero/*
+output/LoD/*
+output/refs/*
+output/sections/*
+output/works/*
+output/resolved_sections/*
+.DS_Store
+
+output/key_messages/

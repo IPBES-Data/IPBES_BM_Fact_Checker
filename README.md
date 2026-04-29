@@ -9,5 +9,5 @@ This repository is using the [Linked Open Data representation of the Global Asss
 We use snowballing to identify the literature. The key-papers are the publications which were used for the Backbround Mesages (BMs) as identified by the LOD representation of GA1.
 
 ## Reports
-
+- [`targets` pipeline](targets.htmls)
 - [Knowledge Discovery using Snowballing](IPBES_KnowledgsDiscovery.html)
