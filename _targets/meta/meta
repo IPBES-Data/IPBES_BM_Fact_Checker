@@ -20,8 +20,9 @@ ttl_path_e0edfab5fc924660|branch|d7b1b21b2ffb2068|a20c7f2aa30328ab|e1b0aefa88eec
 ttl_path_f0e4ba762d4fa655|branch|a4e479d287e224ff|a20c7f2aa30328ab|e1b0aefa88eecb2e|560497944|output/LoD/IAS.ttl|t20570.4544131021s|s5513835b|5513835|file|local|vector|ttl_path||0.741||
 zotero_parquet_2d9a5dc94dd62b0d|branch|db8b6d6c3722c56b|82c6c84749ec39b5|0336030703cf7ce8|1011034319|output/zotero/assessment=GA1|t20570.4571029049s|s4055638b|4055638|file|local|vector|zotero_parquet||232.333|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
 zotero_parquet_7ea49a18e23fb582|branch|9d372b87e2f449c2|82c6c84749ec39b5|9630cad8cf5ab4f4|1226920311|output/zotero/assessment=IAS|t20570.4592057174s|s3331199b|3331199|file|local|vector|zotero_parquet||181.673|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
+diagram_pipeline|stem|eca5f769130a29c7|2f85f188e02adcb6|1a7a6c376f5219ff|-23508491|output/figures/pipeline.svg*output/figures/pipeline.png|t20572.538759188s|s226194b|226194|file|local|vector|||2.629||
 assessment_ids|function|d880b5ff5631da3a
-write_key_messages_parquet|function|3835c6b727f3dfb6
+write_key_messages_parquet|function|0b76b834fefc7768
 branch_output_dir|function|6f401328a4b9575a
 infer_zotero_group_id|function|10e164ee81c0a6e4
 zotero_item_to_row|function|f16bf0620aa81a2d
@@ -48,14 +49,13 @@ stop_fuseki_session|function|3144aa9096c58d1e
 resolve_citations|function|246462b4337a5938
 download_ttls|function|19a6118975a30c39
 with_fuseki_session|function|9ebb7439496eb74d
-build_key_messages_parquet|function|4a99480b3a4b14fc
+build_key_messages_parquet|function|0c37fc8dedc62958
 build_sections_parquet|function|1a31dc00dd33155d
 build_refs_parquet|function|84bd455c322c8baf
-mmd_workflow|stem|97a41d35067dff09|835feb12c6e0db31|2c530c1562a7fbd1|1841726000|input/mmd/workflow.mmd|t20572.5374847953s|s3508b|3508|file|local|vector|||0.364||
-r_files|stem|75e11ce4800a9987|5346fc6fd5a62417|2c530c1562a7fbd1|969205733|_targets.R*R/branch_helpers.R*R/download_ttls.R*R/download_works.R*R/download_zotero.R*R/extract_lod.R*R/manage_fuseki.R*R/render_diagrams.R*R/resolve_citations.R*R/write_key_messages_parquet.R*R/write_refs_parquet.R*R/write_sections_parquet.R|t20572.5366850036s|s28785b|28785|file|local|vector|||0||
-diagram_workflow|stem|60daa975cc157383|14f89969a9dd715f|a46d76c3c9ad2387|1771761319|output/figures/workflow.svg*output/figures/workflow.png|t20572.5387223533s|s184557b|184557|file|local|vector|||3.628||
-pipeline_mmd|stem|12e3333fbdf8bcf5|c8c446faa2ca5040|fcd21c9bcde3d861|-164121517|input/mmd/pipeline.mmd|t20572.5387299006s|s1642b|1642|file|local|vector|||0.528||
-diagram_pipeline|stem|eca5f769130a29c7|2f85f188e02adcb6|1a7a6c376f5219ff|-23508491|output/figures/pipeline.svg*output/figures/pipeline.png|t20572.538759188s|s226194b|226194|file|local|vector|||2.629||
-key_messages_parquet_a2271e71f6cc7407|branch|fee89ff95372c23e|9743a81056768c6e|5072ce2f100edb8d|1750140600|output/key_messages/assessment=GA1|t20572.5387757457s|s335542b|335542|file|local|vector|key_messages_parquet||1.258||
-key_messages_parquet_3ea33bfc8a0354a9|branch|fa2d8279a6ad28f0|9743a81056768c6e|d923f4e31f6af2c5|554362814|output/key_messages/assessment=IAS|t20572.5387891305s|s777413b|777413|file|local|vector|key_messages_parquet||1.141||
-key_messages_parquet|pattern|c5bee8e48155b55b|9743a81056768c6e||2013747017||||1112955|file|local|vector||key_messages_parquet_a2271e71f6cc7407*key_messages_parquet_3ea33bfc8a0354a9|2.399||
+mmd_workflow|stem|e47b79a25cf7ab51|835feb12c6e0db31|2c530c1562a7fbd1|1841726000|input/mmd/workflow.mmd|t20572.6064725197s|s2952b|2952|file|local|vector|||1.266||
+r_files|stem|0274eb0e37693e5d|5346fc6fd5a62417|2c530c1562a7fbd1|969205733|_targets.R*R/branch_helpers.R*R/download_ttls.R*R/download_works.R*R/download_zotero.R*R/extract_lod.R*R/manage_fuseki.R*R/render_diagrams.R*R/resolve_citations.R*R/write_key_messages_parquet.R*R/write_refs_parquet.R*R/write_sections_parquet.R|t20572.5408561056s|s28773b|28773|file|local|vector|||0||
+diagram_workflow|stem|bac49184fc808acc|14f89969a9dd715f|01b159aa65afc35f|1771761319|output/figures/workflow.svg*output/figures/workflow.png|t20572.6074154275s|s169849b|169849|file|local|vector|||5.171||
+pipeline_mmd|stem|12e3333fbdf8bcf5|c8c446faa2ca5040|2f7fabfaa3713e36|-164121517|input/mmd/pipeline.mmd|t20572.607424454s|s1642b|1642|file|local|vector|||0.65||
+key_messages_parquet_a2271e71f6cc7407|branch|8dbceaae55833d70|9743a81056768c6e|68f48c73c58f5cf3|1750140600|output/key_messages/assessment=GA1|t20572.6074530802s|s41516b|41516|file|local|vector|key_messages_parquet||2.401||
+key_messages_parquet_3ea33bfc8a0354a9|branch|1eefb4242fbe1f08|9743a81056768c6e|c28ea449e7bf10a7|554362814|output/key_messages/assessment=IAS|t20572.6074665273s|s57094b|57094|file|local|vector|key_messages_parquet||1.149||
+key_messages_parquet|pattern|32c4d9f82dea0686|9743a81056768c6e||2013747017||||98610|file|local|vector||key_messages_parquet_a2271e71f6cc7407*key_messages_parquet_3ea33bfc8a0354a9|3.55||

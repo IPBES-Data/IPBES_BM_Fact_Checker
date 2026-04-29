@@ -1,82 +1,54 @@
 flowchart TD
 
-
-  %% External tools
-  openalex@{ shape: cloud, label: "OpenAlex API" }
-  zotero@{ shape: cloud, label: "Zotero" }
-  sparsql@{ shape: cloud, label: "IPBES SPARSQL" }  
-
-  %% Start
+  %% Configuration
   config_file@{ shape: doc, label: "Configuration <br><tt>input/config.yaml</tt>" }
-  assessment_list["Assessments to process"]
-  config_file --> assessment_list
+  config_file --> assessment_list["Assessments to process"]
+  assessment_list --> assessment_id["Assessment &lt;id&gt;"]
 
+  %% LOD Extraction — grouped so the three parallel queries stay in one horizontal band
+  subgraph lod["IPBES LOD Extraction"]
+    direction LR
+    sparql@{ shape: cloud, label: "IPBES SPARQL" }
+    build_refs["refs<br/>KM → BM → SM → SubChapter ← Reference"]
+    build_sections["sections<br/>KM → BM → SM → SubChapter → Chapter"]
+    build_key_messages["KM/BM text<br/>KM → BM (with descriptions)"]
+    sparql <--> build_refs
+    sparql <--> build_sections
+    sparql <--> build_key_messages
+  end
 
-  assessment_id["Assessment &lt;id&gt;"]
-  %% assessment2["Assessment &lt;id&gt;"]
-
-  assessment_list --> assessment_id
-
-  %% build refs
-  build_refs["Query SPARQL refs<br/>KM → BM → SM → SubChapter ← Reference"]
   assessment_id --> build_refs
-  sparsql <--> build_refs
-  refs_db@{ shape: lin-cyl, label: "Refs DB<br/><tt>output/refs/</tt><br/><tt>  assessment=&lt;id&gt;/</tt>" }
-  build_refs --> refs_db
-
-  %% build sections
-  build_sections["Query SPARQL sections<br/>KM → BM → SM → SubChapter → Chapter"]
   assessment_id --> build_sections
-  sparsql <--> build_sections
-  sections_db@{ shape: lin-cyl, label: "Sections DB<br/><tt>output/sections/</tt><br/><tt>  assessment=&lt;id&gt;/</tt>" }
-  build_sections --> sections_db
-
-  %% build key/background messages
-  build_key_messages["Query SPARQL KM/BM text<br/>KM → BM (with descriptions)"]
   assessment_id --> build_key_messages
-  sparsql <--> build_key_messages
-  key_messages_db@{ shape: lin-cyl, label: "Key/BG Messages DB<br/><tt>output/key_messages/</tt><br/><tt>  assessment=&lt;id&gt;/</tt>" }
-  build_key_messages --> key_messages_db
 
-  %% subgraph dbs[Databases]
-  %% end
-  %% Stage 2 — databases (hive-partitioned by assessment)
+  build_refs        --> refs_db@{         shape: lin-cyl, label: "Refs DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
+  build_sections    --> sections_db@{     shape: lin-cyl, label: "Sections DB<br/><tt>output/sections/assessment=&lt;id&gt;/</tt>" }
+  build_key_messages --> key_messages_db@{ shape: lin-cyl, label: "Key/BG Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
 
-  %% Zotero
-  download_zotero["Download all top-level Zotero group items<br/>page by page via Zotero API"]
-  refs_db --> download_zotero
-  zotero <--> download_zotero
-  zotero_db@{ shape: lin-cyl, label: "Zotero DB<br/><tt>output/zotero/</tt><br/><tt>  assessment=&lt;id&gt;/</tt>" }
-  download_zotero --> zotero_db
+  %% Download spine
+  refs_db --> download_zotero["Download Zotero group items<br/>page by page via Zotero API"]
+  zotero_api@{ shape: cloud, label: "Zotero API" } --> download_zotero
+  download_zotero --> zotero_db@{ shape: lin-cyl, label: "Zotero DB<br/><tt>output/zotero/assessment=&lt;id&gt;/</tt>" }
 
-  %% OpenAlex / works
-  download_works["Query OpenAlex works by DOI<br/>via openalexPro"]
-  zotero_db --> download_works
-  refs_db --> download_works
-  openalex <--> download_works
-  works_db@{ shape: lin-cyl, label: "Works DB<br/><tt>output/works/</tt><br/><tt>  assessment=&lt;id&gt;/</tt>" }
-  download_works --> works_db
+  zotero_db --> download_works["Query OpenAlex works by DOI<br/>via openalexPro"]
+  openalex@{ shape: cloud, label: "OpenAlex API" } --> download_works
+  download_works --> works_db@{ shape: lin-cyl, label: "Works DB<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
 
-  %% Stage 3 — databases (hive-partitioned by assessment)
-
-  %% Stage 4 — processing
-  resolve_citations["Resolve inline (Author, Year) citations<br/>to OpenAlex W-IDs"]
+  %% Resolution
+  works_db    --> resolve_citations["Resolve inline (Author, Year) citations<br/>to OpenAlex W-IDs"]
+  zotero_db   --> resolve_citations
   sections_db --> resolve_citations
-  works_db --> resolve_citations
-  zotero_db --> resolve_citations
-  resolved_sections_db@{ shape: lin-cyl, label: "Resolved Sections DB<br/><tt>output/resolved_sections/</tt><br/><tt>  assessment=&lt;id&gt;/</tt>" }
-  resolve_citations --> resolved_sections_db
+  resolve_citations --> resolved_sections_db@{ shape: lin-cyl, label: "Resolved Sections DB<br/><tt>output/resolved_sections/assessment=&lt;id&gt;/</tt>" }
 
-
-  classDef input_file fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
-  classDef file fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
-  classDef database fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
-  classDef processing fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1px;
-  classDef helper fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
-  classDef config fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
+  %% Styles
+  classDef input_file  fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
+  classDef config      fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
+  classDef database    fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
+  classDef processing  fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1px;
+  classDef helper      fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
 
   class config_file input_file;
-  class config,assessment_list,assessment_id, config;
+  class assessment_list,assessment_id config;
   class refs_db,sections_db,key_messages_db,zotero_db,works_db,resolved_sections_db database;
   class build_refs,build_sections,build_key_messages,download_zotero,download_works,resolve_citations processing;
-  class openalex,zotero,sparsql helper;
+  class sparql,zotero_api,openalex helper;
