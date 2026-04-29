@@ -116,8 +116,8 @@ arrow::open_dataset("output/refs") |>
 | Column | Type | Description |
 |--------|------|-------------|
 | `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
-| `km` | chr | Key Message identifier (partition) — e.g. `"A."` |
-| `bm` | chr | Background Message identifier (partition) — e.g. `"A1"` |
+| `km` | chr | Key Message identifier — e.g. `"A."` |
+| `bm` | chr | Background Message identifier — e.g. `"A1"` |
 | `sm` | chr | Sub-Message identifier |
 | `doi` | chr | DOI string — `NA` if absent |
 | `description` | chr | Citation text from the LOD — `NA` if absent |
@@ -151,10 +151,10 @@ arrow::open_dataset("output/sections") |>
 | Column | Type | Description |
 |--------|------|-------------|
 | `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
-| `km` | chr | Key Message identifier (partition) — e.g. `"A."` |
-| `bm` | chr | Background Message identifier (partition) — e.g. `"A1"` |
-| `section` | chr | Chapter identifier (partition) — `NA` if not linked |
-| `subsection` | chr | SubChapter identifier (partition) |
+| `km` | chr | Key Message identifier — e.g. `"A."` |
+| `bm` | chr | Background Message identifier — e.g. `"A1"` |
+| `section` | chr | Chapter identifier — `NA` if not linked |
+| `subsection` | chr | SubChapter identifier |
 | `content` | chr | SubChapter description text — `NA` if absent |
 
 ## Target 2b2: `key_messages_parquet` — DB3
@@ -183,9 +183,10 @@ arrow::open_dataset("output/key_messages") |>
 |--------|------|-------------|
 | `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
 | `km` | chr | Key Message identifier — e.g. `"A."` |
-| `km_description` | chr | Descriptive text of the Key Message — `NA` if absent |
+| `km_description` | chr | KM headline text (`skos:prefLabel`) — `NA` if absent |
 | `bm` | chr | Background Message identifier — e.g. `"A1"` |
-| `bm_description` | chr | Descriptive text of the Background Message — `NA` if absent |
+| `bm_description` | chr | BM headline text (`skos:prefLabel`) — `NA` if absent |
+| `bm_details` | chr | BM supporting detail text (`ipbes:hasDescription`) — `NA` if absent |
 
 ## Target 2c: `zotero_parquet` — Zotero Group Items
 
@@ -198,6 +199,34 @@ Reads the refs branch for one assessment, infers the Zotero group id from `zoter
 **Source:** `R/download_openalex.R` → `download_works(assessment, refs_parquet)`
 
 Reads the refs branch for one assessment, dedupes DOI values, builds OpenAlex work queries with `openalexPro::pro_query()`, downloads JSON with `openalexPro::pro_request()`, converts to JSONL with `openalexPro::pro_request_jsonl()`, and converts to parquet with `openalexPro::pro_request_jsonl_parquet()`. The output is written to `output/works/assessment=<id>/` as a parquet dataset partitioned by assessment.
+
+## Target 3: `resolved_sections_parquet` — Resolved Sections
+
+**Source:** `R/resolve_citations.R` → `resolve_citations(assessment, sections_parquet, works_parquet, zotero_parquet)`
+
+For each assessment branch, joins the Zotero and OpenAlex Works datasets on normalised DOI to build an `(author_key, year_key) → [WID …]` lookup map, then rewrites every `content` cell in the sections dataset by replacing `(Author, Year)` citation strings with `[WID WID …]` OpenAlex work ID tokens. Output is written to `output/resolved_sections/assessment=<id>/` partitioned by assessment only.
+
+### Reading
+
+```r
+library(arrow)
+library(dplyr)
+
+arrow::open_dataset("output/resolved_sections") |>
+  dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
+  dplyr::collect()
+```
+
+### Schema
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
+| `km` | chr | Key Message identifier — e.g. `"A."` |
+| `bm` | chr | Background Message identifier — e.g. `"A1"` |
+| `section` | chr | Chapter identifier — `NA` if not linked |
+| `subsection` | chr | SubChapter identifier |
+| `content` | chr | SubChapter text with `(Author, Year)` replaced by `[WID …]` tokens |
 
 ## SPARQL Details
 

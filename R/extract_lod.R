@@ -120,19 +120,23 @@ extract_sections_from_endpoint <- function(endpoint, assessment_id) {
 extract_key_messages_from_endpoint <- function(endpoint, assessment_id) {
   message("Querying SPARQL key/background messages endpoint for ", assessment_id, " ...")
 
-  # DB3: KM and BM descriptive text — KM → BM (both with optional hasDescription)
+  # DB3: KM and BM descriptive text
+  # KMs store their headline text as skos:prefLabel (not ipbes:hasDescription).
+  # BMs have skos:prefLabel for the headline and ipbes:hasDescription for supporting detail.
   sparql_key_messages <- '
     PREFIX ipbes: <http://ontology.ipbes.net/report>
     PREFIX dcterms: <http://purl.org/dc/terms/>
+    PREFIX skos:    <http://www.w3.org/2004/02/skos/core#>
 
-    SELECT DISTINCT ?km_id ?km_description ?bm_id ?bm_description
+    SELECT DISTINCT ?km_id ?km_description ?bm_id ?bm_description ?bm_details
     WHERE {
       ?km  a ipbes:KeyMessage ;
            dcterms:identifier ?km_id ;
            ipbes:BackgroundMessage ?bm .
       ?bm  dcterms:identifier ?bm_id .
-      OPTIONAL { ?km ipbes:hasDescription ?km_description . }
-      OPTIONAL { ?bm ipbes:hasDescription ?bm_description . }
+      OPTIONAL { ?km skos:prefLabel    ?km_description . }
+      OPTIONAL { ?bm skos:prefLabel    ?bm_description . }
+      OPTIONAL { ?bm ipbes:hasDescription ?bm_details  . }
     }
   '
 
@@ -151,7 +155,7 @@ extract_key_messages_from_endpoint <- function(endpoint, assessment_id) {
     dplyr::select(
       assessment,
       km = km_id, km_description,
-      bm = bm_id, bm_description
+      bm = bm_id, bm_description, bm_details
     )
 }
 
