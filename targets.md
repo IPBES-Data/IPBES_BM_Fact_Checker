@@ -206,10 +206,11 @@ arrow::open_dataset("output/key_messages") |>
 |--------|------|-------------|
 | `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
 | `km` | chr | Key Message identifier — e.g. `"A."` |
-| `km_description` | chr | KM headline text (`skos:prefLabel`) — `NA` if absent |
+| `km_label` | chr | KM headline text (`skos:prefLabel`) — `NA` if absent |
+| `km_description` | chr | KM supporting detail text (`ipbes:hasDescription`) — `NA` if absent |
 | `bm` | chr | Background Message identifier — e.g. `"A1"` |
-| `bm_description` | chr | BM headline text (`skos:prefLabel`) — `NA` if absent |
-| `bm_details` | chr | BM supporting detail text (`ipbes:hasDescription`) — `NA` if absent |
+| `bm_label` | chr | BM headline text (`skos:prefLabel`) — `NA` if absent |
+| `bm_description` | chr | BM supporting detail text (`ipbes:hasDescription`) — `NA` if absent |
 
 ## Target 2c: `zotero_parquet` — Zotero Group Items
 

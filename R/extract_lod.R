@@ -89,8 +89,8 @@ extract_key_messages_from_endpoint <- function(endpoint, assessment_id) {
     dplyr::mutate(assessment = assessment_id) |>
     dplyr::select(
       assessment,
-      km = km_id, km_description,
-      bm = bm_id, bm_description, bm_details
+      km = km_id, km_label, km_description,
+      bm = bm_id, bm_label, bm_description
     )
 }
 

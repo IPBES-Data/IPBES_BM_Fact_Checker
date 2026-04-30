@@ -3,15 +3,16 @@ PREFIX dcterms: <http://purl.org/dc/terms/>
 PREFIX skos:    <http://www.w3.org/2004/02/skos/core#>
 
 # DB3: KM and BM descriptive text
-# KMs store their headline text as skos:prefLabel (not ipbes:hasDescription).
-# BMs have skos:prefLabel for the headline and ipbes:hasDescription for supporting detail.
-SELECT DISTINCT ?km_id ?km_description ?bm_id ?bm_description ?bm_details
+# Both skos:prefLabel and ipbes:hasDescription are retrieved for KMs and BMs;
+# either may be absent in a given assessment.
+SELECT DISTINCT ?km_id ?km_label ?km_description ?bm_id ?bm_label ?bm_description
 WHERE {
   ?km  a ipbes:KeyMessage ;
        dcterms:identifier ?km_id ;
        ipbes:BackgroundMessage ?bm .
   ?bm  dcterms:identifier ?bm_id .
-  OPTIONAL { ?km skos:prefLabel       ?km_description . }
-  OPTIONAL { ?bm skos:prefLabel       ?bm_description . }
-  OPTIONAL { ?bm ipbes:hasDescription ?bm_details     . }
+  OPTIONAL { ?km skos:prefLabel       ?km_label       . }
+  OPTIONAL { ?km ipbes:hasDescription ?km_description . }
+  OPTIONAL { ?bm skos:prefLabel       ?bm_label       . }
+  OPTIONAL { ?bm ipbes:hasDescription ?bm_description . }
 }
