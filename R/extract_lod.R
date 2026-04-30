@@ -39,21 +39,18 @@ extract_refs_from_endpoint <- function(endpoint, assessment_id) {
          ". Check the Fuseki dataset loaded correctly.")
   }
 
-  refs <- refs_raw |>
+  refs_raw |>
+    dplyr::rename(km = km_id, bm = bm_id, sm = sm_id) |>
     dplyr::mutate(
-      assessment = assessment_id,
+      assessment   = assessment_id,
       zotero_group = vapply(zotero, extract_zotero_group, character(1)),
-      zotero_key = vapply(zotero, extract_zotero_key, character(1)),
-      citation = ifelse(
+      zotero_key   = vapply(zotero, extract_zotero_key, character(1)),
+      citation     = ifelse(
         !is.na(zotero_key) & nzchar(zotero_key),
         paste0("[", zotero_key, "]"),
         NA_character_
       )
-    ) |>
-    dplyr::select(assessment, km = km_id, bm = bm_id, sm = sm_id,
-                  doi, description, citation, zotero_group, zotero_key, zotero)
-
-  refs
+    )
 }
 
 extract_sections_from_endpoint <- function(endpoint, assessment_id) {
@@ -64,12 +61,10 @@ extract_sections_from_endpoint <- function(endpoint, assessment_id) {
   tictoc::toc()
   message("  Sections rows: ", nrow(sections_raw))
 
-  sections <- sections_raw |>
-    dplyr::mutate(assessment = assessment_id) |>
-    dplyr::select(assessment, km = km_id, bm = bm_id,
-                  section = section_id, subsection = subsection_id, content)
-
-  sections
+  sections_raw |>
+    dplyr::rename(km = km_id, bm = bm_id,
+                  section = section_id, subsection = subsection_id) |>
+    dplyr::mutate(assessment = assessment_id)
 }
 
 extract_key_messages_from_endpoint <- function(endpoint, assessment_id) {
@@ -86,12 +81,8 @@ extract_key_messages_from_endpoint <- function(endpoint, assessment_id) {
   }
 
   km_raw |>
-    dplyr::mutate(assessment = assessment_id) |>
-    dplyr::select(
-      assessment,
-      km = km_id, km_label, km_description,
-      bm = bm_id, bm_label, bm_description
-    )
+    dplyr::rename(km = km_id, bm = bm_id) |>
+    dplyr::mutate(assessment = assessment_id)
 }
 
 sparql_query <- function(endpoint, query) {
