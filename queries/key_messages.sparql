@@ -1,0 +1,17 @@
+PREFIX ipbes: <http://ontology.ipbes.net/report>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX skos:    <http://www.w3.org/2004/02/skos/core#>
+
+# DB3: KM and BM descriptive text
+# KMs store their headline text as skos:prefLabel (not ipbes:hasDescription).
+# BMs have skos:prefLabel for the headline and ipbes:hasDescription for supporting detail.
+SELECT DISTINCT ?km_id ?km_description ?bm_id ?bm_description ?bm_details
+WHERE {
+  ?km  a ipbes:KeyMessage ;
+       dcterms:identifier ?km_id ;
+       ipbes:BackgroundMessage ?bm .
+  ?bm  dcterms:identifier ?bm_id .
+  OPTIONAL { ?km skos:prefLabel       ?km_description . }
+  OPTIONAL { ?bm skos:prefLabel       ?bm_description . }
+  OPTIONAL { ?bm ipbes:hasDescription ?bm_details     . }
+}

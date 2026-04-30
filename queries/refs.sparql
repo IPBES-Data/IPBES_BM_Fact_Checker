@@ -1,0 +1,20 @@
+PREFIX ipbes: <http://ontology.ipbes.net/report>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX owl:    <http://www.w3.org/2002/07/owl#>
+
+# DB1: references — KM → BM → SM → SubChapter ← Reference(doi)
+SELECT DISTINCT ?km_id ?bm_id ?sm_id ?doi ?description ?zotero
+WHERE {
+  ?km  a ipbes:KeyMessage ;
+       dcterms:identifier ?km_id ;
+       ipbes:BackgroundMessage ?bm .
+  ?bm  dcterms:identifier ?bm_id ;
+       ipbes:SubMessage ?sm .
+  ?sm  dcterms:identifier ?sm_id ;
+       ipbes:SubChapter ?sch .
+  ?ref a ipbes:Reference ;
+       ipbes:SubChapter ?sch ;
+       ipbes:hasDoi ?doi .
+  OPTIONAL { ?ref ipbes:hasDescription ?description . }
+  OPTIONAL { ?ref owl:sameAs ?zotero . }
+}

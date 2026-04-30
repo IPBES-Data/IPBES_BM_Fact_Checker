@@ -29,31 +29,8 @@ extract_zotero_group <- function(zotero_url) {
 extract_refs_from_endpoint <- function(endpoint, assessment_id) {
   message("Querying SPARQL refs endpoint for ", assessment_id, " ...")
 
-  # DB1: references — KM → BM → SM → SubChapter ← Reference(doi)
-  sparql_refs <- '
-    PREFIX ipbes: <http://ontology.ipbes.net/report>
-    PREFIX dcterms: <http://purl.org/dc/terms/>
-    PREFIX owl: <http://www.w3.org/2002/07/owl#>
-
-    SELECT DISTINCT ?km_id ?bm_id ?sm_id ?doi ?description ?zotero
-    WHERE {
-      ?km  a ipbes:KeyMessage ;
-           dcterms:identifier ?km_id ;
-           ipbes:BackgroundMessage ?bm .
-      ?bm  dcterms:identifier ?bm_id ;
-           ipbes:SubMessage ?sm .
-      ?sm  dcterms:identifier ?sm_id ;
-           ipbes:SubChapter ?sch .
-      ?ref a ipbes:Reference ;
-           ipbes:SubChapter ?sch ;
-           ipbes:hasDoi ?doi .
-      OPTIONAL { ?ref ipbes:hasDescription ?description . }
-      OPTIONAL { ?ref owl:sameAs ?zotero . }
-    }
-  '
-
   tictoc::tic("  query refs (DB1)")
-  refs_raw <- sparql_query(endpoint, sparql_refs)
+  refs_raw <- sparql_query(endpoint, readLines("queries/refs.sparql", warn = FALSE) |> paste(collapse = "\n"))
   tictoc::toc()
   message("  Refs rows: ", nrow(refs_raw))
 
@@ -82,30 +59,8 @@ extract_refs_from_endpoint <- function(endpoint, assessment_id) {
 extract_sections_from_endpoint <- function(endpoint, assessment_id) {
   message("Querying SPARQL sections endpoint for ", assessment_id, " ...")
 
-  # DB2: section content — KM → BM → SM → SubChapter(content) → Chapter(section)
-  sparql_sections <- '
-    PREFIX ipbes: <http://ontology.ipbes.net/report>
-    PREFIX dcterms: <http://purl.org/dc/terms/>
-
-    SELECT DISTINCT ?km_id ?bm_id ?section_id ?subsection_id ?content
-    WHERE {
-      ?km  a ipbes:KeyMessage ;
-           dcterms:identifier ?km_id ;
-           ipbes:BackgroundMessage ?bm .
-      ?bm  dcterms:identifier ?bm_id ;
-           ipbes:SubMessage ?sm .
-      ?sm  ipbes:SubChapter ?sch .
-      ?sch dcterms:identifier ?subsection_id .
-      OPTIONAL { ?sch ipbes:hasDescription ?content . }
-      OPTIONAL {
-        ?sch ipbes:Chapter ?ch .
-        ?ch  dcterms:identifier ?section_id .
-      }
-    }
-  '
-
   tictoc::tic("  query sections (DB2)")
-  sections_raw <- sparql_query(endpoint, sparql_sections)
+  sections_raw <- sparql_query(endpoint, readLines("queries/sections.sparql", warn = FALSE) |> paste(collapse = "\n"))
   tictoc::toc()
   message("  Sections rows: ", nrow(sections_raw))
 
@@ -120,28 +75,8 @@ extract_sections_from_endpoint <- function(endpoint, assessment_id) {
 extract_key_messages_from_endpoint <- function(endpoint, assessment_id) {
   message("Querying SPARQL key/background messages endpoint for ", assessment_id, " ...")
 
-  # DB3: KM and BM descriptive text
-  # KMs store their headline text as skos:prefLabel (not ipbes:hasDescription).
-  # BMs have skos:prefLabel for the headline and ipbes:hasDescription for supporting detail.
-  sparql_key_messages <- '
-    PREFIX ipbes: <http://ontology.ipbes.net/report>
-    PREFIX dcterms: <http://purl.org/dc/terms/>
-    PREFIX skos:    <http://www.w3.org/2004/02/skos/core#>
-
-    SELECT DISTINCT ?km_id ?km_description ?bm_id ?bm_description ?bm_details
-    WHERE {
-      ?km  a ipbes:KeyMessage ;
-           dcterms:identifier ?km_id ;
-           ipbes:BackgroundMessage ?bm .
-      ?bm  dcterms:identifier ?bm_id .
-      OPTIONAL { ?km skos:prefLabel    ?km_description . }
-      OPTIONAL { ?bm skos:prefLabel    ?bm_description . }
-      OPTIONAL { ?bm ipbes:hasDescription ?bm_details  . }
-    }
-  '
-
   tictoc::tic("  query key/background messages (DB3)")
-  km_raw <- sparql_query(endpoint, sparql_key_messages)
+  km_raw <- sparql_query(endpoint, readLines("queries/key_messages.sparql", warn = FALSE) |> paste(collapse = "\n"))
   tictoc::toc()
   message("  Key/Background Message rows: ", nrow(km_raw))
 
