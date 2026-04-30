@@ -228,13 +228,17 @@ arrow::open_dataset("output/resolved_sections") |>
 | `subsection` | chr | SubChapter identifier |
 | `content` | chr | SubChapter text with `(Author, Year)` replaced by `[WID …]` tokens |
 
-## SPARQL Details
+## SPARQL Queries
+
+All three SPARQL queries live in `queries/*.sparql` and are read at runtime by `R/extract_lod.R`. Edit them directly without touching R code.
+
+| File | Target | Traversal |
+|------|--------|-----------|
+| `queries/refs.sparql` | `refs_parquet` | `KeyMessage → BackgroundMessage → SubMessage → SubChapter ← Reference(doi)` |
+| `queries/sections.sparql` | `sections_parquet` | `KeyMessage → BackgroundMessage → SubMessage → SubChapter(content) → Chapter(section)` |
+| `queries/key_messages.sparql` | `key_messages_parquet` | `KeyMessage → BackgroundMessage` (with `skos:prefLabel` and `ipbes:hasDescription` text) |
 
 The IPBES ontology prefix is `http://ontology.ipbes.net/report` with no trailing slash or hash.
-
-The refs query traverses `KeyMessage → BackgroundMessage → SubMessage → SubChapter ← Reference(doi)`.
-
-The sections query traverses `KeyMessage → BackgroundMessage → SubMessage → SubChapter(content) → Chapter(section)`.
 
 ## Notes
 
