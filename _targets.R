@@ -70,6 +70,16 @@ list(
     },
     iteration = "list"
   ),
+  tar_target(analysis_list, config[["analysis"]]),
+  tar_target(
+    analysis,
+    {
+      x <- analysis_list
+      names(x) <- vapply(x, `[[`, character(1), "assessment_id")
+      x
+    },
+    iteration = "list"
+  ),
 
   # Target 1: Download TTL files to output/LoD/ (cached on disk)
   tar_target(

@@ -47,14 +47,18 @@ Auto generated pipeline flow based on `_targets.R` definition
 ```
 config_file (file)
     └── config
-            └── assessment (list)
-                    ├── ttl_path (file)                    ← Target 1: download TTL per assessment
-                    ├── refs_parquet (file)                ← Target 2a: refs dataset per assessment
-                    ├── sections_parquet (file)            ← Target 2b: sections dataset per assessment
-                    ├── key_messages_parquet (file)        ← Target 2b2: KM/BM text per assessment
-                    ├── zotero_parquet (file)              ← Target 2c: Zotero dataset per assessment
-                    ├── works_parquet (file)               ← Target 2d: OpenAlex works per assessment
-                    └── resolved_sections_parquet (file)   ← Target 3: citations resolved to W-IDs
+            ├── sparql_url                              ← SPARQL backend string
+            ├── assessments_list
+            │       └── assessment (list)
+            │               ├── ttl_path (file)                    ← Target 1: download TTL per assessment
+            │               ├── refs_parquet (file)                ← Target 2a: refs dataset per assessment
+            │               ├── sections_parquet (file)            ← Target 2b: sections dataset per assessment
+            │               ├── key_messages_parquet (file)        ← Target 2b2: KM/BM text per assessment
+            │               ├── zotero_parquet (file)              ← Target 2c: Zotero dataset per assessment
+            │               ├── works_parquet (file)               ← Target 2d: OpenAlex works per assessment
+            │               └── resolved_sections_parquet (file)   ← Target 3: citations resolved to W-IDs
+            └── analysis_list
+                    └── analysis (list)                 ← one branch per analysis entry
 ```
 
 ## Configuration (`input/config.yaml`)
@@ -68,15 +72,34 @@ sparql_url: fuseki
 assessments:
   - id: GA1
     ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v09.ttl
+
+analysis:
+  - assessment_id: GA1
+    km: [A, B, C]
+  - assessment_id: IAS
+    km: ["KM-4a", "KM-B1"]
 ```
 
-Editing this file invalidates `config` and all downstream targets, triggering a full re-run.
+Config is split into fine-grained targets so that changing one section does not invalidate unrelated targets:
+
+| Config key | Target | Invalidates |
+|---|---|---|
+| `sparql_url` | `sparql_url` | All SPARQL build targets |
+| `assessments` | `assessments_list` → `assessment` | Assessment branches and their outputs |
+| `analysis` | `analysis_list` → `analysis` | Analysis branches only |
+| Any other key | `config` only | Nothing downstream |
 
 ## Target 0: `assessment` — Assessment Specs
 
 **Source:** `input/config.yaml` via `_targets.R`
 
-Creates a named list of assessment specifications from `config$assessments`. The branch names are the assessment IDs, so adding a new assessment creates a new branch without invalidating existing ones.
+Creates a named list of assessment specifications from `assessments_list` (extracted from `config`). Each element gains an `index` field used for deterministic Fuseki port assignment. Branch names are the assessment IDs, so adding a new assessment creates a new branch without invalidating existing ones.
+
+## Target 0b: `analysis` — Analysis Specs
+
+**Source:** `input/config.yaml` via `_targets.R`
+
+Creates a named list of analysis specifications from `analysis_list` (extracted from `config`). Branch names are the `assessment_id` values. Changing the `analysis` section only invalidates `analysis` branches — assessment extraction targets are unaffected.
 
 ## Target 1: `ttl_path` — Download TTL File
 

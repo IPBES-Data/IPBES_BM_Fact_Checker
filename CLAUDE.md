@@ -47,7 +47,7 @@ The `sparql_url` key in `input/config.yaml` controls the SPARQL backend:
 - `"fuseki"` — each parquet builder manages a local Fuseki session for the assessment branch on a deterministic port
 - Any URL — the parquet builders query that endpoint directly; no Fuseki lifecycle needed
 
-Config is split into fine-grained targets (`sparql_url`, `assessments_list`) so that adding new config sections or changing one assessment does not invalidate other assessments' targets.
+Config is split into fine-grained targets (`sparql_url`, `assessments_list`, `analysis_list`) so that adding new config sections or changing one entry does not invalidate other targets. Each top-level config key maps to its own intermediate target.
 
 > **Caveat for remote endpoints:** The SPARQL queries match all `ipbes:KeyMessage` triples regardless of assessment. A shared endpoint holding multiple assessments would return mixed results. Named-graph filtering would be needed — leave as-is until the endpoint structure is known.
 
