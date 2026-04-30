@@ -89,10 +89,15 @@ list(
     format = "file"
   ),
 
+  # SPARQL query files — tracked so downstream targets invalidate when queries change
+  tar_target(refs_sparql,         "queries/refs.sparql",         format = "file"),
+  tar_target(sections_sparql,     "queries/sections.sparql",     format = "file"),
+  tar_target(key_messages_sparql, "queries/key_messages.sparql", format = "file"),
+
   # Target 2a: DB1 — refs written directly to output/refs/
   tar_target(
     refs_parquet,
-    build_refs_parquet(sparql_url, assessment, ttl_path, "output/refs"),
+    build_refs_parquet(sparql_url, assessment, ttl_path, refs_sparql, "output/refs"),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),
@@ -100,15 +105,15 @@ list(
   # Target 2b: DB2 — section content written directly to output/sections/
   tar_target(
     sections_parquet,
-    build_sections_parquet(sparql_url, assessment, ttl_path, "output/sections"),
+    build_sections_parquet(sparql_url, assessment, ttl_path, sections_sparql, "output/sections"),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),
 
-  # Target 2b2: DB3 — KM and BM descriptive text written directly to output/key_messages/
+  # Target 2b2: DB3 — KM, BM, and SM descriptive text written directly to output/key_messages/
   tar_target(
     key_messages_parquet,
-    build_key_messages_parquet(sparql_url, assessment, ttl_path, "output/key_messages"),
+    build_key_messages_parquet(sparql_url, assessment, ttl_path, key_messages_sparql, "output/key_messages"),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),

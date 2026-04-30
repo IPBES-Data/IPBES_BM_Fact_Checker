@@ -182,9 +182,9 @@ arrow::open_dataset("output/sections") |>
 
 ## Target 2b2: `key_messages_parquet` — DB3
 
-**Source:** `R/write_key_messages_parquet.R` → `build_key_messages_parquet(config, assessment, ttl_path, "output/key_messages")`
+**Source:** `R/write_key_messages_parquet.R` → `build_key_messages_parquet(sparql_url, assessment, ttl_path, key_messages_sparql, "output/key_messages")`
 
-Builds the key/background messages dataset for one assessment branch, queries only the KM/BM SPARQL, and writes directly to `output/key_messages/assessment=<id>/`.
+Builds the key/background/sub-messages dataset for one assessment branch, queries the KM→BM→SM SPARQL, and writes directly to `output/key_messages/assessment=<id>/`.
 When `sparql_url: fuseki`, the function starts a local Fuseki session (port base 5030) for the duration of the branch and stops it on exit.
 
 The branch directory is deleted before the write so only that assessment partition is recreated cleanly.
@@ -196,7 +196,7 @@ library(arrow)
 library(dplyr)
 
 arrow::open_dataset("output/key_messages") |>
-  dplyr::filter(assessment == "GA1", km == "A.") |>
+  dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
   dplyr::collect()
 ```
 
@@ -211,6 +211,12 @@ arrow::open_dataset("output/key_messages") |>
 | `bm` | chr | Background Message identifier — e.g. `"A1"` |
 | `bm_label` | chr | BM headline text (`skos:prefLabel`) — `NA` if absent |
 | `bm_description` | chr | BM supporting detail text (`ipbes:hasDescription`) — `NA` if absent |
+| `bm_well_established` | chr | BM confidence flag (`ipbes:hasWellestablished`) — e.g. `"Well-established"`, `NA` if absent |
+| `bm_established_incomplete` | chr | BM confidence flag (`ipbes:hasEstablishedIncomplete`) — e.g. `"Established_but_incomplete"`, `NA` if absent |
+| `sm_id` | chr | Sub-Message section reference(s) (`dcterms:identifier`) — e.g. `"2.3.3"` |
+| `sm_description` | chr | SM statement text (`ipbes:hasDescription`) — `NA` if absent |
+| `sm_well_established` | chr | SM confidence flag (`ipbes:hasWellestablished`) — `NA` if absent |
+| `sm_established_incomplete` | chr | SM confidence flag (`ipbes:hasEstablishedIncomplete`) — `NA` if absent |
 
 ## Target 2c: `zotero_parquet` — Zotero Group Items
 
@@ -254,13 +260,13 @@ arrow::open_dataset("output/resolved_sections") |>
 
 ## SPARQL Queries
 
-All three SPARQL queries live in `queries/*.sparql` and are read at runtime by `R/extract_lod.R`. Edit them directly without touching R code.
+All three SPARQL queries live in `queries/*.sparql` and are tracked as `format = "file"` targets (`refs_sparql`, `sections_sparql`, `key_messages_sparql`). Changing a query file invalidates only the downstream parquet target — no R code changes needed.
 
 | File | Target | Traversal |
 |------|--------|-----------|
 | `queries/refs.sparql` | `refs_parquet` | `KeyMessage → BackgroundMessage → SubMessage → SubChapter ← Reference(doi)` |
 | `queries/sections.sparql` | `sections_parquet` | `KeyMessage → BackgroundMessage → SubMessage → SubChapter(content) → Chapter(section)` |
-| `queries/key_messages.sparql` | `key_messages_parquet` | `KeyMessage → BackgroundMessage` (with `skos:prefLabel` and `ipbes:hasDescription` text) |
+| `queries/key_messages.sparql` | `key_messages_parquet` | `KeyMessage → BackgroundMessage → SubMessage` (text + confidence flags on BM and SM) |
 
 The IPBES ontology prefix is `http://ontology.ipbes.net/report` with no trailing slash or hash.
 

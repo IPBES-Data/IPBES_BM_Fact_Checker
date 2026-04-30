@@ -26,11 +26,11 @@ extract_zotero_group <- function(zotero_url) {
   parts[[2L]]
 }
 
-extract_refs_from_endpoint <- function(endpoint, assessment_id) {
+extract_refs_from_endpoint <- function(endpoint, assessment_id, sparql_file = "queries/refs.sparql") {
   message("Querying SPARQL refs endpoint for ", assessment_id, " ...")
 
   tictoc::tic("  query refs (DB1)")
-  refs_raw <- sparql_query(endpoint, readLines("queries/refs.sparql", warn = FALSE) |> paste(collapse = "\n"))
+  refs_raw <- sparql_query(endpoint, readLines(sparql_file, warn = FALSE) |> paste(collapse = "\n"))
   tictoc::toc()
   message("  Refs rows: ", nrow(refs_raw))
 
@@ -53,11 +53,11 @@ extract_refs_from_endpoint <- function(endpoint, assessment_id) {
     )
 }
 
-extract_sections_from_endpoint <- function(endpoint, assessment_id) {
+extract_sections_from_endpoint <- function(endpoint, assessment_id, sparql_file = "queries/sections.sparql") {
   message("Querying SPARQL sections endpoint for ", assessment_id, " ...")
 
   tictoc::tic("  query sections (DB2)")
-  sections_raw <- sparql_query(endpoint, readLines("queries/sections.sparql", warn = FALSE) |> paste(collapse = "\n"))
+  sections_raw <- sparql_query(endpoint, readLines(sparql_file, warn = FALSE) |> paste(collapse = "\n"))
   tictoc::toc()
   message("  Sections rows: ", nrow(sections_raw))
 
@@ -67,11 +67,11 @@ extract_sections_from_endpoint <- function(endpoint, assessment_id) {
     dplyr::mutate(assessment = assessment_id)
 }
 
-extract_key_messages_from_endpoint <- function(endpoint, assessment_id) {
+extract_key_messages_from_endpoint <- function(endpoint, assessment_id, sparql_file = "queries/key_messages.sparql") {
   message("Querying SPARQL key/background messages endpoint for ", assessment_id, " ...")
 
   tictoc::tic("  query key/background messages (DB3)")
-  km_raw <- sparql_query(endpoint, readLines("queries/key_messages.sparql", warn = FALSE) |> paste(collapse = "\n"))
+  km_raw <- sparql_query(endpoint, readLines(sparql_file, warn = FALSE) |> paste(collapse = "\n"))
   tictoc::toc()
   message("  Key/Background Message rows: ", nrow(km_raw))
 

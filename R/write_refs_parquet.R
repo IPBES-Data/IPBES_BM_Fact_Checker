@@ -14,7 +14,7 @@ write_refs_parquet <- function(refs, output_path, reset = TRUE) {
   output_path
 }
 
-build_refs_parquet <- function(sparql_url, assessment, ttl_path, output_root = "output/refs") {
+build_refs_parquet <- function(sparql_url, assessment, ttl_path, sparql_file, output_root = "output/refs") {
   output_path <- branch_output_dir(output_root, assessment$id)
 
   with_fuseki_session(
@@ -30,7 +30,7 @@ build_refs_parquet <- function(sparql_url, assessment, ttl_path, output_root = "
       dir.create(output_path, showWarnings = FALSE, recursive = TRUE)
 
       endpoint <- resolve_lod_endpoint(sparql_url, fuseki_state, assessment$id)
-      refs <- extract_refs_from_endpoint(endpoint, assessment$id)
+      refs <- extract_refs_from_endpoint(endpoint, assessment$id, sparql_file)
       write_refs_parquet(refs, output_path, reset = FALSE)
     }
   )
