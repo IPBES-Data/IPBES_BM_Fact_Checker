@@ -51,9 +51,12 @@ config_file (file)
             ├── assessments_list
             │       └── assessment (list)
             │               ├── ttl_path (file)                    ← Target 1: download TTL per assessment
+            │               ├── refs_sparql (file) ──────────────── queries/refs.sparql
             │               ├── refs_parquet (file)                ← Target 2a: refs dataset per assessment
+            │               ├── sections_sparql (file) ──────────── queries/sections.sparql
             │               ├── sections_parquet (file)            ← Target 2b: sections dataset per assessment
-            │               ├── key_messages_parquet (file)        ← Target 2b2: KM/BM text per assessment
+            │               ├── key_messages_sparql (file) ──────── queries/key_messages.sparql
+            │               ├── key_messages_parquet (file)        ← Target 2b2: KM/BM/SM text per assessment
             │               ├── zotero_parquet (file)              ← Target 2c: Zotero dataset per assessment
             │               ├── works_parquet (file)               ← Target 2d: OpenAlex works per assessment
             │               └── resolved_sections_parquet (file)   ← Target 3: citations resolved to W-IDs
@@ -116,7 +119,7 @@ Returns a character vector of local TTL file paths (`format = "file"`).
 
 ## Target 2a: `refs_parquet` — DB1
 
-**Source:** `R/write_refs_parquet.R` → `build_refs_parquet(config, assessment, ttl_path, "output/refs")`
+**Source:** `R/write_refs_parquet.R` → `build_refs_parquet(sparql_url, assessment, ttl_path, refs_sparql, "output/refs")`
 
 Builds the refs dataset for one assessment branch, queries only the refs SPARQL, and writes directly to `output/refs/assessment=<id>/`.
 When `sparql_url: fuseki`, the function starts a local Fuseki session for the duration of the branch and stops it on exit.
@@ -151,7 +154,7 @@ arrow::open_dataset("output/refs") |>
 
 ## Target 2b: `sections_parquet` — DB2
 
-**Source:** `R/write_sections_parquet.R` → `build_sections_parquet(config, assessment, ttl_path, "output/sections")`
+**Source:** `R/write_sections_parquet.R` → `build_sections_parquet(sparql_url, assessment, ttl_path, sections_sparql, "output/sections")`
 
 Builds the sections dataset for one assessment branch, queries only the section-content SPARQL, and writes directly to `output/sections/assessment=<id>/`.
 When `sparql_url: fuseki`, the function starts a local Fuseki session for the duration of the branch and stops it on exit.

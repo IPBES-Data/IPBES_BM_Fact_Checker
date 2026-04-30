@@ -65,12 +65,12 @@ input/Query_Submessage_ref_GA.csv
 ### Key Design Patterns
 
 - **targets caching**: each target is re-run only when its inputs change. Delete `_targets/` to force a full rebuild.
-- **Fine-grained config**: `config` is split into `sparql_url` and `assessments_list` targets so unrelated config sections don't cascade invalidation.
+- **Fine-grained config**: `config` is split into `sparql_url`, `assessments_list`, and `analysis_list` targets so unrelated config sections don't cascade invalidation.
 - **Fuseki lifecycle**: started and stopped inside the parquet builders; cleanup is idempotent and handled by `on.exit()`.
 - **Assessment branching**: `assessment` is the branch key, so adding a new assessment only computes the new branch.
 - **Separated materialization**: refs, sections, key_messages, Zotero, and works are all built independently; there is no cached combined `lod_data` object.
 - **Parquet databases**: partitioned by assessment only, queried lazily with `arrow::open_dataset()` + `dplyr` verbs, collected into memory only when needed.
-- **SPARQL queries as files**: all three SPARQL queries live in `queries/*.sparql` and are read at runtime — edit queries without touching R code.
+- **SPARQL queries as files**: all three SPARQL queries live in `queries/*.sparql` and are tracked as `format = "file"` targets (`refs_sparql`, `sections_sparql`, `key_messages_sparql`) — editing a query file invalidates only its downstream parquet target.
 - **Legacy QMD caching**: uses `file.exists(fn)` checks. Delete the relevant `.rds` or parquet directory to force recomputation.
 
 ### R Files (targets pipeline)
@@ -102,7 +102,7 @@ input/Query_Submessage_ref_GA.csv
 - `output/LoD/` — cached TTL files
 - `output/refs/` — DB1 parquet (refs with Zotero group/key citations)
 - `output/sections/` — DB2 parquet (section content)
-- `output/key_messages/` — DB3 parquet (KM and BM descriptive text)
+- `output/key_messages/` — DB3 parquet (KM, BM, and SM descriptive text with confidence flags)
 - `output/resolved_sections/` — sections with `(Author, Year)` replaced by OpenAlex W-IDs
 - `output/zotero/` — Zotero parquet dataset partitioned by assessment/group id/page
 - `output/works/` — OpenAlex works parquet dataset partitioned by assessment
