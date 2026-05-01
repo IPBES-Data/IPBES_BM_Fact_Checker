@@ -14,6 +14,7 @@ tar_option_set(
     "httr2",
     "readr",
     "openalexPro",
+    "openalexSnowball",
     "jsonlite"
   )
 )
@@ -126,11 +127,27 @@ list(
     format = "file"
   ),
 
-  # Target 2d: OpenAlex works per assessment (DOIs sourced from Zotero parquet)
+  # Target 2d: OpenAlex works per assessment — partitioned by assessment/km/bm
   tar_target(
     works_parquet,
-    download_works(assessment, zotero_parquet, workers = 8),
-    pattern = map(assessment, zotero_parquet),
+    download_works(assessment, zotero_parquet, refs_parquet, workers = 8),
+    pattern = map(assessment, zotero_parquet, refs_parquet),
+    format = "file"
+  ),
+
+  # Target 2e: Snowball search — citing/cited papers per assessment/km/bm
+  tar_target(
+    snowball_parquet,
+    build_snowball_parquet(assessment, works_parquet, "output/snowball"),
+    pattern = map(assessment, works_parquet),
+    format = "file"
+  ),
+
+  # Target 2f: Citing works — papers citing the seed works, fetched per km/bm
+  tar_target(
+    works_citing_parquet,
+    build_works_citing_parquet(assessment, snowball_parquet, "output/works_citing"),
+    pattern = map(assessment, snowball_parquet),
     format = "file"
   ),
 

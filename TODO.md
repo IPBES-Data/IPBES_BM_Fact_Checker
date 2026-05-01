@@ -8,3 +8,4 @@
   - API_openrouter
   - https://ellmer.tidyverse.org/reference/chat_openrouter.html
   
+Next step is to compare the kms with the references from the forward 

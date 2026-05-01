@@ -39,7 +39,11 @@ input/config.yaml
     → output/sections/assessment=<id>/       (partitioned by assessment, gitignored)
     → output/key_messages/assessment=<id>/   (partitioned by assessment, gitignored)
     → output/zotero/assessment=<id>/         (partitioned by assessment/group id/page, gitignored)
-    → output/works/assessment=<id>/          (partitioned by assessment, gitignored)
+    → output/works/assessment=<id>/km=<km>/bm=<bm>/  (partitioned by assessment/km/bm, gitignored)
+    → output/snowball/nodes/assessment=<id>/km=<km>/bm=<bm>/     (partitioned by assessment/km/bm/relation, gitignored)
+    → output/snowball/edges/assessment=<id>/km=<km>/bm=<bm>/     (partitioned by assessment/km/bm/edge_type, gitignored)
+    → output/snowball/keypaper/assessment=<id>/km=<km>/bm=<bm>/  (partitioned by assessment/km/bm, gitignored)
+    → output/works_citing/assessment=<id>/km=<km>/bm=<bm>/       (partitioned by assessment/km/bm, gitignored)
     → output/resolved_sections/assessment=<id>/ (partitioned by assessment, gitignored)
 ```
 
@@ -77,7 +81,9 @@ input/Query_Submessage_ref_GA.csv
 
 | File | Target(s) | Purpose |
 |------|-----------|---------|
-| `R/download_openalex.R` | `works_parquet` | Download OpenAlex works to `output/works/assessment=<id>/` using `openalexPro::pro_query()` + `pro_request()` + `pro_request_jsonl()` + `pro_request_jsonl_parquet()` |
+| `R/download_works.R` | `works_parquet` | Fetch OpenAlex works via `openalexPro::pro_fetch()`, join with refs on DOI to assign km/bm, write to `output/works/assessment=<id>/km=<km>/bm=<bm>/` |
+| `R/build_snowball_parquet.R` | `snowball_parquet` | Snowball search via `openalexSnowball::pro_snowball()` per km/bm; writes nodes and edges to `output/snowball/` |
+| `R/build_works_citing_parquet.R` | `works_citing_parquet` | Filter snowball nodes to `relation == "citing"`; write to `output/works_citing/` partitioned by assessment/km/bm |
 | `R/download_zotero.R` | `zotero_parquet` | Download Zotero group items to `output/zotero/assessment=<id>/` using refs parquet |
 | `R/download_ttls.R` | `ttl_path` | Download TTL files to `output/LoD/` |
 | `R/manage_fuseki.R` | helpers | Start/stop Fuseki sessions and resolve endpoints |
@@ -105,6 +111,8 @@ input/Query_Submessage_ref_GA.csv
 - `output/key_messages/` — DB3 parquet (KM, BM, and SM descriptive text with confidence flags)
 - `output/resolved_sections/` — sections with `(Author, Year)` replaced by OpenAlex W-IDs
 - `output/zotero/` — Zotero parquet dataset partitioned by assessment/group id/page
-- `output/works/` — OpenAlex works parquet dataset partitioned by assessment
+- `output/works/` — OpenAlex works parquet dataset partitioned by assessment/km/bm
+- `output/snowball/` — snowball parquet datasets: nodes (assessment/km/bm/relation), edges (assessment/km/bm/edge_type), keypaper (assessment/km/bm)
+- `output/works_citing/` — papers citing the seed works, partitioned by assessment/km/bm
 - `output/snowballs/` — per-paper snowball `.rds` files (QMD pipeline)
 - `output/nodes/`, `output/edges/` — parquet datasets (QMD pipeline)

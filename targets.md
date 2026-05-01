@@ -58,7 +58,9 @@ config_file (file)
             │               ├── key_messages_sparql (file) ──────── queries/key_messages.sparql
             │               ├── key_messages_parquet (file)        ← Target 2b2: KM/BM/SM text per assessment
             │               ├── zotero_parquet (file)              ← Target 2c: Zotero dataset per assessment
-            │               ├── works_parquet (file)               ← Target 2d: OpenAlex works per assessment
+            │               ├── works_parquet (file)               ← Target 2d: OpenAlex works per assessment/km/bm
+            │               ├── snowball_parquet (file)            ← Target 2e: snowball nodes+edges per assessment/km/bm
+            │               ├── works_citing_parquet (file)        ← Target 2f: citing papers per assessment/km/bm
             │               └── resolved_sections_parquet (file)   ← Target 3: citations resolved to W-IDs
             └── analysis_list
                     └── analysis (list)                 ← one branch per analysis entry
@@ -229,9 +231,141 @@ Reads the refs branch for one assessment, infers the Zotero group id from `zoter
 
 ## Target 2d: `works_parquet` — OpenAlex Works
 
-**Source:** `R/download_openalex.R` → `download_works(assessment, refs_parquet)`
+**Source:** `R/download_works.R` → `download_works(assessment, zotero_parquet, refs_parquet, workers = 8)`
 
-Reads the refs branch for one assessment, dedupes DOI values, builds OpenAlex work queries with `openalexPro::pro_query()`, downloads JSON with `openalexPro::pro_request()`, converts to JSONL with `openalexPro::pro_request_jsonl()`, and converts to parquet with `openalexPro::pro_request_jsonl_parquet()`. The output is written to `output/works/assessment=<id>/` as a parquet dataset partitioned by assessment.
+Reads DOIs from the Zotero branch, fetches OpenAlex works with `openalexPro::pro_fetch()`, then joins the result with `refs_parquet` on normalised DOI to attach `km` and `bm` columns. Because one DOI can appear in multiple KM/BM pairs, the join duplicates work rows accordingly (many-to-many). The output is written to `output/works/assessment=<id>/` partitioned by `assessment`, `km`, and `bm`.
+
+### Reading DB4
+
+```r
+library(arrow)
+library(dplyr)
+
+arrow::open_dataset("output/works") |>
+  dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
+  dplyr::select(id, doi, title) |>
+  dplyr::collect()
+```
+
+### Schema — DB4 (selected columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
+| `km` | chr | Key Message identifier (partition) — e.g. `"A."` |
+| `bm` | chr | Background Message identifier (partition) — e.g. `"A1"` |
+| `id` | chr | OpenAlex work ID URL — e.g. `"https://openalex.org/W…"` |
+| `doi` | chr | DOI string |
+| `title` / `display_name` | chr | Work title |
+| `publication_year` | int | Year of publication |
+| … | … | 51 OpenAlex columns total (authors, topics, citations, etc.) |
+
+## Target 2e: `snowball_parquet` — Snowball Search
+
+**Source:** `R/build_snowball_parquet.R` → `build_snowball_parquet(assessment, works_parquet, "output/snowball")`
+
+For each assessment branch, iterates over all km/bm combinations in `works_parquet`. For each group, collects the OpenAlex work IDs and calls `openalexSnowball::pro_snowball()` to retrieve all papers that cite or are cited by those seeds. The results are annotated with `assessment`, `km`, and `bm` then written to three shared parquet roots:
+
+- `output/snowball/nodes/` — partitioned by `assessment`, `km`, `bm`, `relation`
+- `output/snowball/edges/` — partitioned by `assessment`, `km`, `bm`, `edge_type`
+- `output/snowball/keypaper/` — partitioned by `assessment`, `km`, `bm`
+
+Only this assessment's partition directories are deleted before writing; other assessments are untouched.
+
+### Reading
+
+```r
+library(arrow)
+library(dplyr)
+
+arrow::open_dataset("output/snowball/nodes") |>
+  dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
+  dplyr::select(id, doi, title, relation, oa_input) |>
+  dplyr::collect()
+
+arrow::open_dataset("output/snowball/edges") |>
+  dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
+  dplyr::collect()
+
+arrow::open_dataset("output/snowball/keypaper") |>
+  dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
+  dplyr::select(id, doi, title, oa_input) |>
+  dplyr::collect()
+```
+
+### Schema — Nodes
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
+| `km` | chr | Key Message identifier (partition) — e.g. `"A."` |
+| `bm` | chr | Background Message identifier (partition) — e.g. `"A1"` |
+| `relation` | chr | Relationship to seeds (partition): `"keypaper"`, `"citing"`, or `"cited"` |
+| `oa_input` | lgl | `TRUE` if this work was one of the seed IDs |
+| `id` | chr | OpenAlex work ID URL |
+| `doi` | chr | DOI string |
+| `title` | chr | Work title |
+| `publication_year` | int | Year of publication |
+| … | … | 53 columns total (authorships, topics, citations, etc.) |
+
+### Schema — Keypaper
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
+| `km` | chr | Key Message identifier (partition) — e.g. `"A."` |
+| `bm` | chr | Background Message identifier (partition) — e.g. `"A1"` |
+| `oa_input` | lgl | Always `TRUE` — these are the seed works |
+| `id` | chr | OpenAlex work ID URL |
+| `doi` | chr | DOI string |
+| `title` | chr | Work title |
+| `publication_year` | int | Year of publication |
+| … | … | 53 columns total (same schema as nodes) |
+
+### Schema — Edges
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
+| `km` | chr | Key Message identifier (partition) — e.g. `"A."` |
+| `bm` | chr | Background Message identifier (partition) — e.g. `"A1"` |
+| `edge_type` | chr | Edge classification (partition): `"core"`, `"extended"`, or `"outside"` |
+| `from` | chr | OpenAlex ID of citing work |
+| `to` | chr | OpenAlex ID of cited work |
+
+## Target 2f: `works_citing_parquet` — Citing Works
+
+**Source:** `R/build_works_citing_parquet.R` → `build_works_citing_parquet(assessment, snowball_parquet, "output/works_citing")`
+
+Reads the snowball nodes for this assessment branch (from `output/snowball/nodes/`), filters for `relation == "citing"`, drops the `relation` column, and writes the result to `output/works_citing/` partitioned by `assessment/km/bm`. Depends on `snowball_parquet`.
+
+### Reading
+
+```r
+library(arrow)
+library(dplyr)
+
+arrow::open_dataset("output/works_citing") |>
+  dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
+  dplyr::select(id, doi, title, publication_year) |>
+  dplyr::collect()
+```
+
+### Schema
+
+Same columns as the snowball nodes dataset minus `relation` (dropped after filter), including:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `assessment` | chr | Assessment ID (partition) — e.g. `"GA1"` |
+| `km` | chr | Key Message identifier (partition) — e.g. `"A."` |
+| `bm` | chr | Background Message identifier (partition) — e.g. `"A1"` |
+| `oa_input` | lgl | Whether this was an OpenAlex seed input |
+| `id` | chr | OpenAlex work ID URL |
+| `doi` | chr | DOI string |
+| `title` | chr | Work title |
+| `publication_year` | int | Year of publication |
+| … | … | remaining OpenAlex columns |
 
 ## Target 3: `resolved_sections_parquet` — Resolved Sections
 
@@ -293,5 +427,6 @@ The IPBES ontology prefix is `http://ontology.ipbes.net/report` with no trailing
 | `dplyr` | Data manipulation |
 | `tictoc` | Query timing |
 | `openalexPro` | OpenAlex works download |
+| `openalexSnowball` | Snowball search (citing/cited paper discovery) |
 
 **System dependency:** `fuseki-server` on `PATH` (install with `brew install fuseki`). Only required when `sparql_url: fuseki`.

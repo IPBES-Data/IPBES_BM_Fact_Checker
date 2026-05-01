@@ -12,3 +12,9 @@ assessments:
   # Future assessments (uncomment when TTL files are available):
   # - id: VA
   #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Values%20Assessment/VA.ttl
+
+analysis:
+  - assessment_id: IAS
+    km: ["KM-4a", KM-B1]
+  - assessment_id: GA1
+    km: [A, B, C]
