@@ -82,7 +82,17 @@ extract_key_messages_from_endpoint <- function(endpoint, assessment_id, sparql_f
 
   km_raw |>
     dplyr::rename(km = km_id, bm = bm_id) |>
-    dplyr::mutate(assessment = assessment_id)
+    dplyr::mutate(
+      dplyr::across(
+        tidyselect::any_of(c(
+          "km_label", "km_description",
+          "bm_label", "bm_description",
+          "sm_id", "sm_description"
+        )),
+        as.character
+      ),
+      assessment = assessment_id
+    )
 }
 
 sparql_query <- function(endpoint, query) {

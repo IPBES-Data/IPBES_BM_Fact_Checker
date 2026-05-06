@@ -1,7 +1,10 @@
 library(targets)
 
 Sys.setenv(
-  openalexPro.apikey = keyring::key_get("API_openalex")
+  API_openalex = keyring::key_get("API_openalex")
+)
+Sys.setenv(
+  API_openrouter = keyring::key_get("API_openrouter")
 )
 
 tar_option_set(
@@ -15,7 +18,10 @@ tar_option_set(
     "readr",
     "openalexPro",
     "openalexSnowball",
-    "jsonlite"
+    "jsonlite",
+    "ellmer",
+    "future",
+    "future.apply"
   )
 )
 
@@ -61,7 +67,10 @@ list(
   tar_target(config_file, "input/config.yaml", format = "file"),
   tar_target(config, yaml::read_yaml(config_file)),
   tar_target(sparql_url, config[["sparql_url"]]),
-  tar_target(assessments_list, config[["assessments"]]),
+  tar_target(
+    assessments_list,
+    lapply(config[["assessments"]], function(a) a[setdiff(names(a), "full_text")])
+  ),
   tar_target(
     assessment,
     {
@@ -73,13 +82,20 @@ list(
   ),
   tar_target(analysis_list, config[["analysis"]]),
   tar_target(
-    analysis,
-    {
-      x <- analysis_list
-      names(x) <- vapply(x, `[[`, character(1), "assessment_id")
-      x
-    },
-    iteration = "list"
+    fulltext_list,
+    lapply(config[["assessments"]], function(a) {
+      list(assessment_id = a[["id"]], enabled = isTRUE(a[["full_text"]]))
+    })
+  ),
+  tar_target(
+    alignement_system_prompt_file,
+    "input/prompts/system_prompt.md",
+    format = "file"
+  ),
+  tar_target(
+    alignement_user_prompt_file,
+    "input/prompts/prompt.md",
+    format = "file"
   ),
 
   # Target 1: Download TTL files to output/LoD/ (cached on disk)
@@ -91,14 +107,24 @@ list(
   ),
 
   # SPARQL query files — tracked so downstream targets invalidate when queries change
-  tar_target(refs_sparql,         "queries/refs.sparql",         format = "file"),
-  tar_target(sections_sparql,     "queries/sections.sparql",     format = "file"),
-  tar_target(key_messages_sparql, "queries/key_messages.sparql", format = "file"),
+  tar_target(refs_sparql, "queries/refs.sparql", format = "file"),
+  tar_target(sections_sparql, "queries/sections.sparql", format = "file"),
+  tar_target(
+    key_messages_sparql,
+    "queries/key_messages.sparql",
+    format = "file"
+  ),
 
   # Target 2a: DB1 — refs written directly to output/refs/
   tar_target(
     refs_parquet,
-    build_refs_parquet(sparql_url, assessment, ttl_path, refs_sparql, "output/refs"),
+    build_refs_parquet(
+      sparql_url,
+      assessment,
+      ttl_path,
+      refs_sparql,
+      "output/refs"
+    ),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),
@@ -106,7 +132,13 @@ list(
   # Target 2b: DB2 — section content written directly to output/sections/
   tar_target(
     sections_parquet,
-    build_sections_parquet(sparql_url, assessment, ttl_path, sections_sparql, "output/sections"),
+    build_sections_parquet(
+      sparql_url,
+      assessment,
+      ttl_path,
+      sections_sparql,
+      "output/sections"
+    ),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),
@@ -114,7 +146,13 @@ list(
   # Target 2b2: DB3 — KM, BM, and SM descriptive text written directly to output/key_messages/
   tar_target(
     key_messages_parquet,
-    build_key_messages_parquet(sparql_url, assessment, ttl_path, key_messages_sparql, "output/key_messages"),
+    build_key_messages_parquet(
+      sparql_url,
+      assessment,
+      ttl_path,
+      key_messages_sparql,
+      "output/key_messages"
+    ),
     pattern = map(assessment, ttl_path),
     format = "file"
   ),
@@ -146,7 +184,11 @@ list(
   # Target 2f: Citing works — papers citing the seed works, fetched per km/bm
   tar_target(
     works_citing_parquet,
-    build_works_citing_parquet(assessment, snowball_parquet, "output/works_citing"),
+    build_works_citing_parquet(
+      assessment,
+      snowball_parquet,
+      "output/works_citing"
+    ),
     pattern = map(assessment, snowball_parquet),
     format = "file"
   ),
@@ -161,6 +203,47 @@ list(
       zotero_parquet
     ),
     pattern = map(assessment, sections_parquet, works_parquet, zotero_parquet),
+    format = "file"
+  ),
+
+  # Target 3b: Full-text files (XML preferred, PDF fallback, .missing sentinel)
+  # Only downloaded for assessments with full_text: true in config.
+  # On re-run: upgrades .missing → pdf/xml and .pdf → xml when newly available.
+  tar_target(
+    fulltext_files,
+    build_fulltext(
+      assessment,
+      works_citing_parquet,
+      fulltext_list,
+      output_root = "output/fulltext",
+      workers = 8L
+    ),
+    pattern = map(assessment, works_citing_parquet),
+    format = "file"
+  ),
+
+  # Target 4: OpenRouter / ellmer alignment scores for capped snowball works
+  tar_target(
+    alignement_run_specs,
+    build_alignement_run_specs(
+      analysis_list,
+      assessment,
+      snowball_parquet,
+      key_messages_parquet
+    ),
+    iteration = "list"
+  ),
+
+  tar_target(
+    alignement_parquet,
+    build_alignement_parquet(
+      alignement_run_specs,
+      alignement_system_prompt_file,
+      alignement_user_prompt_file,
+      output_root = "output/alignement",
+      keypaper_share = 0.2
+    ),
+    pattern = map(alignement_run_specs),
     format = "file"
   ),
 

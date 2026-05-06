@@ -58,6 +58,8 @@ output/resolved_sections/*
 output/key_messages/*
 output/snowball/*
 output/works_citing/*
+output/fulltext/*
 
 .DS_Store
 
+output/alignement/*

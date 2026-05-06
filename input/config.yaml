@@ -6,15 +6,38 @@ sparql_url: fuseki
 assessments:
   - id: GA1
     ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v09.ttl
+    full_text: false
   - id: IAS
     ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Invasive%20Alien%20Species%20Assessment/IAS_v04.ttl
+    full_text: true
 
   # Future assessments (uncomment when TTL files are available):
   # - id: VA
   #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Values%20Assessment/VA.ttl
+  #   full_text: false
 
 analysis:
   - assessment_id: IAS
-    km: ["KM-4a", KM-B1]
+    runs:
+      - run_id: IAS_km_ab
+        km: ["KM-A1"]
+        model: "openai/gpt-4o-mini"
+        temperature: 0
+        max_active: 8
+        replicates: 1
+        max_works: 100
   - assessment_id: GA1
-    km: [A, B, C]
+    runs:
+      - run_id: GA1_km_ab
+        km: ["A."]
+        model: "openai/gpt-4o-mini"
+        temperature: 0
+        max_active: 8
+        replicates: 1
+        max_works: 100
+      # - run_id: GA1_km_a
+      #   km: ["A."]
+      #   model: "google/gemma-4-31b-it:free"
+      #   temperature: 0.5
+      #   max_active: 1
+      #   replicates: 2

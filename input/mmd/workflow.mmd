@@ -34,6 +34,18 @@ flowchart TD
   openalex@{ shape: cloud, label: "OpenAlex API" } --> download_works
   download_works --> works_db@{ shape: lin-cyl, label: "Works DB<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
 
+  %% AI alignment scoring
+  analysis_runs["analysis.runs"]
+  prompts["Prompt files<br/><tt>input/prompts/*.md</tt>"]
+  snowball["Snowball search<br/>keypaper + citing"]
+  alignement["Score works vs KM<br/>OpenRouter / ellmer"]
+  works_db --> snowball
+  key_messages_db --> alignement
+  analysis_runs --> alignement
+  prompts --> alignement
+  snowball --> alignement
+  alignement --> alignement_db@{ shape: lin-cyl, label: "Alignement DB<br/><tt>output/alignement/assessment=&lt;id&gt;/km=&lt;km&gt;/model=&lt;model&gt;/temperature=&lt;temp&gt;/</tt>" }
+
   %% Resolution
   works_db    --> resolve_citations["Resolve inline (Author, Year) citations<br/>to OpenAlex W-IDs"]
   zotero_db   --> resolve_citations
@@ -49,6 +61,6 @@ flowchart TD
 
   class config_file input_file;
   class assessment_list,assessment_id config;
-  class refs_db,sections_db,key_messages_db,zotero_db,works_db,resolved_sections_db database;
+  class refs_db,sections_db,key_messages_db,zotero_db,works_db,resolved_sections_db,alignement_db database;
   class build_refs,build_sections,build_key_messages,download_zotero,download_works,resolve_citations processing;
-  class sparql,zotero_api,openalex helper;
+  class sparql,zotero_api,openalex,analysis_runs,prompts,snowball,alignement helper;

@@ -61,9 +61,11 @@ config_file (file)
             │               ├── works_parquet (file)               ← Target 2d: OpenAlex works per assessment/km/bm
             │               ├── snowball_parquet (file)            ← Target 2e: snowball nodes+edges per assessment/km/bm
             │               ├── works_citing_parquet (file)        ← Target 2f: citing papers per assessment/km/bm
+            │               ├── fulltext_files (file)              ← Target 2g: Grobid XML / PDF per work
             │               └── resolved_sections_parquet (file)   ← Target 3: citations resolved to W-IDs
             └── analysis_list
-                    └── analysis (list)                 ← one branch per analysis entry
+                    └── alignement_run_specs (list)     ← one branch per configured run
+                            └── alignement_parquet (file) ← Target 4: OpenRouter alignment scores
 ```
 
 ## Configuration (`input/config.yaml`)
@@ -80,9 +82,21 @@ assessments:
 
 analysis:
   - assessment_id: GA1
-    km: [A, B, C]
+    runs:
+      - run_id: GA1_km_abc
+        km: [A, B, C]
+        model: "google/gemma-4-31b-it:free"
+        temperature: 0
+        max_active: 2
+        replicates: 1
   - assessment_id: IAS
-    km: ["KM-4a", "KM-B1"]
+    runs:
+      - run_id: IAS_km_ab
+        km: ["KM-4a", "KM-B1"]
+        model: "google/gemma-4-31b-it:free"
+        temperature: 0
+        max_active: 2
+        replicates: 5
 ```
 
 Config is split into fine-grained targets so that changing one section does not invalidate unrelated targets:
@@ -91,8 +105,10 @@ Config is split into fine-grained targets so that changing one section does not 
 |---|---|---|
 | `sparql_url` | `sparql_url` | All SPARQL build targets |
 | `assessments` | `assessments_list` → `assessment` | Assessment branches and their outputs |
-| `analysis` | `analysis_list` → `analysis` | Analysis branches only |
+| `analysis` | `analysis_list` | Analysis configuration only |
 | Any other key | `config` only | Nothing downstream |
+
+Alignment runs must define a unique `run_id`; this identifier is used to isolate each long-running run branch and avoid overwriting.
 
 ## Target 0: `assessment` — Assessment Specs
 
@@ -100,11 +116,11 @@ Config is split into fine-grained targets so that changing one section does not 
 
 Creates a named list of assessment specifications from `assessments_list` (extracted from `config`). Each element gains an `index` field used for deterministic Fuseki port assignment. Branch names are the assessment IDs, so adding a new assessment creates a new branch without invalidating existing ones.
 
-## Target 0b: `analysis` — Analysis Specs
+## Target 0b: `alignement_run_specs` — Alignment Run Specs
 
-**Source:** `input/config.yaml` via `_targets.R`
+**Source:** `R/build_alignement_parquet.R` → `build_alignement_run_specs(analysis_list, assessment, snowball_parquet, key_messages_parquet)`
 
-Creates a named list of analysis specifications from `analysis_list` (extracted from `config`). Branch names are the `assessment_id` values. Changing the `analysis` section only invalidates `analysis` branches — assessment extraction targets are unaffected.
+Flattens all configured alignment runs into one branch per run. Each run spec keeps a unique `run_id`, the configured `km` list, plus its `assessment_id`, `model`, `temperature`, `max_active`, and `replicates`, together with the dataset roots needed for scoring. Changing a run definition invalidates only the affected run branch.
 
 ## Target 1: `ttl_path` — Download TTL File
 
@@ -367,6 +383,26 @@ Same columns as the snowball nodes dataset minus `relation` (dropped after filte
 | `publication_year` | int | Year of publication |
 | … | … | remaining OpenAlex columns |
 
+## Target 2g: `fulltext_files` — Full-Text Download
+
+**Source:** `R/build_fulltext.R` → `build_fulltext(assessment, works_citing_parquet, fulltext_list, output_root, workers)`
+
+For each assessment branch (when enabled in `fulltext_list` config), downloads the Grobid-processed XML or raw PDF for each work in `works_citing`. Files are downloaded in parallel via `future.apply::future_lapply()`.
+
+**Pass 1** — classifies each work on disk:
+- `.xml` / `.pdf` files are validated (XML checked for `<?xml`/`<TEI` header; PDF checked for `%PDF` magic bytes); corrupt/HTML error bodies from previous runs are removed and re-queued.
+- `.missing` sentinel files skip the download unless OpenAlex now reports content available.
+
+**Pre-flight** — calls `openalexPro::pro_rate_limit_status()` before spawning workers; stops immediately with the reset time if credits are exhausted.
+
+**Pass 2** — parallel download. Workers return `"__CREDITS_EXHAUSTED__"` on budget error (never writes bad content to disk). The batch loop detects the sentinel and stops cleanly.
+
+**Pass 3** — retries items that failed in Pass 2.
+
+Output directory: `output/fulltext/assessment=<id>/`. Files per work: `<WID>.xml`, `<WID>.pdf`, or `<WID>.missing`.
+
+If the assessment is not in `fulltext_list` or has `enabled: false`, a `.disabled` sentinel is written and the function returns immediately.
+
 ## Target 3: `resolved_sections_parquet` — Resolved Sections
 
 **Source:** `R/resolve_citations.R` → `resolve_citations(assessment, sections_parquet, works_parquet, zotero_parquet)`
@@ -395,6 +431,46 @@ arrow::open_dataset("output/resolved_sections") |>
 | `subsection` | chr | SubChapter identifier |
 | `content` | chr | SubChapter text with `(Author, Year)` replaced by `[WID …]` tokens |
 
+## Target 4: `alignement_parquet` — OpenRouter KM Alignment
+
+**Source:** `R/build_alignement_parquet.R` → `build_alignement_parquet(alignement_run_specs, alignement_system_prompt_file, alignement_user_prompt_file, "output/alignement")`
+
+For each run branch, reads the assessment-specific snowball nodes and key-message parquet, then iterates over the KM list inside that run. For each KM, it selects a deterministic cap of 20 works (default 4 `keypaper` + 16 `citing` works) and scores each work with `ellmer::parallel_chat_structured()` using the prompts from `input/prompts/*.md`. Replicates are handled inside the branch. The output is written to `output/alignement/assessment=<id>/run_id=<run_id>/` and partitioned by `assessment`, `run_id`, `km`, `model`, `temperature`, `relation`, and `replicate`.
+
+### Reading
+
+```r
+library(arrow)
+library(dplyr)
+
+arrow::open_dataset("output/alignement") |>
+  dplyr::filter(assessment == "GA1", run_id == "GA1_km_a", km == "A.", model_id == "google/gemma-4-31b-it:free") |>
+  dplyr::collect()
+```
+
+### Schema
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `assessment` | chr | Assessment ID |
+| `run_id` | chr | Unique alignment run identifier |
+| `km` | chr | Key Message identifier assessed in this row |
+| `relation` | chr | Snowball relation for the candidate work (`keypaper` or `citing`) |
+| `model` | chr | Filesystem-safe model partition slug |
+| `model_id` | chr | Raw OpenRouter model id |
+| `temperature` | dbl | Sampling temperature |
+| `replicate` | int | Replicate number within the run branch |
+| `candidate_rank` | int | Rank within the capped candidate set |
+| `lm_id` | chr | Key Message id |
+| `work_id` | chr | OpenAlex work id |
+| `km_summary` | chr | Distilled Key Message label/description text |
+| `work_alignement` | int | Score from -5 to +5 |
+| `confidence` | dbl | Model confidence from 0 to 1 |
+| `evidence` | chr | Supporting excerpt or close paraphrase |
+| `justification` | chr | Short rationale for the score |
+| `title` | chr | Candidate work title |
+| `abstract` | chr | Candidate work abstract |
+
 ## SPARQL Queries
 
 All three SPARQL queries live in `queries/*.sparql` and are tracked as `format = "file"` targets (`refs_sparql`, `sections_sparql`, `key_messages_sparql`). Changing a query file invalidates only the downstream parquet target — no R code changes needed.
@@ -409,7 +485,7 @@ The IPBES ontology prefix is `http://ontology.ipbes.net/report` with no trailing
 
 ## Notes
 
-- `refs_parquet`, `sections_parquet`, `zotero_parquet`, and `works_parquet` are all assessment-branched and do not cache a combined `lod_data` object.
+- `refs_parquet`, `sections_parquet`, `zotero_parquet`, `works_parquet`, `fulltext_files`, and `alignement_parquet` are all assessment-branched and do not cache a combined `lod_data` object.
 - Each assessment branch rewrites only its own partition directory.
 - Fuseki lifecycle is managed internally by the parquet builders.
 - The OpenAlex branch requires `openalexPro` to be installed and uses the documented query -> download -> JSONL -> parquet workflow.
@@ -426,7 +502,10 @@ The IPBES ontology prefix is `http://ontology.ipbes.net/report` with no trailing
 | `arrow` | Parquet I/O |
 | `dplyr` | Data manipulation |
 | `tictoc` | Query timing |
+| `ellmer` | OpenRouter chat client |
 | `openalexPro` | OpenAlex works download |
 | `openalexSnowball` | Snowball search (citing/cited paper discovery) |
+| `future` | Parallel backend for fulltext downloads |
+| `future.apply` | `future_lapply()` for parallel fulltext workers |
 
 **System dependency:** `fuseki-server` on `PATH` (install with `brew install fuseki`). Only required when `sparql_url: fuseki`.

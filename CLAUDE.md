@@ -44,7 +44,9 @@ input/config.yaml
     → output/snowball/edges/assessment=<id>/km=<km>/bm=<bm>/     (partitioned by assessment/km/bm/edge_type, gitignored)
     → output/snowball/keypaper/assessment=<id>/km=<km>/bm=<bm>/  (partitioned by assessment/km/bm, gitignored)
     → output/works_citing/assessment=<id>/km=<km>/bm=<bm>/       (partitioned by assessment/km/bm, gitignored)
+    → output/fulltext/assessment=<id>/                            (XML/PDF/missing files per work, gitignored)
     → output/resolved_sections/assessment=<id>/ (partitioned by assessment, gitignored)
+    → output/alignement/assessment=<id>/run_id=<run_id>/  (partitioned by assessment/run_id/km/model/temperature/relation/replicate, gitignored)
 ```
 
 The `sparql_url` key in `input/config.yaml` controls the SPARQL backend:
@@ -72,7 +74,7 @@ input/Query_Submessage_ref_GA.csv
 - **Fine-grained config**: `config` is split into `sparql_url`, `assessments_list`, and `analysis_list` targets so unrelated config sections don't cascade invalidation.
 - **Fuseki lifecycle**: started and stopped inside the parquet builders; cleanup is idempotent and handled by `on.exit()`.
 - **Assessment branching**: `assessment` is the branch key, so adding a new assessment only computes the new branch.
-- **Separated materialization**: refs, sections, key_messages, Zotero, and works are all built independently; there is no cached combined `lod_data` object.
+- **Separated materialization**: refs, sections, key_messages, Zotero, works, fulltext, and alignement scores are all built independently; there is no cached combined `lod_data` object.
 - **Parquet databases**: partitioned by assessment only, queried lazily with `arrow::open_dataset()` + `dplyr` verbs, collected into memory only when needed.
 - **SPARQL queries as files**: all three SPARQL queries live in `queries/*.sparql` and are tracked as `format = "file"` targets (`refs_sparql`, `sections_sparql`, `key_messages_sparql`) — editing a query file invalidates only its downstream parquet target.
 - **Legacy QMD caching**: uses `file.exists(fn)` checks. Delete the relevant `.rds` or parquet directory to force recomputation.
@@ -93,6 +95,8 @@ input/Query_Submessage_ref_GA.csv
 | `R/write_sections_parquet.R` | `sections_parquet` | Build DB2 directly into `output/sections/assessment=<id>/` |
 | `R/write_key_messages_parquet.R` | `key_messages_parquet` | Build DB3 directly into `output/key_messages/assessment=<id>/` |
 | `R/resolve_citations.R` | `resolved_sections_parquet` | Replace `(Author, Year)` citations with OpenAlex W-IDs |
+| `R/build_fulltext.R` | `fulltext_files` | Download Grobid XML or PDF for each work in `works_citing`; validates content before writing; pre-flight credit check via `openalexPro::pro_rate_limit_status()`; parallel workers with `future.apply`; writes to `output/fulltext/assessment=<id>/` |
+| `R/build_alignement_parquet.R` | `alignement_run_specs`, `alignement_parquet` | Expand per-run alignment specs, keep unique `run_id` values and KM lists inside each run, and score capped snowball works against each KM with `ellmer::parallel_chat_structured()` |
 
 ### Terminology
 
@@ -114,5 +118,7 @@ input/Query_Submessage_ref_GA.csv
 - `output/works/` — OpenAlex works parquet dataset partitioned by assessment/km/bm
 - `output/snowball/` — snowball parquet datasets: nodes (assessment/km/bm/relation), edges (assessment/km/bm/edge_type), keypaper (assessment/km/bm)
 - `output/works_citing/` — papers citing the seed works, partitioned by assessment/km/bm
+- `output/fulltext/` — per-work Grobid XML (`.xml`), PDF (`.pdf`), or sentinel (`.missing`) files, partitioned by assessment
+- `output/alignement/` — OpenRouter alignment scores, partitioned by assessment/run_id/km/model/temperature/relation/replicate
 - `output/snowballs/` — per-paper snowball `.rds` files (QMD pipeline)
 - `output/nodes/`, `output/edges/` — parquet datasets (QMD pipeline)
