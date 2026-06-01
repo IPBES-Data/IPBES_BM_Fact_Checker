@@ -2,6 +2,12 @@ assessment_ids <- function(config) {
   vapply(config$assessments, `[[`, character(1), "id")
 }
 
+# Per-assessment named-graph IRI. Single point of change if IPBES picks a
+# different convention for the shared SPARQL endpoint.
+assessment_graph_iri <- function(assessment_id) {
+  paste0("http://ontology.ipbes.net/report/", assessment_id)
+}
+
 assessment_index <- function(config, assessment_id) {
   ids <- assessment_ids(config)
   idx <- match(assessment_id, ids)

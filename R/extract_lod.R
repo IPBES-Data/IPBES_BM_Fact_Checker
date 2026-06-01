@@ -30,7 +30,7 @@ extract_refs_from_endpoint <- function(endpoint, assessment_id, sparql_file = "q
   message("Querying SPARQL refs endpoint for ", assessment_id, " ...")
 
   tictoc::tic("  query refs (DB1)")
-  refs_raw <- sparql_query(endpoint, readLines(sparql_file, warn = FALSE) |> paste(collapse = "\n"))
+  refs_raw <- sparql_query(endpoint, read_sparql_query(sparql_file, assessment_id))
   tictoc::toc()
   message("  Refs rows: ", nrow(refs_raw))
 
@@ -57,7 +57,7 @@ extract_sections_from_endpoint <- function(endpoint, assessment_id, sparql_file 
   message("Querying SPARQL sections endpoint for ", assessment_id, " ...")
 
   tictoc::tic("  query sections (DB2)")
-  sections_raw <- sparql_query(endpoint, readLines(sparql_file, warn = FALSE) |> paste(collapse = "\n"))
+  sections_raw <- sparql_query(endpoint, read_sparql_query(sparql_file, assessment_id))
   tictoc::toc()
   message("  Sections rows: ", nrow(sections_raw))
 
@@ -71,7 +71,7 @@ extract_key_messages_from_endpoint <- function(endpoint, assessment_id, sparql_f
   message("Querying SPARQL key/background messages endpoint for ", assessment_id, " ...")
 
   tictoc::tic("  query key/background messages (DB3)")
-  km_raw <- sparql_query(endpoint, readLines(sparql_file, warn = FALSE) |> paste(collapse = "\n"))
+  km_raw <- sparql_query(endpoint, read_sparql_query(sparql_file, assessment_id))
   tictoc::toc()
   message("  Key/Background Message rows: ", nrow(km_raw))
 
@@ -93,6 +93,16 @@ extract_key_messages_from_endpoint <- function(endpoint, assessment_id, sparql_f
       ),
       assessment = assessment_id
     )
+}
+
+read_sparql_query <- function(sparql_file, assessment_id) {
+  query <- readLines(sparql_file, warn = FALSE) |> paste(collapse = "\n")
+  gsub(
+    "%GRAPH_IRI%",
+    assessment_graph_iri(assessment_id),
+    query,
+    fixed = TRUE
+  )
 }
 
 sparql_query <- function(endpoint, query) {

@@ -1,13 +1,17 @@
 # TODOs
-- Multiple AI models comparison
-- Training to think like IPBES???
-- one generation (CONF INTERPRET)
-- not rewrite, but flag.
-- Gaps: Same pipeline, in CONF DATA (the one we have)
-- Users: GA2 Ch 1 authors, IPBES, other assessments
-- use openrouter:
-  - API_openrouter
-  - https://ellmer.tidyverse.org/reference/chat_openrouter.html
+- [ ] Multiple AI models comparison
+- [ ] Training to think like IPBES???
+- [x] one generation (CONF INTERPRET)
+- [ ] not rewrite, but flag.
+- [ ] Gaps: Same pipeline, in CONF DATA (the one we have)
+- [ ] Users: GA2 Ch 1 authors, IPBES, other assessments
+- [x] use openrouter:
+  - [x] API_openrouter
+  - [x] https://ellmer.tidyverse.org/reference/chat_openrouter.html
+- [ ] Change local fuseka serer to one endpoint for ALL assessments.
+
+
+
 
 # Prompt implementation of AI assessment
 

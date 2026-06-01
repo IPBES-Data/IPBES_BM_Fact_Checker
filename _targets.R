@@ -69,7 +69,9 @@ list(
   tar_target(sparql_url, config[["sparql_url"]]),
   tar_target(
     assessments_list,
-    lapply(config[["assessments"]], function(a) a[setdiff(names(a), "full_text")])
+    lapply(config[["assessments"]], function(a) {
+      a[setdiff(names(a), "full_text")]
+    })
   ),
   tar_target(
     assessment,
@@ -98,7 +100,10 @@ list(
     format = "file"
   ),
 
-  # Target 1: Download TTL files to output/LoD/ (cached on disk)
+  # Target 1: Download TTL files to output/LoD/ (cached on disk).
+  # Required when sparql_url == "fuseki" (the TTL is POSTed into the local
+  # Fuseki named graph). For a remote endpoint the file is unused, but the
+  # download is cheap and keeps the parquet builders' map() patterns valid.
   tar_target(
     ttl_path,
     download_ttl(assessment),
@@ -194,58 +199,58 @@ list(
   ),
 
   # Target 3: Resolved sections — (Author, Year) citations → [WID] OpenAlex IDs
-  tar_target(
-    resolved_sections_parquet,
-    resolve_citations(
-      assessment,
-      sections_parquet,
-      works_parquet,
-      zotero_parquet
-    ),
-    pattern = map(assessment, sections_parquet, works_parquet, zotero_parquet),
-    format = "file"
-  ),
+  # tar_target(
+  #   resolved_sections_parquet,
+  #   resolve_citations(
+  #     assessment,
+  #     sections_parquet,
+  #     works_parquet,
+  #     zotero_parquet
+  #   ),
+  #   pattern = map(assessment, sections_parquet, works_parquet, zotero_parquet),
+  #   format = "file"
+  # ),
 
-  # Target 3b: Full-text files (XML preferred, PDF fallback, .missing sentinel)
-  # Only downloaded for assessments with full_text: true in config.
-  # On re-run: upgrades .missing → pdf/xml and .pdf → xml when newly available.
-  tar_target(
-    fulltext_files,
-    build_fulltext(
-      assessment,
-      works_citing_parquet,
-      fulltext_list,
-      output_root = "output/fulltext",
-      workers = 8L
-    ),
-    pattern = map(assessment, works_citing_parquet),
-    format = "file"
-  ),
+  ## Target 3b: Full-text files (XML preferred, PDF fallback, .missing sentinel)
+  ## Only downloaded for assessments with full_text: true in config.
+  ## On re-run: upgrades .missing → pdf/xml and .pdf → xml when newly available.
+  # tar_target(
+  #   fulltext_files,
+  #   build_fulltext(
+  #     assessment,
+  #     works_citing_parquet,
+  #     fulltext_list,
+  #     output_root = "output/fulltext",
+  #     workers = 8L
+  #   ),
+  #   pattern = map(assessment, works_citing_parquet),
+  #   format = "file"
+  # ),
 
-  # Target 4: OpenRouter / ellmer alignment scores for capped snowball works
-  tar_target(
-    alignement_run_specs,
-    build_alignement_run_specs(
-      analysis_list,
-      assessment,
-      snowball_parquet,
-      key_messages_parquet
-    ),
-    iteration = "list"
-  ),
+  # # Target 4: OpenRouter / ellmer alignment scores for capped snowball works
+  # tar_target(
+  #   alignement_run_specs,
+  #   build_alignement_run_specs(
+  #     analysis_list,
+  #     assessment,
+  #     snowball_parquet,
+  #     key_messages_parquet
+  #   ),
+  #   iteration = "list"
+  # ),
 
-  tar_target(
-    alignement_parquet,
-    build_alignement_parquet(
-      alignement_run_specs,
-      alignement_system_prompt_file,
-      alignement_user_prompt_file,
-      output_root = "output/alignement",
-      keypaper_share = 0.2
-    ),
-    pattern = map(alignement_run_specs),
-    format = "file"
-  ),
+  # tar_target(
+  #   alignement_parquet,
+  #   build_alignement_parquet(
+  #     alignement_run_specs,
+  #     alignement_system_prompt_file,
+  #     alignement_user_prompt_file,
+  #     output_root = "output/alignement",
+  #     keypaper_share = 0.2
+  #   ),
+  #   pattern = map(alignement_run_specs),
+  #   format = "file"
+  # ),
 
   # Commented out: render report once QMD is migrated to consume output/refs/ and output/sections/
   # tar_target(

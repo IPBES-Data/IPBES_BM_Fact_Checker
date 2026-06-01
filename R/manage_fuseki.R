@@ -8,28 +8,37 @@ start_fuseki <- function(ttl_path, dataset_name, port = 3030) {
 
   message("Starting Fuseki for ", dataset_name, " on port ", port, " ...")
 
+  # In-memory, updatable dataset so we can POST the TTL into a named graph
+  # matching the shared-endpoint IRI convention. Lets queries that use
+  # `GRAPH <iri>` work identically against local Fuseki and the remote IPBES
+  # endpoint.
   proc <- processx::process$new(
     command = fuseki_bin,
     args = c(
       paste0("--port=", port),
-      paste0("--file=", normalizePath(ttl_path)),
+      "--mem",
+      "--update",
       paste0("/", dataset_name)
     ),
     stdout = tempfile(fileext = ".log"),
     stderr = tempfile(fileext = ".log")
   )
 
-  endpoint <- paste0("http://localhost:", port, "/", dataset_name, "/sparql")
+  base <- paste0("http://localhost:", port, "/", dataset_name)
+  endpoint <- paste0(base, "/sparql")
+  data_endpoint <- paste0(base, "/data")
+  graph_iri <- assessment_graph_iri(dataset_name)
   session_id <- paste0(dataset_name, "@", port)
   assign(session_id, proc, envir = fuseki_process_env)
 
   message("  Waiting for Fuseki to be ready...")
+  ready <- FALSE
   for (i in seq_len(60)) {
     Sys.sleep(1)
     if (!proc$is_alive()) {
       stop("Fuseki process exited unexpectedly during startup")
     }
-    ready <- tryCatch(
+    ok <- tryCatch(
       {
         resp <- httr2::request(endpoint) |>
           httr2::req_url_query(query = "ASK {}") |>
@@ -39,23 +48,48 @@ start_fuseki <- function(ttl_path, dataset_name, port = 3030) {
       },
       error = function(e) FALSE
     )
-    if (ready) {
+    if (ok) {
       message("  Fuseki ready after ", i, "s at ", endpoint)
-      return(list(
-        pid = proc$get_pid(),
-        endpoint = endpoint,
-        port = port,
-        dataset_name = dataset_name,
-        session_id = session_id
-      ))
+      ready <- TRUE
+      break
     }
   }
 
-  if (exists(session_id, envir = fuseki_process_env, inherits = FALSE)) {
-    rm(list = session_id, envir = fuseki_process_env)
+  if (!ready) {
+    if (exists(session_id, envir = fuseki_process_env, inherits = FALSE)) {
+      rm(list = session_id, envir = fuseki_process_env)
+    }
+    try(proc$kill(), silent = TRUE)
+    stop("Fuseki did not become ready within 60 seconds")
   }
-  try(proc$kill(), silent = TRUE)
-  stop("Fuseki did not become ready within 60 seconds")
+
+  message("  Loading ", basename(ttl_path), " into graph <", graph_iri, "> ...")
+  load_resp <- httr2::request(data_endpoint) |>
+    httr2::req_url_query(graph = graph_iri) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers("Content-Type" = "text/turtle; charset=utf-8") |>
+    httr2::req_body_file(normalizePath(ttl_path)) |>
+    httr2::req_error(is_error = \(r) FALSE) |>
+    httr2::req_perform()
+  if (httr2::resp_status(load_resp) >= 300) {
+    try(proc$kill(), silent = TRUE)
+    if (exists(session_id, envir = fuseki_process_env, inherits = FALSE)) {
+      rm(list = session_id, envir = fuseki_process_env)
+    }
+    stop(
+      "Failed to POST TTL into Fuseki graph <", graph_iri, ">: HTTP ",
+      httr2::resp_status(load_resp)
+    )
+  }
+
+  list(
+    pid = proc$get_pid(),
+    endpoint = endpoint,
+    port = port,
+    dataset_name = dataset_name,
+    session_id = session_id,
+    graph_iri = graph_iri
+  )
 }
 
 with_fuseki_session <- function(ttl_path, sparql_url, assessment_id,

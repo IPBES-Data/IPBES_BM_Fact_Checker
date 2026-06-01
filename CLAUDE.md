@@ -20,6 +20,15 @@ See [targets.md](targets.md) for full pipeline documentation.
 
 **System dependency:** `fuseki-server` must be on `PATH` when `sparql_url: fuseki` (default). Install with `brew install fuseki`.
 
+**Credentials:** `_targets.R` reads `API_openalex` and `API_openrouter` from the macOS keyring at startup via `keyring::key_get()`. Set them before running `tar_make()`:
+
+```r
+keyring::key_set("API_openalex")
+keyring::key_set("API_openrouter")
+```
+
+**Currently commented out in `_targets.R`:** `fulltext_files`, `alignement_run_specs`, `alignement_parquet`, and the QMD `report` target. These need their commented blocks restored to run end-to-end.
+
 ### Quarto Report (legacy)
 
 ```bash
@@ -50,12 +59,12 @@ input/config.yaml
 ```
 
 The `sparql_url` key in `input/config.yaml` controls the SPARQL backend:
-- `"fuseki"` — each parquet builder manages a local Fuseki session for the assessment branch on a deterministic port
+- `"fuseki"` — each parquet builder starts an in-memory Fuseki session on a deterministic port and POSTs the assessment's TTL into the named graph returned by `assessment_graph_iri(id)`
 - Any URL — the parquet builders query that endpoint directly; no Fuseki lifecycle needed
 
 Config is split into fine-grained targets (`sparql_url`, `assessments_list`, `analysis_list`) so that adding new config sections or changing one entry does not invalidate other targets. Each top-level config key maps to its own intermediate target.
 
-> **Caveat for remote endpoints:** The SPARQL queries match all `ipbes:KeyMessage` triples regardless of assessment. A shared endpoint holding multiple assessments would return mixed results. Named-graph filtering would be needed — leave as-is until the endpoint structure is known.
+**Per-assessment named graphs:** All three SPARQL queries wrap their patterns in `GRAPH <%GRAPH_IRI%> { ... }`. The placeholder is substituted at query time by `read_sparql_query()` in [R/extract_lod.R](R/extract_lod.R) using `assessment_graph_iri()` from [R/branch_helpers.R](R/branch_helpers.R) (currently `http://ontology.ipbes.net/report/<id>`). The same code path works against local Fuseki (TTL loaded into that graph at startup) and a shared IPBES endpoint hosting all assessments under the same IRI convention — switching backends is just a `sparql_url:` change in [input/config.yaml](input/config.yaml). If IPBES adopts a different convention, edit `assessment_graph_iri()` in one place.
 
 ### Legacy QMD Data Flow
 
@@ -87,16 +96,18 @@ input/Query_Submessage_ref_GA.csv
 | `R/build_snowball_parquet.R` | `snowball_parquet` | Snowball search via `openalexSnowball::pro_snowball()` per km/bm; writes nodes and edges to `output/snowball/` |
 | `R/build_works_citing_parquet.R` | `works_citing_parquet` | Filter snowball nodes to `relation == "citing"`; write to `output/works_citing/` partitioned by assessment/km/bm |
 | `R/download_zotero.R` | `zotero_parquet` | Download Zotero group items to `output/zotero/assessment=<id>/` using refs parquet |
-| `R/download_ttls.R` | `ttl_path` | Download TTL files to `output/LoD/` |
+| `R/download_ttls.R` | `ttl_path` | Download TTL files to `output/LoD/`; SHA-checked against GitHub to skip re-download |
 | `R/manage_fuseki.R` | helpers | Start/stop Fuseki sessions and resolve endpoints |
 | `R/branch_helpers.R` | helpers | Assessment IDs and branch output paths |
+| `R/render_diagrams.R` | `mmd_workflow`, `diagram_workflow`, `pipeline_mmd`, `diagram_pipeline` | Render Mermaid `.mmd` sources to SVG; `build_pipeline_mmd()` auto-generates a TD pipeline diagram from `tar_mermaid()` |
+| `R/alignement_schema.R` | helpers for `alignement_parquet` | `ellmer` structured-output schema for OpenRouter alignment scoring |
 | `R/extract_lod.R` | `refs_parquet`, `sections_parquet`, `key_messages_parquet` | SPARQL extraction helpers; reads queries from `queries/*.sparql` |
 | `R/write_refs_parquet.R` | `refs_parquet` | Build DB1 directly into `output/refs/assessment=<id>/` |
 | `R/write_sections_parquet.R` | `sections_parquet` | Build DB2 directly into `output/sections/assessment=<id>/` |
 | `R/write_key_messages_parquet.R` | `key_messages_parquet` | Build DB3 directly into `output/key_messages/assessment=<id>/` |
 | `R/resolve_citations.R` | `resolved_sections_parquet` | Replace `(Author, Year)` citations with OpenAlex W-IDs |
-| `R/build_fulltext.R` | `fulltext_files` | Download Grobid XML or PDF for each work in `works_citing`; validates content before writing; pre-flight credit check via `openalexPro::pro_rate_limit_status()`; parallel workers with `future.apply`; writes to `output/fulltext/assessment=<id>/` |
-| `R/build_alignement_parquet.R` | `alignement_run_specs`, `alignement_parquet` | Expand per-run alignment specs, keep unique `run_id` values and KM lists inside each run, and score capped snowball works against each KM with `ellmer::parallel_chat_structured()` |
+| `R/build_fulltext.R` | `fulltext_files` *(currently commented out)* | Download Grobid XML or PDF for each work in `works_citing`; gated by per-assessment `full_text:` flag in config (surfaced via the `fulltext_list` target); validates content before writing; pre-flight credit check via `openalexPro::pro_rate_limit_status()`; parallel workers with `future.apply`; writes to `output/fulltext/assessment=<id>/` |
+| `R/build_alignement_parquet.R` | `alignement_run_specs`, `alignement_parquet` *(currently commented out)* | Expand per-run alignment specs, keep unique `run_id` values and KM lists inside each run, and score capped snowball works against each KM with `ellmer::parallel_chat_structured()` |
 
 ### Terminology
 

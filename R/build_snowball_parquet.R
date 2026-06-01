@@ -37,30 +37,32 @@ build_snowball_parquet <- function(assessment, works_path, output_root = "output
       verbose    = FALSE
     )
 
-    nodes <- arrow::open_dataset(file.path(sb_dir, "nodes")) |>
-      dplyr::collect() |>
+    # Stay in Arrow end-to-end: OpenAlex `nodes` carries list/struct columns
+    # (authorships, topics, locations, mesh, ...) that don't round-trip through
+    # an R data.frame — `collect() |> write_dataset()` fails with "Degenerated
+    # data frame". `mutate()` on a Dataset is lazy and works fine.
+    nodes_ds <- arrow::open_dataset(file.path(sb_dir, "nodes")) |>
       dplyr::mutate(assessment = assessment_id, km = km_val, bm = bm_val)
 
-    edges <- arrow::open_dataset(file.path(sb_dir, "edges")) |>
-      dplyr::collect() |>
+    edges_ds <- arrow::open_dataset(file.path(sb_dir, "edges")) |>
       dplyr::mutate(assessment = assessment_id, km = km_val, bm = bm_val)
 
-    keypaper <- arrow::open_dataset(file.path(sb_dir, "keypaper")) |>
-      dplyr::collect() |>
-      dplyr::mutate(assessment = assessment_id, km = km_val, bm = bm_val)
+    # openalexSnowball >= 0.1.1 no longer emits a standalone keypaper directory;
+    # keypapers are inside `nodes` with relation = "keypaper".
+    keypaper_ds <- nodes_ds |> dplyr::filter(relation == "keypaper")
 
     arrow::write_dataset(
-      nodes, nodes_root,
+      nodes_ds, nodes_root,
       partitioning           = c("assessment", "km", "bm", "relation"),
       existing_data_behavior = "delete_matching"
     )
     arrow::write_dataset(
-      edges, edges_root,
+      edges_ds, edges_root,
       partitioning           = c("assessment", "km", "bm", "edge_type"),
       existing_data_behavior = "delete_matching"
     )
     arrow::write_dataset(
-      keypaper, keypaper_root,
+      keypaper_ds, keypaper_root,
       partitioning           = c("assessment", "km", "bm"),
       existing_data_behavior = "delete_matching"
     )

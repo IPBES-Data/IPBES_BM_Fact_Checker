@@ -11,19 +11,21 @@ SELECT DISTINCT ?km_id ?km_label ?km_description
                 ?sm_id ?sm_description
                 ?sm_well_established ?sm_established_incomplete
 WHERE {
-  ?km  a ipbes:KeyMessage ;
-       dcterms:identifier ?km_id ;
-       ipbes:BackgroundMessage ?bm .
-  ?bm  dcterms:identifier ?bm_id ;
-       ipbes:SubMessage ?sm .
-  ?sm  dcterms:identifier ?sm_id .
-  OPTIONAL { ?km skos:prefLabel                ?km_label                 . }
-  OPTIONAL { ?km ipbes:hasDescription          ?km_description           . }
-  OPTIONAL { ?bm skos:prefLabel                ?bm_label                 . }
-  OPTIONAL { ?bm ipbes:hasDescription          ?bm_description           . }
-  OPTIONAL { ?bm ipbes:hasWellestablished      ?bm_well_established      . }
-  OPTIONAL { ?bm ipbes:hasEstablishedIncomplete ?bm_established_incomplete . }
-  OPTIONAL { ?sm ipbes:hasDescription          ?sm_description           . }
-  OPTIONAL { ?sm ipbes:hasWellestablished      ?sm_well_established      . }
-  OPTIONAL { ?sm ipbes:hasEstablishedIncomplete ?sm_established_incomplete . }
+  GRAPH <%GRAPH_IRI%> {
+    ?km  a ipbes:KeyMessage ;
+         dcterms:identifier ?km_id ;
+         ipbes:BackgroundMessage ?bm .
+    ?bm  dcterms:identifier ?bm_id ;
+         ipbes:SubMessage ?sm .
+    ?sm  dcterms:identifier ?sm_id .
+    OPTIONAL { ?km skos:prefLabel                ?km_label                 . }
+    OPTIONAL { ?km ipbes:hasDescription          ?km_description           . }
+    OPTIONAL { ?bm skos:prefLabel                ?bm_label                 . }
+    OPTIONAL { ?bm ipbes:hasDescription          ?bm_description           . }
+    OPTIONAL { ?bm ipbes:hasWellestablished      ?bm_well_established      . }
+    OPTIONAL { ?bm ipbes:hasEstablishedIncomplete ?bm_established_incomplete . }
+    OPTIONAL { ?sm ipbes:hasDescription          ?sm_description           . }
+    OPTIONAL { ?sm ipbes:hasWellestablished      ?sm_well_established      . }
+    OPTIONAL { ?sm ipbes:hasEstablishedIncomplete ?sm_established_incomplete . }
+  }
 }

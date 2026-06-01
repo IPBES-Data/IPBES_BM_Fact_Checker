@@ -2,55 +2,91 @@ flowchart TD
 
   %% Configuration
   config_file@{ shape: doc, label: "Configuration <br><tt>input/config.yaml</tt>" }
-  config_file --> assessment_list["Assessments to process"]
-  assessment_list --> assessment_id["Assessment &lt;id&gt;"]
+  assessment_list@{ shape: rect, label: "Assessments to process" }
+  assessment_id@{ shape: rect, label: "Assessment &lt;id&gt;" }
+
+  config_file --> assessment_list
+  assessment_list --> assessment_id
+  assessment_id --> build_refs
 
   %% LOD Extraction — grouped so the three parallel queries stay in one horizontal band
   subgraph lod["IPBES LOD Extraction"]
-    direction LR
+    direction TB
+
+    %% Nodes
     sparql@{ shape: cloud, label: "IPBES SPARQL" }
-    build_refs["refs<br/>KM → BM → SM → SubChapter ← Reference"]
-    build_sections["sections<br/>KM → BM → SM → SubChapter → Chapter"]
-    build_key_messages["KM/BM text<br/>KM → BM (with descriptions)"]
+    build_refs@{ shape: rect, label: "refs<br/>KM → BM → SM → SubChapter ← Reference" }
+    build_sections@{ shape: rect, label: "sections<br/>KM → BM → SM → SubChapter → Chapter" }
+    build_key_messages@{ shape: rect, label: "KM/BM text<br/>KM → BM (with descriptions)" }
+
+    %% Edges
     sparql <--> build_refs
     sparql <--> build_sections
     sparql <--> build_key_messages
   end
 
-  assessment_id --> build_refs
   assessment_id --> build_sections
   assessment_id --> build_key_messages
 
-  build_refs        --> refs_db@{         shape: lin-cyl, label: "Refs DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
-  build_sections    --> sections_db@{     shape: lin-cyl, label: "Sections DB<br/><tt>output/sections/assessment=&lt;id&gt;/</tt>" }
-  build_key_messages --> key_messages_db@{ shape: lin-cyl, label: "Key/BG Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
+  subgraph data["Retrieve and prepare data"]
+    direction TD
 
-  %% Download spine
-  refs_db --> download_zotero["Download Zotero group items<br/>page by page via Zotero API"]
-  zotero_api@{ shape: cloud, label: "Zotero API" } --> download_zotero
-  download_zotero --> zotero_db@{ shape: lin-cyl, label: "Zotero DB<br/><tt>output/zotero/assessment=&lt;id&gt;/</tt>" }
+    %% Nodes
+    refs_db@{ shape: lin-cyl, label: "Refs DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
+    sections_db@{ shape: lin-cyl, label: "Sections DB<br/><tt>output/sections/assessment=&lt;id&gt;/</tt>" }
+    key_messages_db@{ shape: lin-cyl, label: "Key/BG Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
+    zotero_api@{ shape: cloud, label: "Zotero API" }
+    zotero_db@{ shape: lin-cyl, label: "Zotero DB<br/><tt>output/zotero/assessment=&lt;id&gt;/</tt>" }
+    openalex@{ shape: cloud, label: "OpenAlex API" }
+    works_db@{ shape: lin-cyl, label: "Works DB<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
+    citing_db@{ shape: lin-cyl, label: "Citing Works DB<br/><tt>output/works_citing/...</tt>" }
+    prompts_truth_db@{ shape: lin-cyl, label: "Prompts Truth DB<br/><tt>output/alignement/.../</tt>" }
+    prompts_citing_db@{ shape: lin-cyl, label: "Prompts Citing DB<br/><tt>output/alignement/.../</tt>" }
+    download_zotero@{ shape: rect, label: "Download Zotero group items<br/>page by page via Zotero API" }
+    download_works@{ shape: rect, label: "Query OpenAlex works by DOI<br/>via openalexPro" }
+    snowball@{ shape: rect, label: "Snowball search<br/>keypaper + citing" }
+    prompts_truth@{ shape: rect, label: "Prompt files<br/><tt>input/prompts/*.md</tt>" }
+    prompts_citing@{ shape: rect, label: "Setup Citing works Prompt" }
+    %% analysis_runs["analysis.runs"]
+    %% alignement["Score works vs KM<br/>OpenRouter / ellmer"]
 
-  zotero_db --> download_works["Query OpenAlex works by DOI<br/>via openalexPro"]
-  openalex@{ shape: cloud, label: "OpenAlex API" } --> download_works
-  download_works --> works_db@{ shape: lin-cyl, label: "Works DB<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
+    %% Edges
+    build_refs        --> refs_db
+    build_sections    --> sections_db
+    build_key_messages --> key_messages_db
 
-  %% AI alignment scoring
-  analysis_runs["analysis.runs"]
-  prompts["Prompt files<br/><tt>input/prompts/*.md</tt>"]
-  snowball["Snowball search<br/>keypaper + citing"]
-  alignement["Score works vs KM<br/>OpenRouter / ellmer"]
-  works_db --> snowball
-  key_messages_db --> alignement
-  analysis_runs --> alignement
-  prompts --> alignement
-  snowball --> alignement
-  alignement --> alignement_db@{ shape: lin-cyl, label: "Alignement DB<br/><tt>output/alignement/assessment=&lt;id&gt;/km=&lt;km&gt;/model=&lt;model&gt;/temperature=&lt;temp&gt;/</tt>" }
+    %% Download spine
+    refs_db --> download_zotero
+    zotero_api --> download_zotero
+    download_zotero --> zotero_db
+
+    zotero_db --> download_works
+    openalex <--> download_works
+    download_works --> works_db
+
+    %% AI alignment scoring
+    %% analysis_runs --> prompts_citing
+    works_db --> snowball
+    snowball --> citing_db
+
+    key_messages_db --> prompts_truth
+    works_db --> prompts_truth
+    prompts_truth --> prompts_truth_db
+    sections_db --> prompts_truth
+
+    citing_db --> prompts_citing
+    prompts_citing --> prompts_citing_db
+  end
+
+  subgraph ai_assessment["Assessment of the alignement of the KMs and the Citing Publications"]
+
+  end
 
   %% Resolution
-  works_db    --> resolve_citations["Resolve inline (Author, Year) citations<br/>to OpenAlex W-IDs"]
-  zotero_db   --> resolve_citations
-  sections_db --> resolve_citations
-  resolve_citations --> resolved_sections_db@{ shape: lin-cyl, label: "Resolved Sections DB<br/><tt>output/resolved_sections/assessment=&lt;id&gt;/</tt>" }
+  %% works_db    --> resolve_citations["Resolve inline (Author, Year) citations<br/>to OpenAlex W-IDs"]
+  %% zotero_db   --> resolve_citations
+  %% sections_db --> resolve_citations
+  %% resolve_citations --> resolved_sections_db@{ shape: lin-cyl, label: "Resolved Sections DB<br/><tt>output/resolved_sections/assessment=&lt;id&gt;/</tt>" }
 
   %% Styles
   classDef input_file  fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
@@ -58,9 +94,13 @@ flowchart TD
   classDef database    fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
   classDef processing  fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1px;
   classDef helper      fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
+  classDef disabled    fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px,stroke-dasharray:4 3;
 
   class config_file input_file;
   class assessment_list,assessment_id config;
-  class refs_db,sections_db,key_messages_db,zotero_db,works_db,resolved_sections_db,alignement_db database;
-  class build_refs,build_sections,build_key_messages,download_zotero,download_works,resolve_citations processing;
-  class sparql,zotero_api,openalex,analysis_runs,prompts,snowball,alignement helper;
+  class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db database;
+  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball processing;
+  class sparql,zotero_api,openalex helper;
+  class prompts_truth,prompts_citing,prompts_truth_db,prompts_citing_db disabled;
+
+  style ai_assessment fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-dasharray:4 3;
