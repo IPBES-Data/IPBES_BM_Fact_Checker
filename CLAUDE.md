@@ -53,6 +53,9 @@ input/config.yaml
     → output/snowball/edges/assessment=<id>/km=<km>/bm=<bm>/     (partitioned by assessment/km/bm/edge_type, gitignored)
     → output/snowball/keypaper/assessment=<id>/km=<km>/bm=<bm>/  (partitioned by assessment/km/bm, gitignored)
     → output/works_citing/assessment=<id>/km=<km>/bm=<bm>/       (partitioned by assessment/km/bm, gitignored)
+    → output/prompts/truth/assessment=<id>/                      (one rendered prompt per (KM, BM), gitignored)
+    → output/prompts/citing/assessment=<id>/km=<km>/bm=<bm>/      (one rendered prompt per citing work, gitignored)
+    → output/alignement_scores/assessment=<id>/run_id=<run_id>/   (LLM alignement scores per citing work, gitignored)
     → output/fulltext/assessment=<id>/                            (XML/PDF/missing files per work, gitignored)
     → output/resolved_sections/assessment=<id>/ (partitioned by assessment, gitignored)
     → output/alignement/assessment=<id>/run_id=<run_id>/  (partitioned by assessment/run_id/km/model/temperature/relation/replicate, gitignored)
@@ -106,6 +109,9 @@ input/Query_Submessage_ref_GA.csv
 | `R/write_sections_parquet.R` | `sections_parquet` | Build DB2 directly into `output/sections/assessment=<id>/` |
 | `R/write_key_messages_parquet.R` | `key_messages_parquet` | Build DB3 directly into `output/key_messages/assessment=<id>/` |
 | `R/resolve_citations.R` | `resolved_sections_parquet` | Replace `(Author, Year)` citations with OpenAlex W-IDs |
+| `R/build_prompts_truth_parquet.R` | `prompts_truth_parquet` | Render one "truth document" prompt per `(assessment, KM, BM)` from `input/prompts/truth.md`; aggregates KM/BM/SM text + section content into a parquet at `output/prompts/truth/assessment=<id>/` |
+| `R/build_prompts_citing_parquet.R` | `prompts_citing_parquet` | Render one candidate-paper prompt per row of `works_citing_parquet` from `input/prompts/citing.md`; work-level placeholders only (KM/BM passed as ids). Writes to `output/prompts/citing/assessment=<id>/km=<km>/bm=<bm>/` |
+| `R/build_alignement_scores_parquet.R` | `alignement_scores_run_specs`, `alignement_scores_parquet` | Per `analysis.runs[]` config, score the first `n_citing` (or all, if `0`) citing prompts against the matching truth prompt via OpenRouter / ellmer. Uses shared `(system + truth)` prefix so the provider's automatic prefix caching kicks in. Writes to `output/alignement_scores/assessment=<id>/run_id=<run_id>/` |
 | `R/build_fulltext.R` | `fulltext_files` *(currently commented out)* | Download Grobid XML or PDF for each work in `works_citing`; gated by per-assessment `full_text:` flag in config (surfaced via the `fulltext_list` target); validates content before writing; pre-flight credit check via `openalexPro::pro_rate_limit_status()`; parallel workers with `future.apply`; writes to `output/fulltext/assessment=<id>/` |
 | `R/build_alignement_parquet.R` | `alignement_run_specs`, `alignement_parquet` *(currently commented out)* | Expand per-run alignment specs, keep unique `run_id` values and KM lists inside each run, and score capped snowball works against each KM with `ellmer::parallel_chat_structured()` |
 
@@ -129,6 +135,9 @@ input/Query_Submessage_ref_GA.csv
 - `output/works/` — OpenAlex works parquet dataset partitioned by assessment/km/bm
 - `output/snowball/` — snowball parquet datasets: nodes (assessment/km/bm/relation), edges (assessment/km/bm/edge_type), keypaper (assessment/km/bm)
 - `output/works_citing/` — papers citing the seed works, partitioned by assessment/km/bm
+- `output/prompts/truth/` — rendered truth-document prompts per `(KM, BM)`, partitioned by assessment
+- `output/prompts/citing/` — rendered candidate-paper prompts per citing work, partitioned by assessment/km/bm
+- `output/alignement_scores/` — LLM alignement scores, partitioned by assessment/run_id/km/bm/model/replicate
 - `output/fulltext/` — per-work Grobid XML (`.xml`), PDF (`.pdf`), or sentinel (`.missing`) files, partitioned by assessment
 - `output/alignement/` — OpenRouter alignment scores, partitioned by assessment/run_id/km/model/temperature/relation/replicate
 - `output/snowballs/` — per-paper snowball `.rds` files (QMD pipeline)

@@ -90,13 +90,23 @@ list(
     })
   ),
   tar_target(
-    alignement_system_prompt_file,
+    system_prompt_file,
     "input/prompts/system_prompt.md",
     format = "file"
   ),
   tar_target(
-    alignement_user_prompt_file,
+    prompt_file,
     "input/prompts/prompt.md",
+    format = "file"
+  ),
+  tar_target(
+    truth_prompt_file,
+    "input/prompts/truth.md",
+    format = "file"
+  ),
+  tar_target(
+    citing_prompt_file,
+    "input/prompts/citing.md",
     format = "file"
   ),
 
@@ -198,6 +208,61 @@ list(
     format = "file"
   ),
 
+  # Target 2g: Truth prompts — one rendered prompt per (assessment, KM, BM)
+  # combining KM/BM descriptions, SubMessage text, and section content.
+  tar_target(
+    prompts_truth_parquet,
+    build_prompts_truth_parquet(
+      assessment,
+      key_messages_parquet,
+      sections_parquet,
+      truth_prompt_file,
+      "output/prompts/truth"
+    ),
+    pattern = map(assessment, key_messages_parquet, sections_parquet),
+    format = "file"
+  ),
+
+  # Target 2h: Citing prompts — one rendered prompt per citing work, work-level
+  # info only (KM/BM passed as ids; no key_messages join).
+  tar_target(
+    prompts_citing_parquet,
+    build_prompts_citing_parquet(
+      assessment,
+      works_citing_parquet,
+      citing_prompt_file,
+      "output/prompts/citing"
+    ),
+    pattern = map(assessment, works_citing_parquet),
+    format = "file"
+  ),
+
+  # Target 2i: Alignement run specs — per-run config expanded into a list
+  # of specs (one per analysis.runs[] entry), used to branch the scores target.
+  tar_target(
+    alignement_scores_run_specs,
+    build_alignement_scores_run_specs(
+      analysis_list,
+      assessment,
+      prompts_truth_parquet,
+      prompts_citing_parquet
+    ),
+    iteration = "list"
+  ),
+
+  # Target 2j: Alignement scores — score citing prompts against truth prompts
+  # via OpenRouter / ellmer. One branch per spec.
+  tar_target(
+    alignement_scores_parquet,
+    build_alignement_scores_parquet(
+      alignement_scores_run_specs,
+      system_prompt_file,
+      output_root = "output/alignement_scores"
+    ),
+    pattern = map(alignement_scores_run_specs),
+    format = "file"
+  ),
+
   # Target 3: Resolved sections — (Author, Year) citations → [WID] OpenAlex IDs
   # tar_target(
   #   resolved_sections_parquet,
@@ -243,8 +308,8 @@ list(
   #   alignement_parquet,
   #   build_alignement_parquet(
   #     alignement_run_specs,
-  #     alignement_system_prompt_file,
-  #     alignement_user_prompt_file,
+  #     system_prompt_file,
+  #     prompt_file,
   #     output_root = "output/alignement",
   #     keypaper_share = 0.2
   #   ),

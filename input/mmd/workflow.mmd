@@ -1,3 +1,9 @@
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementStrategy: BRANDES_KOEPF
+---
 flowchart TD
 
   %% Configuration
@@ -40,15 +46,21 @@ flowchart TD
     openalex@{ shape: cloud, label: "OpenAlex API" }
     works_db@{ shape: lin-cyl, label: "Works DB<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
     citing_db@{ shape: lin-cyl, label: "Citing Works DB<br/><tt>output/works_citing/...</tt>" }
-    prompts_truth_db@{ shape: lin-cyl, label: "Prompts Truth DB<br/><tt>output/alignement/.../</tt>" }
-    prompts_citing_db@{ shape: lin-cyl, label: "Prompts Citing DB<br/><tt>output/alignement/.../</tt>" }
+    prompts_truth_db@{ shape: lin-cyl, label: "Prompts Truth DB<br/><tt>output/prompts/truth/.../</tt>" }
+    prompts_citing_db@{ shape: lin-cyl, label: "Prompts Citing DB<br/><tt>output/prompts/citing/.../</tt>" }
     download_zotero@{ shape: rect, label: "Download Zotero group items<br/>page by page via Zotero API" }
     download_works@{ shape: rect, label: "Query OpenAlex works by DOI<br/>via openalexPro" }
     snowball@{ shape: rect, label: "Snowball search<br/>keypaper + citing" }
+    truth_prompt@{ shape: doc, label: "Truth prompt template<br/><tt>input/prompts/truth.md</tt>" }
+    citing_prompt@{ shape: doc, label: "Citing prompt template<br/><tt>input/prompts/citing.md</tt>" }
+
+
     prompts_truth@{ shape: rect, label: "Prompt files<br/><tt>input/prompts/*.md</tt>" }
     prompts_citing@{ shape: rect, label: "Setup Citing works Prompt" }
+    
     %% analysis_runs["analysis.runs"]
     %% alignement["Score works vs KM<br/>OpenRouter / ellmer"]
+
 
     %% Edges
     build_refs        --> refs_db
@@ -70,17 +82,39 @@ flowchart TD
     snowball --> citing_db
 
     key_messages_db --> prompts_truth
-    works_db --> prompts_truth
-    prompts_truth --> prompts_truth_db
+    %% works_db --> prompts_truth
     sections_db --> prompts_truth
+    truth_prompt --> prompts_truth
+    prompts_truth --> prompts_truth_db
 
     citing_db --> prompts_citing
+    citing_prompt --> prompts_citing
     prompts_citing --> prompts_citing_db
+
+
   end
 
   subgraph ai_assessment["Assessment of the alignement of the KMs and the Citing Publications"]
+    direction TB
 
+    %% Nodes
+    system_prompt@{ shape: doc, label: "System prompt<br/><tt>input/prompts/system_prompt.md</tt>" }
+    openrouter@{ shape: cloud, label: "OpenRouter / ellmer" }
+    alignement_scoring@{ shape: rect, label: "Score citing prompts<br/>vs truth (shared prefix cache)" }
+    scores_db@{ shape: lin-cyl, label: "Scores DB<br/><tt>output/alignement_scores/.../</tt>" }
+
+    %% Edges
+    system_prompt --> alignement_scoring
+    openrouter <--> alignement_scoring
+    alignement_scoring --> scores_db
   end
+
+  %% Force `ai_assessment` to sit below `data` (subgraph-to-subgraph edge).
+  %% Made invisible via linkStyle below so it doesn't add visual noise.
+  data --> ai_assessment
+
+  prompts_truth_db --> alignement_scoring
+  prompts_citing_db --> alignement_scoring
 
   %% Resolution
   %% works_db    --> resolve_citations["Resolve inline (Author, Year) citations<br/>to OpenAlex W-IDs"]
@@ -96,11 +130,13 @@ flowchart TD
   classDef helper      fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
   classDef disabled    fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px,stroke-dasharray:4 3;
 
+  %% Hide the data → ai_assessment subgraph-level constraint edge (index 29).
+  %% If you add or remove edges above, bump this index.
+  linkStyle 29 stroke:transparent,fill:none;
+
   class config_file input_file;
   class assessment_list,assessment_id config;
-  class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db database;
-  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball processing;
-  class sparql,zotero_api,openalex helper;
-  class prompts_truth,prompts_citing,prompts_truth_db,prompts_citing_db disabled;
-
-  style ai_assessment fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-dasharray:4 3;
+  class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db,prompts_truth_db,prompts_citing_db,scores_db database;
+  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,prompts_truth,prompts_citing,alignement_scoring processing;
+  class sparql,zotero_api,openalex,openrouter helper;
+  class system_prompt,truth_prompt,citing_prompt input_file;

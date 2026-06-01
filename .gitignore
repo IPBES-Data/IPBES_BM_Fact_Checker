@@ -59,7 +59,9 @@ output/key_messages/*
 output/snowball/*
 output/works_citing/*
 output/fulltext/*
+output/prompts/*
 
 .DS_Store
 
 output/alignement/*
+output/alignement_scores/*

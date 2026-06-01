@@ -17,6 +17,7 @@ assessments:
   #   full_text: false
 
 analysis:
+  # n_citing: number of citing works to score per (KM, BM). 0 = score all.
   - assessment_id: IAS
     runs:
       - run_id: IAS_km_ab
@@ -25,7 +26,7 @@ analysis:
         temperature: 0
         max_active: 8
         replicates: 1
-        max_works: 100
+        n_citing: 100
   - assessment_id: GA1
     runs:
       - run_id: GA1_km_ab
@@ -34,7 +35,7 @@ analysis:
         temperature: 0
         max_active: 8
         replicates: 1
-        max_works: 100
+        n_citing: 100
       # - run_id: GA1_km_a
       #   km: ["A."]
       #   model: "google/gemma-4-31b-it:free"
