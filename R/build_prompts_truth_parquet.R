@@ -1,8 +1,20 @@
+# Build per-(KM, BM) truth prompts as structured JSON.
+#
+# Each row covers one (assessment, KM, BM) pair. The row carries flat metadata
+# at KM/BM level plus a nested `sub_messages` list-column (one entry per SM
+# under the BM); each SM has its own `sources` list-column of (section,
+# subsection, content) rows pulled from the sections parquet via the new `sm`
+# linkage.
+#
+# Why JSON for the prompt string: SubChapter content contains literal `#`
+# characters and other markdown-collision artefacts. Wrapping in markdown
+# breaks the outer structure; JSON treats each source as opaque text. Source
+# cleaning is intentionally out of scope here.
+
 build_prompts_truth_parquet <- function(
   assessment,
   key_messages_parquet,
   sections_parquet,
-  truth_prompt_file,
   output_root = "output/prompts/truth"
 ) {
   assessment_id <- assessment$id
@@ -13,14 +25,20 @@ build_prompts_truth_parquet <- function(
   }
   dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
 
-  template <- load_text_file(truth_prompt_file)
-
-  km_root <- unique(dirname(key_messages_parquet))[[1L]]
+  km_root  <- unique(dirname(key_messages_parquet))[[1L]]
   sec_root <- unique(dirname(sections_parquet))[[1L]]
 
   km_raw <- arrow::open_dataset(km_root) |>
     dplyr::filter(assessment == assessment_id) |>
     dplyr::collect()
+
+  sec_raw <- arrow::open_dataset(sec_root) |>
+    dplyr::filter(assessment == assessment_id) |>
+    dplyr::select(km, bm, sm, section, subsection, content) |>
+    dplyr::distinct() |>
+    dplyr::collect() |>
+    dplyr::mutate(content = trimws(na_to_blank(content))) |>
+    dplyr::filter(nzchar(content))
 
   km_bm <- km_raw |>
     dplyr::select(
@@ -28,78 +46,92 @@ build_prompts_truth_parquet <- function(
       bm, bm_label, bm_description,
       bm_well_established, bm_established_incomplete
     ) |>
-    dplyr::distinct()
-
-  sm_text <- km_raw |>
-    dplyr::select(km, bm, sm_id, sm_description) |>
     dplyr::distinct() |>
-    dplyr::filter(!is.na(sm_id) | !is.na(sm_description)) |>
-    dplyr::mutate(
-      sm_line = paste0(
-        "- ",
-        ifelse(is.na(sm_id), "", paste0(sm_id, ": ")),
-        ifelse(is.na(sm_description), "", sm_description)
-      )
-    ) |>
-    dplyr::group_by(km, bm) |>
-    dplyr::summarise(
-      sm_descriptions = paste(sm_line, collapse = "\n"),
-      .groups = "drop"
-    )
+    dplyr::arrange(km, bm)
 
-  section_text <- arrow::open_dataset(sec_root) |>
-    dplyr::filter(assessment == assessment_id) |>
-    dplyr::select(km, bm, section, subsection, content) |>
+  sm_meta <- km_raw |>
+    dplyr::select(
+      km, bm, sm_id, sm_description,
+      sm_well_established, sm_established_incomplete
+    ) |>
     dplyr::distinct() |>
-    dplyr::collect() |>
-    dplyr::filter(!is.na(content) & nzchar(content)) |>
-    dplyr::mutate(
-      block = paste0(
-        "### ",
-        ifelse(is.na(subsection), "(section)", subsection),
-        if_else_section_label(section),
-        "\n\n",
-        content
-      )
-    ) |>
-    dplyr::group_by(km, bm) |>
-    dplyr::summarise(
-      section_content = paste(block, collapse = "\n\n"),
-      .groups = "drop"
-    )
+    dplyr::filter(!is.na(sm_id))
 
-  joined <- km_bm |>
-    dplyr::left_join(sm_text, by = c("km", "bm")) |>
-    dplyr::left_join(section_text, by = c("km", "bm"))
+  # Build per-(km, bm) nested sub_messages structures and the matching JSON.
+  build_one <- function(i) {
+    bm_row <- km_bm[i, , drop = FALSE]
+    sm_rows <- sm_meta |>
+      dplyr::filter(km == bm_row$km, bm == bm_row$bm) |>
+      dplyr::arrange(sm_id)
 
-  prompts <- vapply(
-    seq_len(nrow(joined)),
-    function(i) {
-      row <- joined[i, , drop = FALSE]
-      render_template(
-        template,
-        list(
-          ASSESSMENT_ID             = assessment_id,
-          KM_ID                     = na_to_blank(row$km),
-          KM_LABEL                  = na_to_blank(row$km_label),
-          KM_DESCRIPTION            = na_to_blank(row$km_description),
-          BM_ID                     = na_to_blank(row$bm),
-          BM_LABEL                  = na_to_blank(row$bm_label),
-          BM_DESCRIPTION            = na_to_blank(row$bm_description),
-          BM_WELL_ESTABLISHED       = na_to_blank(row$bm_well_established),
-          BM_ESTABLISHED_INCOMPLETE = na_to_blank(row$bm_established_incomplete),
-          SM_DESCRIPTIONS           = na_to_blank(row$sm_descriptions),
-          SECTION_CONTENT           = na_to_blank(row$section_content)
+    sources_for <- function(sm_value) {
+      sec_raw |>
+        dplyr::filter(km == bm_row$km, bm == bm_row$bm, sm == sm_value) |>
+        dplyr::select(section, subsection, content) |>
+        dplyr::arrange(section, subsection)
+    }
+
+    sub_messages <- if (nrow(sm_rows)) {
+      sm_rows |>
+        dplyr::mutate(
+          sources = lapply(sm_id, sources_for)
+        ) |>
+        dplyr::select(
+          sm_id, sm_description,
+          sm_well_established, sm_established_incomplete,
+          sources
         )
+    } else {
+      dplyr::tibble(
+        sm_id                     = character(0),
+        sm_description            = character(0),
+        sm_well_established       = character(0),
+        sm_established_incomplete = character(0),
+        sources                   = list()
       )
-    },
-    character(1)
-  )
+    }
 
-  out <- joined |>
+    payload <- list(
+      assessment                = assessment_id,
+      km                        = bm_row$km,
+      km_label                  = na_to_null(bm_row$km_label),
+      km_description            = na_to_null(bm_row$km_description),
+      bm                        = bm_row$bm,
+      bm_label                  = na_to_null(bm_row$bm_label),
+      bm_description            = na_to_null(bm_row$bm_description),
+      bm_well_established       = na_to_null(bm_row$bm_well_established),
+      bm_established_incomplete = na_to_null(bm_row$bm_established_incomplete),
+      sub_messages              = lapply(seq_len(nrow(sub_messages)), function(j) {
+        sm <- sub_messages[j, , drop = FALSE]
+        list(
+          sm_id                     = sm$sm_id,
+          sm_description            = na_to_null(sm$sm_description),
+          sm_well_established       = na_to_null(sm$sm_well_established),
+          sm_established_incomplete = na_to_null(sm$sm_established_incomplete),
+          sources                   = lapply(seq_len(nrow(sm$sources[[1]])), function(k) {
+            s <- sm$sources[[1]][k, , drop = FALSE]
+            list(
+              section    = na_to_null(s$section),
+              subsection = na_to_null(s$subsection),
+              content    = s$content
+            )
+          })
+        )
+      })
+    )
+
+    prompt <- jsonlite::toJSON(payload, auto_unbox = TRUE, null = "null", na = "null")
+
+    list(sub_messages = sub_messages, prompt = as.character(prompt))
+  }
+
+  built <- lapply(seq_len(nrow(km_bm)), build_one)
+
+  out <- km_bm |>
     dplyr::mutate(
-      assessment = assessment_id,
-      prompt     = prompts
+      assessment   = assessment_id,
+      sub_messages = lapply(built, `[[`, "sub_messages"),
+      prompt       = vapply(built, `[[`, character(1), "prompt")
     )
 
   arrow::write_dataset(
@@ -113,14 +145,15 @@ build_prompts_truth_parquet <- function(
   output_path
 }
 
-# Tiny helpers — kept local because they don't fit cleanly anywhere else and
-# aren't reused outside the truth-prompt builder.
+# Small helpers — local because they only fit this builder.
 
 na_to_blank <- function(x) {
   x <- as.character(x)
   ifelse(is.na(x), "", x)
 }
 
-if_else_section_label <- function(section) {
-  ifelse(is.na(section) | !nzchar(section), "", paste0(" (section ", section, ")"))
+# Used for JSON payloads: NA should serialize to `null`, not "" or "NA".
+na_to_null <- function(x) {
+  if (length(x) != 1L) return(x)
+  if (is.na(x)) NULL else as.character(x)
 }

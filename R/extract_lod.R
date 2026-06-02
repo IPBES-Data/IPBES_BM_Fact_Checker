@@ -62,7 +62,7 @@ extract_sections_from_endpoint <- function(endpoint, assessment_id, sparql_file 
   message("  Sections rows: ", nrow(sections_raw))
 
   sections_raw |>
-    dplyr::rename(km = km_id, bm = bm_id,
+    dplyr::rename(km = km_id, bm = bm_id, sm = sm_id,
                   section = section_id, subsection = subsection_id) |>
     dplyr::mutate(assessment = assessment_id)
 }

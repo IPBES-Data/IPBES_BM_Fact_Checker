@@ -20,10 +20,10 @@ flowchart TD
     direction TB
 
     %% Nodes
-    sparql@{ shape: cloud, label: "IPBES SPARQL" }
-    build_refs@{ shape: rect, label: "refs<br/>KM → BM → SM → SubChapter ← Reference" }
-    build_sections@{ shape: rect, label: "sections<br/>KM → BM → SM → SubChapter → Chapter" }
-    build_key_messages@{ shape: rect, label: "KM/BM text<br/>KM → BM (with descriptions)" }
+    sparql@{ shape: cloud, label: "IPBES SPARQL endpoint" }
+    build_refs@{ shape: rect, label: "Extract references<br/>KM → BM → SM → SubChapter ← Reference" }
+    build_sections@{ shape: rect, label: "Extract section content<br/>KM → BM → SM → SubChapter → Chapter" }
+    build_key_messages@{ shape: rect, label: "Extract Key/Background Messages<br/>KM → BM (with descriptions)" }
 
     %% Edges
     sparql <--> build_refs
@@ -38,28 +38,22 @@ flowchart TD
     direction TD
 
     %% Nodes
-    refs_db@{ shape: lin-cyl, label: "Refs DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
+    refs_db@{ shape: lin-cyl, label: "References DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
     sections_db@{ shape: lin-cyl, label: "Sections DB<br/><tt>output/sections/assessment=&lt;id&gt;/</tt>" }
-    key_messages_db@{ shape: lin-cyl, label: "Key/BG Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
+    key_messages_db@{ shape: lin-cyl, label: "Key + Background Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
     zotero_api@{ shape: cloud, label: "Zotero API" }
     zotero_db@{ shape: lin-cyl, label: "Zotero DB<br/><tt>output/zotero/assessment=&lt;id&gt;/</tt>" }
     openalex@{ shape: cloud, label: "OpenAlex API" }
-    works_db@{ shape: lin-cyl, label: "Works DB<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
-    citing_db@{ shape: lin-cyl, label: "Citing Works DB<br/><tt>output/works_citing/...</tt>" }
-    prompts_truth_db@{ shape: lin-cyl, label: "Prompts Truth DB<br/><tt>output/prompts/truth/.../</tt>" }
-    prompts_citing_db@{ shape: lin-cyl, label: "Prompts Citing DB<br/><tt>output/prompts/citing/.../</tt>" }
+    works_db@{ shape: lin-cyl, label: "OpenAlex Works DB<br/><tt>output/works/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    citing_db@{ shape: lin-cyl, label: "Citing Works DB<br/><tt>output/works_citing/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    prompts_truth_db@{ shape: lin-cyl, label: "Truth Prompts DB<br/><tt>output/prompts/truth/assessment=&lt;id&gt;/</tt>" }
+    prompts_citing_db@{ shape: lin-cyl, label: "Citing Prompts DB<br/><tt>output/prompts/citing/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
     download_zotero@{ shape: rect, label: "Download Zotero group items<br/>page by page via Zotero API" }
     download_works@{ shape: rect, label: "Query OpenAlex works by DOI<br/>via openalexPro" }
     snowball@{ shape: rect, label: "Snowball search<br/>keypaper + citing" }
-    truth_prompt@{ shape: doc, label: "Truth prompt template<br/><tt>input/prompts/truth.md</tt>" }
-    citing_prompt@{ shape: doc, label: "Citing prompt template<br/><tt>input/prompts/citing.md</tt>" }
 
-
-    prompts_truth@{ shape: rect, label: "Prompt files<br/><tt>input/prompts/*.md</tt>" }
-    prompts_citing@{ shape: rect, label: "Setup Citing works Prompt" }
-    
-    %% analysis_runs["analysis.runs"]
-    %% alignement["Score works vs KM<br/>OpenRouter / ellmer"]
+    prompts_truth@{ shape: rect, label: "Build truth prompts (JSON)<br/>one per KM/BM" }
+    prompts_citing@{ shape: rect, label: "Build citing prompts (JSON)<br/>one per citing work" }
 
 
     %% Edges
@@ -77,18 +71,15 @@ flowchart TD
     download_works --> works_db
 
     %% AI alignment scoring
-    %% analysis_runs --> prompts_citing
     works_db --> snowball
     snowball --> citing_db
 
     key_messages_db --> prompts_truth
     %% works_db --> prompts_truth
     sections_db --> prompts_truth
-    truth_prompt --> prompts_truth
     prompts_truth --> prompts_truth_db
 
     citing_db --> prompts_citing
-    citing_prompt --> prompts_citing
     prompts_citing --> prompts_citing_db
 
 
@@ -99,12 +90,16 @@ flowchart TD
 
     %% Nodes
     system_prompt@{ shape: doc, label: "System prompt<br/><tt>input/prompts/system_prompt.md</tt>" }
-    openrouter@{ shape: cloud, label: "OpenRouter / ellmer" }
-    alignement_scoring@{ shape: rect, label: "Score citing prompts<br/>vs truth (shared prefix cache)" }
-    scores_db@{ shape: lin-cyl, label: "Scores DB<br/><tt>output/alignement_scores/.../</tt>" }
+    truth_wrapper@{ shape: doc, label: "Truth prompt wrapper<br/><tt>input/prompts/truth_wrapper.md</tt>" }
+    citing_wrapper@{ shape: doc, label: "Citing prompt wrapper<br/><tt>input/prompts/citing_wrapper.md</tt>" }
+    openrouter@{ shape: cloud, label: "OpenRouter LLM API" }
+    alignement_scoring@{ shape: rect, label: "Score citing prompts vs truth<br/>(shared prefix cache)" }
+    scores_db@{ shape: lin-cyl, label: "Alignement Scores DB<br/><tt>output/alignement_scores/assessment=&lt;id&gt;/run_id=&lt;run_id&gt;/</tt>" }
 
     %% Edges
     system_prompt --> alignement_scoring
+    truth_wrapper --> alignement_scoring
+    citing_wrapper --> alignement_scoring
     openrouter <--> alignement_scoring
     alignement_scoring --> scores_db
   end
@@ -139,4 +134,4 @@ flowchart TD
   class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db,prompts_truth_db,prompts_citing_db,scores_db database;
   class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,prompts_truth,prompts_citing,alignement_scoring processing;
   class sparql,zotero_api,openalex,openrouter helper;
-  class system_prompt,truth_prompt,citing_prompt input_file;
+  class system_prompt,truth_wrapper,citing_wrapper input_file;

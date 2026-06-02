@@ -1,7 +1,6 @@
 build_prompts_citing_parquet <- function(
   assessment,
   works_citing_parquet,
-  citing_prompt_file,
   output_root = "output/prompts/citing"
 ) {
   assessment_id <- assessment$id
@@ -13,15 +12,14 @@ build_prompts_citing_parquet <- function(
   dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 
-  template <- load_text_file(citing_prompt_file)
-
   # works_citing_parquet is `output/works_citing/assessment=<id>` (per-branch).
   # Schemas can differ across km/bm parquet files, so iterate file-by-file.
+  # We also write each (km, bm) partition as soon as it's built — keeping only
+  # one partition in memory at a time, instead of accumulating the whole
+  # assessment (~hundreds of MB to GB for the larger assessments).
   km_dirs <- list.dirs(works_citing_parquet, recursive = FALSE)
-
   scalar_cols <- c("id", "doi", "title", "abstract", "publication_year")
-
-  rows_acc <- list()
+  wrote_any <- FALSE
 
   for (km_dir in km_dirs) {
     km_val <- sub("^km=", "", basename(km_dir))
@@ -36,13 +34,14 @@ build_prompts_citing_parquet <- function(
         works |>
           dplyr::select(dplyr::any_of(scalar_cols)) |>
           dplyr::mutate(
-            assessment      = assessment_id,
-            km              = km_val,
-            bm              = bm_val,
-            relation        = "citing"
+            assessment = assessment_id,
+            km         = km_val,
+            bm         = bm_val,
+            relation   = "citing"
           )
       })
       partition <- dplyr::bind_rows(partition_rows)
+      rm(partition_rows)
 
       if (!nrow(partition)) next
 
@@ -59,50 +58,55 @@ build_prompts_citing_parquet <- function(
         ) |>
         dplyr::rename(work_id = id)
 
+      # JSON payload per row. The `prompt` column is the LLM-facing string;
+      # the scalar columns alongside it stay for slicing without re-parsing.
       partition$prompt <- vapply(
         seq_len(nrow(partition)),
         function(i) {
           row <- partition[i, , drop = FALSE]
-          render_template(
-            template,
-            list(
-              ASSESSMENT_ID          = assessment_id,
-              KM_ID                  = km_val,
-              BM_ID                  = bm_val,
-              WORK_ID                = na_to_blank(row$work_id),
-              WORK_DOI               = na_to_blank(row$doi),
-              WORK_PUBLICATION_YEAR  = na_to_blank(row$publication_year),
-              WORK_TITLE             = na_to_blank(row$title),
-              WORK_ABSTRACT          = na_to_blank(row$abstract),
-              WORK_RELATION          = "citing"
-            )
+          payload <- list(
+            assessment       = assessment_id,
+            km               = km_val,
+            bm               = bm_val,
+            work_id          = na_to_null(row$work_id),
+            doi              = na_to_null(row$doi),
+            publication_year = if (is.na(row$publication_year)) NULL else as.integer(row$publication_year),
+            relation         = "citing",
+            title            = na_to_null(row$title),
+            abstract         = na_to_null(row$abstract)
           )
+          as.character(jsonlite::toJSON(
+            payload, auto_unbox = TRUE, null = "null", na = "null"
+          ))
         },
         character(1)
       )
 
-      rows_acc[[length(rows_acc) + 1L]] <- partition
+      partition <- partition |>
+        dplyr::select(
+          assessment, km, bm,
+          work_id, doi, title, abstract, publication_year, relation,
+          prompt
+        )
+
+      # The branch dir was unlinked at the start, so no collisions are expected.
+      # `overwrite` is the cheapest option for arrow (no pre-scan to identify
+      # matching files like `delete_matching` does).
+      arrow::write_dataset(
+        dataset = partition,
+        path = output_root,
+        format = "parquet",
+        partitioning = c("assessment", "km", "bm"),
+        existing_data_behavior = "overwrite"
+      )
+      wrote_any <- TRUE
+      rm(partition)
     }
   }
 
-  if (!length(rows_acc)) {
+  if (!wrote_any) {
     return(output_path)
   }
-
-  out <- dplyr::bind_rows(rows_acc) |>
-    dplyr::select(
-      assessment, km, bm,
-      work_id, doi, title, abstract, publication_year, relation,
-      prompt
-    )
-
-  arrow::write_dataset(
-    dataset = out,
-    path = output_root,
-    format = "parquet",
-    partitioning = c("assessment", "km", "bm"),
-    existing_data_behavior = "delete_matching"
-  )
 
   output_path
 }

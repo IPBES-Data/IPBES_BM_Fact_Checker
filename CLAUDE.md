@@ -27,7 +27,7 @@ keyring::key_set("API_openalex")
 keyring::key_set("API_openrouter")
 ```
 
-**Currently commented out in `_targets.R`:** `fulltext_files`, `alignement_run_specs`, `alignement_parquet`, and the QMD `report` target. These need their commented blocks restored to run end-to-end.
+**Not wired into `_targets.R` (source files exist but no active target):** `R/build_fulltext.R`, `R/build_alignement_parquet.R`, `R/resolve_citations.R`. Their corresponding outputs (`output/fulltext/`, `output/alignement/`, `output/resolved_sections/`) are no longer produced by the live pipeline. The only deliberately commented-out target in `_targets.R` is the QMD `report` block at the bottom.
 
 ### Quarto Report (legacy)
 
@@ -53,12 +53,12 @@ input/config.yaml
     → output/snowball/edges/assessment=<id>/km=<km>/bm=<bm>/     (partitioned by assessment/km/bm/edge_type, gitignored)
     → output/snowball/keypaper/assessment=<id>/km=<km>/bm=<bm>/  (partitioned by assessment/km/bm, gitignored)
     → output/works_citing/assessment=<id>/km=<km>/bm=<bm>/       (partitioned by assessment/km/bm, gitignored)
-    → output/prompts/truth/assessment=<id>/                      (one rendered prompt per (KM, BM), gitignored)
-    → output/prompts/citing/assessment=<id>/km=<km>/bm=<bm>/      (one rendered prompt per citing work, gitignored)
-    → output/alignement_scores/assessment=<id>/run_id=<run_id>/   (LLM alignement scores per citing work, gitignored)
-    → output/fulltext/assessment=<id>/                            (XML/PDF/missing files per work, gitignored)
-    → output/resolved_sections/assessment=<id>/ (partitioned by assessment, gitignored)
-    → output/alignement/assessment=<id>/run_id=<run_id>/  (partitioned by assessment/run_id/km/model/temperature/relation/replicate, gitignored)
+    → output/prompts/truth/assessment=<id>/                      (one structured-JSON truth doc per (KM, BM), gitignored)
+    → output/prompts/citing/assessment=<id>/km=<km>/bm=<bm>/     (one structured-JSON candidate prompt per citing work, gitignored)
+    → output/alignement_scores/assessment=<id>/run_id=<run_id>/  (LLM alignement scores per citing work, gitignored)
+
+# Not currently produced (orphaned source files in R/, gitignored outputs may hold stale data):
+#   output/fulltext/, output/resolved_sections/, output/alignement/
 ```
 
 The `sparql_url` key in `input/config.yaml` controls the SPARQL backend:
@@ -86,7 +86,7 @@ input/Query_Submessage_ref_GA.csv
 - **Fine-grained config**: `config` is split into `sparql_url`, `assessments_list`, and `analysis_list` targets so unrelated config sections don't cascade invalidation.
 - **Fuseki lifecycle**: started and stopped inside the parquet builders; cleanup is idempotent and handled by `on.exit()`.
 - **Assessment branching**: `assessment` is the branch key, so adding a new assessment only computes the new branch.
-- **Separated materialization**: refs, sections, key_messages, Zotero, works, fulltext, and alignement scores are all built independently; there is no cached combined `lod_data` object.
+- **Separated materialization**: refs, sections, key_messages, Zotero, works, snowball, works_citing, prompts (truth/citing), and alignement scores are all built independently; there is no cached combined `lod_data` object.
 - **Parquet databases**: partitioned by assessment only, queried lazily with `arrow::open_dataset()` + `dplyr` verbs, collected into memory only when needed.
 - **SPARQL queries as files**: all three SPARQL queries live in `queries/*.sparql` and are tracked as `format = "file"` targets (`refs_sparql`, `sections_sparql`, `key_messages_sparql`) — editing a query file invalidates only its downstream parquet target.
 - **Legacy QMD caching**: uses `file.exists(fn)` checks. Delete the relevant `.rds` or parquet directory to force recomputation.
@@ -103,17 +103,17 @@ input/Query_Submessage_ref_GA.csv
 | `R/manage_fuseki.R` | helpers | Start/stop Fuseki sessions and resolve endpoints |
 | `R/branch_helpers.R` | helpers | Assessment IDs and branch output paths |
 | `R/render_diagrams.R` | `mmd_workflow`, `diagram_workflow`, `pipeline_mmd`, `diagram_pipeline` | Render Mermaid `.mmd` sources to SVG; `build_pipeline_mmd()` auto-generates a TD pipeline diagram from `tar_mermaid()` |
-| `R/alignement_schema.R` | helpers for `alignement_parquet` | `ellmer` structured-output schema for OpenRouter alignment scoring |
+| `R/alignement_schema.R` | helpers for `alignement_scores_parquet` | `ellmer` structured-output schema for OpenRouter alignment scoring |
 | `R/extract_lod.R` | `refs_parquet`, `sections_parquet`, `key_messages_parquet` | SPARQL extraction helpers; reads queries from `queries/*.sparql` |
 | `R/write_refs_parquet.R` | `refs_parquet` | Build DB1 directly into `output/refs/assessment=<id>/` |
 | `R/write_sections_parquet.R` | `sections_parquet` | Build DB2 directly into `output/sections/assessment=<id>/` |
 | `R/write_key_messages_parquet.R` | `key_messages_parquet` | Build DB3 directly into `output/key_messages/assessment=<id>/` |
-| `R/resolve_citations.R` | `resolved_sections_parquet` | Replace `(Author, Year)` citations with OpenAlex W-IDs |
-| `R/build_prompts_truth_parquet.R` | `prompts_truth_parquet` | Render one "truth document" prompt per `(assessment, KM, BM)` from `input/prompts/truth.md`; aggregates KM/BM/SM text + section content into a parquet at `output/prompts/truth/assessment=<id>/` |
-| `R/build_prompts_citing_parquet.R` | `prompts_citing_parquet` | Render one candidate-paper prompt per row of `works_citing_parquet` from `input/prompts/citing.md`; work-level placeholders only (KM/BM passed as ids). Writes to `output/prompts/citing/assessment=<id>/km=<km>/bm=<bm>/` |
+| `R/resolve_citations.R` | *(orphaned — no active target)* | Replace `(Author, Year)` citations with OpenAlex W-IDs; legacy `resolved_sections_parquet` builder, no longer wired in `_targets.R` |
+| `R/build_prompts_truth_parquet.R` | `prompts_truth_parquet` | One structured-JSON truth doc per `(assessment, KM, BM)`. Each row has a nested `sub_messages` list-of-struct column (per-SM metadata + per-SM `sources` list with `section`/`subsection`/`content`) plus a `prompt` column that serialises the same payload as JSON for the LLM. Writes to `output/prompts/truth/assessment=<id>/` |
+| `R/build_prompts_citing_parquet.R` | `prompts_citing_parquet` | One structured-JSON candidate prompt per row of `works_citing_parquet`. Flat payload (assessment, km, bm, work_id, doi, publication_year, title, abstract, relation) serialised to JSON in the `prompt` column. Iterates per-km/bm parquet to dodge OpenAlex schema mismatches. Writes to `output/prompts/citing/assessment=<id>/km=<km>/bm=<bm>/` |
 | `R/build_alignement_scores_parquet.R` | `alignement_scores_run_specs`, `alignement_scores_parquet` | Per `analysis.runs[]` config, score the first `n_citing` (or all, if `0`) citing prompts against the matching truth prompt via OpenRouter / ellmer. Uses shared `(system + truth)` prefix so the provider's automatic prefix caching kicks in. Writes to `output/alignement_scores/assessment=<id>/run_id=<run_id>/` |
-| `R/build_fulltext.R` | `fulltext_files` *(currently commented out)* | Download Grobid XML or PDF for each work in `works_citing`; gated by per-assessment `full_text:` flag in config (surfaced via the `fulltext_list` target); validates content before writing; pre-flight credit check via `openalexPro::pro_rate_limit_status()`; parallel workers with `future.apply`; writes to `output/fulltext/assessment=<id>/` |
-| `R/build_alignement_parquet.R` | `alignement_run_specs`, `alignement_parquet` *(currently commented out)* | Expand per-run alignment specs, keep unique `run_id` values and KM lists inside each run, and score capped snowball works against each KM with `ellmer::parallel_chat_structured()` |
+| `R/build_fulltext.R` | *(orphaned — no active target)* | Download Grobid XML or PDF for each work in `works_citing`; legacy `fulltext_files` builder, no longer wired in `_targets.R` |
+| `R/build_alignement_parquet.R` | *(orphaned — no active target)* | Legacy single-pass scoring builder superseded by `build_alignement_scores_parquet.R`; kept for side-by-side reference |
 
 ### Terminology
 
@@ -128,7 +128,7 @@ input/Query_Submessage_ref_GA.csv
 
 - `output/LoD/` — cached TTL files
 - `output/refs/` — DB1 parquet (refs with Zotero group/key citations)
-- `output/sections/` — DB2 parquet (section content)
+- `output/sections/` — DB2 parquet (section content; now includes `sm` column linking each SubChapter to the SubMessage that references it)
 - `output/key_messages/` — DB3 parquet (KM, BM, and SM descriptive text with confidence flags)
 - `output/resolved_sections/` — sections with `(Author, Year)` replaced by OpenAlex W-IDs
 - `output/zotero/` — Zotero parquet dataset partitioned by assessment/group id/page
@@ -138,7 +138,8 @@ input/Query_Submessage_ref_GA.csv
 - `output/prompts/truth/` — rendered truth-document prompts per `(KM, BM)`, partitioned by assessment
 - `output/prompts/citing/` — rendered candidate-paper prompts per citing work, partitioned by assessment/km/bm
 - `output/alignement_scores/` — LLM alignement scores, partitioned by assessment/run_id/km/bm/model/replicate
-- `output/fulltext/` — per-work Grobid XML (`.xml`), PDF (`.pdf`), or sentinel (`.missing`) files, partitioned by assessment
-- `output/alignement/` — OpenRouter alignment scores, partitioned by assessment/run_id/km/model/temperature/relation/replicate
+- `output/fulltext/` — *(no longer produced; gitignored to keep stale dirs out of commits)* per-work Grobid XML/PDF/sentinel files from the orphaned `build_fulltext.R`
+- `output/resolved_sections/` — *(no longer produced)* sections with `(Author, Year)` replaced by OpenAlex W-IDs from the orphaned `resolve_citations.R`
+- `output/alignement/` — *(no longer produced)* scores from the legacy `build_alignement_parquet.R`; superseded by `output/alignement_scores/`
 - `output/snowballs/` — per-paper snowball `.rds` files (QMD pipeline)
 - `output/nodes/`, `output/edges/` — parquet datasets (QMD pipeline)

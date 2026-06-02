@@ -114,6 +114,8 @@ sample_citing_prompts <- function(prompts_citing_path, assessment_id, km_val,
 build_alignement_scores_parquet <- function(
   run_spec,
   system_prompt_file,
+  truth_wrapper_file,
+  citing_wrapper_file,
   output_root = "output/alignement_scores"
 ) {
   api_key <- Sys.getenv("API_openrouter")
@@ -135,7 +137,9 @@ build_alignement_scores_parquet <- function(
     stop("Alignment scores run spec is missing km values")
   }
 
-  system_prompt <- load_text_file(system_prompt_file)
+  system_prompt  <- load_text_file(system_prompt_file)
+  truth_wrapper  <- load_text_file(truth_wrapper_file)
+  citing_wrapper <- load_text_file(citing_wrapper_file)
 
   branch_dir <- alignement_branch_dir(output_root, spec$assessment_id, spec$run_id)
   if (file.exists(branch_dir)) {
@@ -217,12 +221,15 @@ build_alignement_scores_parquet <- function(
         spec$temperature, replicate_id, spec$replicates, n_cands
       ))
 
-      # Build user prompts: truth document first (identical across candidates →
-      # automatic prefix caching by the provider), then a separator, then the
-      # per-candidate prompt.
+      # Build user prompts. The cached prefix per (KM, BM) is:
+      #   truth_wrapper + truth_json + citing_wrapper
+      # The only variable suffix per call is citing_json. Provider-side
+      # automatic prefix caching kicks in on identical prefixes.
+      cached_prefix <- paste(truth_wrapper, truth_prompt, citing_wrapper,
+                             sep = "\n\n")
       user_prompts <- vapply(
         candidates$prompt,
-        function(citing) paste(truth_prompt, "---", citing, sep = "\n\n"),
+        function(citing) paste(cached_prefix, citing, sep = "\n\n"),
         character(1),
         USE.NAMES = FALSE
       )

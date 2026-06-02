@@ -4,20 +4,32 @@
 - [x] one generation (CONF INTERPRET)
 - [ ] not rewrite, but flag.
 - [ ] Gaps: Same pipeline, in CONF DATA (the one we have)
-- [ ] Users: GA2 Ch 1 authors, IPBES, other assessments
+- [x] Users: GA2 Ch 1 authors, IPBES, other assessments
 - [x] use openrouter:
   - [x] API_openrouter
   - [x] https://ellmer.tidyverse.org/reference/chat_openrouter.html
-- [ ] Change local fuseka serer to one endpoint for ALL assessments.
+- [x] Change local fuseka serer to one endpoint for ALL assessments.
 
+
+- [x] `truth` should be a structured prompt. 
+  - One `truth` prompt per KM/BM
+  - There can be multiple submessage sections (one per submessage of the KM/BM))
+  - source is only for that respective section ( KM/BM, submessage)
+  - it is possible, that a source occurs multiple times (can this be avoided?)
+  - format json instead of markdown?
 
 
 
 # Prompt implementation of AI assessment
 
-Next step is to compare the KMs with the references from the results from the snowball search which are `citing` the key paper as well as `keypaper` them selves. For this an AI will be used via ellmer to compare the key message (km) selected in the config file. The comparison should determine if the papers from the snowwball search contradict or support the KM (details later on the output format).
+## Setup
+
+Next step is to compare the `truth` KMs with the `citing`. For this an AI will be use ellmer. The comparison should determine if the papers from the snowwball search contradict or support the KM (details later on the output format).
 `ellmer` package should be used and openrouter be the backend. Default should be a free model.
-The Openrouter modell should be specified in the config file. It should be possible that more then one model is specified, and the results should be similarly be handled as the assessments, i.e. invalidate only if a model is removed or replaced. If on e i=s added, simply the new model should run.
+The Openrouter modell should be specified in the config file. It should be possible that more then one model is specified, and the results should be similarly be handled as the assessments, i.e. invalidate only if a model is removed or replaced. If on e is added, simply the new model should run.
+
+## Answer Structure
+
 The result should be structured, and contain the following fields:
 
 - lm_id: id if the key message
@@ -28,45 +40,4 @@ The result should be structured, and contain the following fields:
 - evidence: section from the work which underlines the work_alignement (max 100 words)
 - justification: justification for the work_alignement (max 100 words)
 
-The assessment should be done based on the title and abstract.
-
-At a later stage, it is planned to expand this to the full text, either the pdf or the xml asw returned from OpenAlex, or the pdf provided manually in a folder - but this is the next step.
-
-Add this as an additional target, save the results in an `output/alignement` parquet database, partitioned in the same manner as the `snowball/nodes` `citing` and `keypaper` is partitioned, without the bm partitioning and an added final `model` partitioning as well as `temperature` and "replicate. 
-`replicates` is how often the assessment should be done. When the number of replicates in the config changes, all replicates should be deleted.
-
-Config:
-
-```
-analysis:
-  - assessment_id: IAS
-    km: ["KM-4a", KM-B1]
-    runs:
-      - model: ddd
-        temperature: 0
-        replicates: 5
-
-- assessment_id: GA1
-    km: ["KM-4", "KM-B"]
-    runs:
-      - model: ddd
-        temperature: 0
-        replicates: 1
-      - model: ccc
-        temperature: 0
-        replicates: 2
-      - model: ddd
-        temperature: 0.7
-        replicates: 3 
-```
-
-the openrouter API key should be read from the environmental variable `API_openrouter`
-
-The prompts (system as well as user prompts) should be read from the files `input/prompts/....md` Please populate these with suggested prompts - I will tune them after that.
-
-Suggest the most efficient approach (Include progress indicators as this will be long running!) 
-
-Provide some feedback and suggestions before developing the plan for the implementation.
-
-Provide an argument in the target which limits the number of works to be analysed and set it initially to 20, which should include 20% keypaper and the rest the citing works.
 

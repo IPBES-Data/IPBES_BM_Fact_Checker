@@ -2,7 +2,7 @@ PREFIX ipbes: <http://ontology.ipbes.net/report>
 PREFIX dcterms: <http://purl.org/dc/terms/>
 
 # DB2: section content — KM → BM → SM → SubChapter(content) → Chapter(section)
-SELECT DISTINCT ?km_id ?bm_id ?section_id ?subsection_id ?content
+SELECT DISTINCT ?km_id ?bm_id ?sm_id ?section_id ?subsection_id ?content
 WHERE {
   GRAPH <%GRAPH_IRI%> {
     ?km  a ipbes:KeyMessage ;
@@ -10,7 +10,8 @@ WHERE {
          ipbes:BackgroundMessage ?bm .
     ?bm  dcterms:identifier ?bm_id ;
          ipbes:SubMessage ?sm .
-    ?sm  ipbes:SubChapter ?sch .
+    ?sm  dcterms:identifier ?sm_id ;
+         ipbes:SubChapter ?sch .
     ?sch dcterms:identifier ?subsection_id .
     OPTIONAL { ?sch ipbes:hasDescription ?content . }
     OPTIONAL {
