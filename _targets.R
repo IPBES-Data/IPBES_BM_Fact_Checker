@@ -1,11 +1,24 @@
 library(targets)
 
-Sys.setenv(
-  API_openalex = keyring::key_get("API_openalex")
-)
+# Sys.setenv(
+#   API_openalex = keyring::key_get("API_openalex")
+# )
+
 Sys.setenv(
   API_openrouter = keyring::key_get("API_openrouter")
 )
+
+Sys.setenv(
+  openalexPro.apikey = keyring::key_get("API_openalex")
+)
+
+if (Sys.getenv("openalexPro.apikey", unset = "") == "") {
+  stop("OpenAlex API Key not set!")
+}
+rl <- openalexPro::pro_rate_limit_status()
+if (rl$rate_limit$daily_remaining_usd < 0.1) {
+  warning("Daily limit below 0.1US$ - fail likely!")
+}
 
 tar_option_set(
   packages = c(
@@ -21,7 +34,9 @@ tar_option_set(
     "jsonlite",
     "ellmer",
     "future",
-    "future.apply"
+    "future.apply",
+    "xml2",
+    "stringr"
   )
 )
 
@@ -34,19 +49,33 @@ list.files(
   )
 
 list(
-  # Diagrams — re-render SVGs whenever .mmd source files change
+  # Diagrams — re-render SVGs whenever .mmd source files change.
+  # Two hand-authored conceptual workflows are kept: `_nli` is the active NLI
+  # scoring approach; `_lm` is the parked LLM-comparison approach (reference).
   tar_target(
-    mmd_workflow,
-    "input/mmd/workflow.mmd",
+    mmd_workflow_nli,
+    "input/mmd/workflow_nli.mmd",
     format = "file"
   ),
   tar_target(
-    diagram_workflow,
-    render_mmd(mmd_workflow),
+    diagram_workflow_nli,
+    render_mmd(mmd_workflow_nli),
+    format = "file"
+  ),
+  tar_target(
+    mmd_workflow_lm,
+    "input/mmd/workflow_lm.mmd",
+    format = "file"
+  ),
+  tar_target(
+    diagram_workflow_lm,
+    render_mmd(mmd_workflow_lm),
     format = "file"
   ),
 
-  # Pipeline diagram — auto-generated from tar_mermaid(), TD layout, no status colours
+  # Pipeline diagram — auto-generated from the live tar_mermaid() DAG (TD
+  # layout, no status colours). Writes input/mmd/pipeline_nli.mmd. The parked
+  # LLM-comparison DAG is kept as a frozen snapshot in pipeline_lm.mmd.
   tar_target(
     r_files,
     c("_targets.R", list.files("R", full.names = TRUE)),
@@ -58,8 +87,18 @@ list(
     format = "file"
   ),
   tar_target(
-    diagram_pipeline,
+    diagram_pipeline_nli,
     render_mmd(pipeline_mmd),
+    format = "file"
+  ),
+  tar_target(
+    pipeline_lm,
+    "input/mmd/pipeline_lm.mmd",
+    format = "file"
+  ),
+  tar_target(
+    diagram_pipeline_lm,
+    render_mmd(pipeline_lm),
     format = "file"
   ),
 
@@ -67,6 +106,8 @@ list(
   tar_target(config_file, "input/config.yaml", format = "file"),
   tar_target(config, yaml::read_yaml(config_file)),
   tar_target(sparql_url, config[["sparql_url"]]),
+  tar_target(nli_active, config[["nli"]][["active"]]),
+  tar_target(nli_config, config[["nli"]][["configs"]][[nli_active]]),
   tar_target(
     assessments_list,
     lapply(config[["assessments"]], function(a) {
@@ -82,28 +123,30 @@ list(
     },
     iteration = "list"
   ),
-  tar_target(analysis_list, config[["analysis"]]),
+  # PARKED (LLM-comparison approach): consumed only by alignement_scores_run_specs.
+  # tar_target(analysis_list, config[["analysis"]]),
   tar_target(
     fulltext_list,
     lapply(config[["assessments"]], function(a) {
       list(assessment_id = a[["id"]], enabled = isTRUE(a[["full_text"]]))
     })
   ),
-  tar_target(
-    system_prompt_file,
-    "input/prompts/system_prompt.md",
-    format = "file"
-  ),
-  tar_target(
-    truth_wrapper_file,
-    "input/prompts/truth_wrapper.md",
-    format = "file"
-  ),
-  tar_target(
-    citing_wrapper_file,
-    "input/prompts/citing_wrapper.md",
-    format = "file"
-  ),
+  # PARKED (LLM-comparison approach): prompt files feed only the alignement targets.
+  # tar_target(
+  #   system_prompt_file,
+  #   "input/prompts/system_prompt.md",
+  #   format = "file"
+  # ),
+  # tar_target(
+  #   truth_wrapper_file,
+  #   "input/prompts/truth_wrapper.md",
+  #   format = "file"
+  # ),
+  # tar_target(
+  #   citing_wrapper_file,
+  #   "input/prompts/citing_wrapper.md",
+  #   format = "file"
+  # ),
 
   # Target 1: Download TTL files to output/LoD/ (cached on disk).
   # Required when sparql_url == "fuseki" (the TTL is POSTed into the local
@@ -203,62 +246,82 @@ list(
     format = "file"
   ),
 
-  # Target 2g: Truth prompts — one structured-JSON prompt per (assessment, KM, BM).
-  # Each row carries a nested `sub_messages` list-column (one entry per SM under
-  # the BM); each SM has its own `sources` of (section, subsection, content).
-  # The `prompt` column is the same data serialised to JSON for the LLM.
+  # ==========================================================================
+  # PARKED — LLM-comparison approach (truth/citing prompts + ellmer/OpenRouter
+  # alignement scoring). Superseded by the NLI approach (nli_scores_parquet
+  # below). Source files (R/build_prompts_*.R, R/build_alignement_*.R,
+  # R/alignement_schema.R) and the input/prompts/*.md files are kept on disk so
+  # this chain can be un-parked by uncommenting these targets (plus the
+  # analysis_list, system_prompt_file, truth_wrapper_file, citing_wrapper_file
+  # targets above and the analysis: block in input/config.yaml).
+  # --------------------------------------------------------------------------
+  # # Target 2g: Truth prompts — one structured-JSON prompt per (assessment, KM, BM).
+  # tar_target(
+  #   prompts_truth_parquet,
+  #   build_prompts_truth_parquet(
+  #     assessment,
+  #     key_messages_parquet,
+  #     sections_parquet,
+  #     "output/prompts/truth"
+  #   ),
+  #   pattern = map(assessment, key_messages_parquet, sections_parquet),
+  #   format = "file"
+  # ),
+  #
+  # # Target 2h: Citing prompts — one structured-JSON prompt per citing work.
+  # tar_target(
+  #   prompts_citing_parquet,
+  #   build_prompts_citing_parquet(
+  #     assessment,
+  #     works_citing_parquet,
+  #     "output/prompts/citing"
+  #   ),
+  #   pattern = map(assessment, works_citing_parquet),
+  #   format = "file"
+  # ),
+  #
+  # # Target 2i: Alignement run specs — per-run config expanded into a list.
+  # tar_target(
+  #   alignement_scores_run_specs,
+  #   build_alignement_scores_run_specs(
+  #     analysis_list,
+  #     assessment,
+  #     prompts_truth_parquet,
+  #     prompts_citing_parquet
+  #   ),
+  #   iteration = "list"
+  # ),
+  #
+  # # Target 2j: Alignement scores — score citing prompts against truth prompts.
+  # tar_target(
+  #   alignement_scores_parquet,
+  #   build_alignement_scores_parquet(
+  #     alignement_scores_run_specs,
+  #     system_prompt_file,
+  #     truth_wrapper_file,
+  #     citing_wrapper_file,
+  #     output_root = "output/alignement_scores"
+  #   ),
+  #   pattern = map(alignement_scores_run_specs),
+  #   format = "file"
+  # ),
+  # ==========================================================================
+
+  # Target 2g (NLI): NLI alignement scores — classify each citing work against
+  # its partition BM (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) via a zero-shot NLI
+  # model served on RunPod. Consumes the BG message DB (key_messages_parquet)
+  # and the citing works DB (works_citing_parquet) only.
   tar_target(
-    prompts_truth_parquet,
-    build_prompts_truth_parquet(
+    nli_scores_parquet,
+    build_nli_scores_parquet(
       assessment,
       key_messages_parquet,
-      sections_parquet,
-      "output/prompts/truth"
-    ),
-    pattern = map(assessment, key_messages_parquet, sections_parquet),
-    format = "file"
-  ),
-
-  # Target 2h: Citing prompts — one structured-JSON prompt per citing work.
-  # Flat payload (no nested lists); work-level fields plus KM/BM as ids. The
-  # `prompt` column is the JSON string the LLM sees.
-  tar_target(
-    prompts_citing_parquet,
-    build_prompts_citing_parquet(
-      assessment,
       works_citing_parquet,
-      "output/prompts/citing"
+      nli_config,
+      nli_active,
+      "output/nli_scores"
     ),
-    pattern = map(assessment, works_citing_parquet),
-    format = "file"
-  ),
-
-  # Target 2i: Alignement run specs — per-run config expanded into a list
-  # of specs (one per analysis.runs[] entry), used to branch the scores target.
-  tar_target(
-    alignement_scores_run_specs,
-    build_alignement_scores_run_specs(
-      analysis_list,
-      assessment,
-      prompts_truth_parquet,
-      prompts_citing_parquet
-    ),
-    iteration = "list"
-  ),
-
-  # Target 2j: Alignement scores — score citing prompts against truth prompts
-  # via OpenRouter / ellmer. One branch per spec. The wrappers + system prompt
-  # form the cached prefix; only the citing JSON varies per call.
-  tar_target(
-    alignement_scores_parquet,
-    build_alignement_scores_parquet(
-      alignement_scores_run_specs,
-      system_prompt_file,
-      truth_wrapper_file,
-      citing_wrapper_file,
-      output_root = "output/alignement_scores"
-    ),
-    pattern = map(alignement_scores_run_specs),
+    pattern = map(assessment, key_messages_parquet, works_citing_parquet),
     format = "file"
   ),
 

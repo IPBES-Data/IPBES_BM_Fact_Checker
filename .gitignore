@@ -65,3 +65,4 @@ output/prompts/*
 
 output/alignement/*
 output/alignement_scores/*
+output/nli_scores/*

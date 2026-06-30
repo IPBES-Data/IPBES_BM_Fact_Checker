@@ -16,29 +16,61 @@ assessments:
   #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Values%20Assessment/VA.ttl
   #   full_text: false
 
-analysis:
-  # n_citing: number of citing works to score per (KM, BM). 0 = score all.
-  - assessment_id: IAS
-    runs:
-      - run_id: IAS_km_ab
-        km: ["KM-A1"]
-        model: "openai/gpt-4o-mini"
-        temperature: 0
-        max_active: 8
-        replicates: 1
-        n_citing: 100
-  - assessment_id: GA1
-    runs:
-      - run_id: GA1_km_ab
-        km: ["A."]
-        model: "openai/gpt-4o-mini"
-        temperature: 0
-        max_active: 8
-        replicates: 1
-        n_citing: 100
-      # - run_id: GA1_km_a
-      #   km: ["A."]
-      #   model: "google/gemma-4-31b-it:free"
-      #   temperature: 0.5
-      #   max_active: 1
-      #   replicates: 2
+# NLI alignment backend. The pipeline POSTs (premise, hypothesis) pairs to a
+# zero-shot NLI server (see docker/nli-runpod/). Switch models by changing
+# `active` to a key under `configs`. Use `~` to disable.
+nli:
+  active: deberta_zeroshot   # which entry under configs: is active
+
+  configs:
+    deberta_zeroshot:
+      scheme: https
+      host: <pod-id>-8080.proxy.runpod.net   # fill in after the pod boots
+      port: null                              # null → scheme://host (RunPod proxy)
+      auth_token_keyring: null                # optional keyring entry for a bearer token
+      model: MoritzLaurer/deberta-v3-large-zeroshot-v2.0
+      candidate_labels: ["supports", "refutes", "is not relevant to"]
+      hypothesis_template: "This paper {} the following claim: %s"
+      batch_size: 32
+      uncertain_threshold: 0.60
+      nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
+
+    # deberta_finetuned:
+    #   scheme: https
+    #   host: <pod-id>-8080.proxy.runpod.net   # fill in after the pod boots
+    #   port: null
+    #   auth_token_keyring: null
+    #   model: /app/nli-ipbes-finetuned/best   # baked into the Docker image
+    #   candidate_labels: ["supports", "refutes", "is not relevant to"]
+    #   hypothesis_template: "This paper {} the following claim: %s"
+    #   batch_size: 32
+    #   uncertain_threshold: 0.60
+    #   nei_threshold: 0.90
+
+# PARKED — LLM-comparison approach (see parked targets in _targets.R).
+# analysis:
+#   # n_citing: number of citing works to score per (KM, BM). 0 = score all.
+#   - assessment_id: IAS
+#     runs:
+#       - run_id: IAS_km_ab
+#         km: ["KM-A1"]
+#         model: "openai/gpt-4o-mini"
+#         temperature: 0
+#         max_active: 8
+#         replicates: 1
+#         n_citing: 100
+#   - assessment_id: GA1
+#     runs:
+#       - run_id: GA1_km_ab
+#         km: ["A."]
+#         model: "openai/gpt-4o-mini"
+#         temperature: 0
+#         max_active: 8
+#         replicates: 1
+#         n_citing: 100
+#       # - run_id: GA1_km_a
+#       #   km: ["A."]
+#       #   model: "google/gemma-4-31b-it:free"
+#       #   temperature: 0.5
+#       #   max_active: 1
+#       #   replicates: 2

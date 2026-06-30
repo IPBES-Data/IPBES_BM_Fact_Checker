@@ -1,18 +1,31 @@
-build_snowball_parquet <- function(assessment, works_path, output_root = "output/snowball") {
+build_snowball_parquet <- function(
+  assessment,
+  works_path,
+  output_root = "output/snowball"
+) {
   assessment_id <- assessment$id
-  nodes_root    <- file.path(output_root, "nodes")
-  edges_root    <- file.path(output_root, "edges")
+  nodes_root <- file.path(output_root, "nodes")
+  edges_root <- file.path(output_root, "edges")
   keypaper_root <- file.path(output_root, "keypaper")
 
-  nodes_assessment_dir    <- file.path(nodes_root,    paste0("assessment=", assessment_id))
-  edges_assessment_dir    <- file.path(edges_root,    paste0("assessment=", assessment_id))
-  keypaper_assessment_dir <- file.path(keypaper_root, paste0("assessment=", assessment_id))
+  nodes_assessment_dir <- file.path(
+    nodes_root,
+    paste0("assessment=", assessment_id)
+  )
+  edges_assessment_dir <- file.path(
+    edges_root,
+    paste0("assessment=", assessment_id)
+  )
+  keypaper_assessment_dir <- file.path(
+    keypaper_root,
+    paste0("assessment=", assessment_id)
+  )
 
-  unlink(nodes_assessment_dir,    recursive = TRUE, force = TRUE)
-  unlink(edges_assessment_dir,    recursive = TRUE, force = TRUE)
+  unlink(nodes_assessment_dir, recursive = TRUE, force = TRUE)
+  unlink(edges_assessment_dir, recursive = TRUE, force = TRUE)
   unlink(keypaper_assessment_dir, recursive = TRUE, force = TRUE)
-  dir.create(nodes_root,    showWarnings = FALSE, recursive = TRUE)
-  dir.create(edges_root,    showWarnings = FALSE, recursive = TRUE)
+  dir.create(nodes_root, showWarnings = FALSE, recursive = TRUE)
+  dir.create(edges_root, showWarnings = FALSE, recursive = TRUE)
   dir.create(keypaper_root, showWarnings = FALSE, recursive = TRUE)
 
   works <- arrow::open_dataset(works_path) |>
@@ -26,15 +39,26 @@ build_snowball_parquet <- function(assessment, works_path, output_root = "output
     km_val <- km_bm_groups$km[[i]]
     bm_val <- km_bm_groups$bm[[i]]
     ids <- unique(works$w_id[works$km == km_val & works$bm == bm_val])
-    if (!length(ids)) next
+    if (!length(ids)) {
+      next
+    }
 
-    message("Snowball [", assessment_id, " / ", km_val, " / ", bm_val,
-            "]: ", length(ids), " seeds")
+    message(
+      "Snowball [",
+      assessment_id,
+      " / ",
+      km_val,
+      " / ",
+      bm_val,
+      "]: ",
+      length(ids),
+      " seeds"
+    )
 
     sb_dir <- openalexSnowball::pro_snowball(
       identifier = ids,
-      output     = tempfile(fileext = ".snowball"),
-      verbose    = FALSE
+      output = tempfile(fileext = ".snowball"),
+      verbose = TRUE
     )
 
     # Stay in Arrow end-to-end: OpenAlex `nodes` carries list/struct columns
@@ -52,18 +76,21 @@ build_snowball_parquet <- function(assessment, works_path, output_root = "output
     keypaper_ds <- nodes_ds |> dplyr::filter(relation == "keypaper")
 
     arrow::write_dataset(
-      nodes_ds, nodes_root,
-      partitioning           = c("assessment", "km", "bm", "relation"),
+      nodes_ds,
+      nodes_root,
+      partitioning = c("assessment", "km", "bm", "relation"),
       existing_data_behavior = "delete_matching"
     )
     arrow::write_dataset(
-      edges_ds, edges_root,
-      partitioning           = c("assessment", "km", "bm", "edge_type"),
+      edges_ds,
+      edges_root,
+      partitioning = c("assessment", "km", "bm", "edge_type"),
       existing_data_behavior = "delete_matching"
     )
     arrow::write_dataset(
-      keypaper_ds, keypaper_root,
-      partitioning           = c("assessment", "km", "bm"),
+      keypaper_ds,
+      keypaper_root,
+      partitioning = c("assessment", "km", "bm"),
       existing_data_behavior = "delete_matching"
     )
 

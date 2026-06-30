@@ -1,0 +1,317 @@
+# Fine-tuning the NLI Model with IPBES-Derived Training Data
+
+## Overview
+
+The zero-shot NLI model (`MoritzLaurer/deberta-v3-large-zeroshot-v2.0`) works well
+out of the box, but its training data does not include biodiversity/IPBES language. A
+domain-adapted fine-tuned version should produce fewer borderline classifications and
+better calibrated confidence scores.
+
+The key insight is that **training data is already embedded in the existing pipeline**:
+every BM is backed by citations extracted via the LOD, and those citations are already
+fetched as `works_parquet`. These known-support pairs can seed the training set almost
+for free.
+
+---
+
+## Training Data Strategy
+
+### Positive examples — SUPPORTS (essentially free)
+
+Each paper cited under a BM is, by IPBES expert consensus, a supporting reference for
+that BM. This maps directly onto the NLI `SUPPORTS` label.
+
+Source in the pipeline:
+
+```r
+# Join works_parquet (which carries km/bm assignment) with key_messages_parquet
+# (which carries bm_description) to get (abstract, bm_text) pairs labelled SUPPORTS
+library(arrow)
+library(dplyr)
+
+works <- open_dataset("output/works") |>
+  select(assessment, km, bm, title, abstract) |>
+  collect()
+
+bms <- open_dataset("output/key_messages") |>
+  select(assessment, km, bm, bm_description) |>
+  collect()
+
+positives <- works |>
+  inner_join(bms, by = c("assessment", "km", "bm")) |>
+  filter(!is.na(abstract), nchar(abstract) > 50) |>
+  transmute(
+    premise    = paste(title, abstract, sep = ". "),
+    hypothesis = bm_description,
+    label      = "SUPPORTS"
+  )
+```
+
+Expected yield: several hundred to low thousands of pairs depending on how many
+assessments and BMs are loaded — likely enough for a meaningful fine-tuning run without
+any additional labeling effort.
+
+### Hard negatives — NOT_ENOUGH_INFO
+
+Cross-BM pairing: take a paper cited under BM `A1` and pair it with the description of
+a topically unrelated BM (e.g. from a different KM). The paper has no particular reason
+to support `A3`, so the label is `NOT_ENOUGH_INFO`.
+
+**Caution:** topically adjacent BMs within the same KM may genuinely overlap. Prefer
+cross-KM or cross-assessment negatives to avoid mislabelling. A conservative rule:
+only use cross-assessment negatives (pair a paper from assessment X with a BM from
+assessment Y on a different topic area).
+
+```r
+# Simple cross-assessment negative construction
+set.seed(42)
+negatives <- positives |>
+  group_by(hypothesis) |>
+  slice_sample(n = 5) |>           # up to 5 papers per BM
+  ungroup() |>
+  mutate(
+    # shuffle hypotheses across assessments; ensure no original pairing survives
+    hypothesis = sample(unique(positives$hypothesis), n(), replace = TRUE),
+    label      = "NOT_ENOUGH_INFO"
+  ) |>
+  filter(paste(premise, hypothesis) %in%
+           paste(positives$premise, positives$hypothesis) == FALSE)
+```
+
+### REFUTES examples — the hard class
+
+`REFUTES` is genuinely rare in this domain: papers do not typically directly contradict
+IPBES consensus statements. Three options in increasing effort:
+
+| Option | Notes |
+|---|---|
+| Omit `REFUTES` entirely | Collapse into `NOT_ENOUGH_INFO`; simplest, acceptable if downstream use only cares about SUPPORTS vs. not |
+| Synthetic negation | Negate the BM hypothesis text ("Biodiversity is *not* declining…") and use known-support abstracts as premises — artificial but gives the model the class signal |
+| Manual labeling | Ask a domain expert to identify a small set (~20–30) of papers that genuinely contradict a BM; gold standard but expensive |
+
+For a first fine-tuning pass, the recommended approach is **omit or use synthetic
+negation**, then revisit once you have validated model performance on SUPPORTS vs.
+NOT_ENOUGH_INFO.
+
+---
+
+## How Many Examples Are Needed?
+
+Fine-tuning a pre-trained NLI model is not training from scratch — the model already
+understands the NLI task. You are teaching it to apply that understanding to a new
+domain. This requires far fewer examples than original training.
+
+| Examples per class | Expected outcome |
+|---|---|
+| < 100 | Marginal improvement; high variance across runs |
+| 100–300 | Noticeable domain adaptation; worth doing |
+| 300–1000 | Solid fine-tuning; diminishing returns above ~500 for a single domain |
+| > 1000 | Strong adaptation; useful if you have multiple assessments |
+
+**Practical target:** aim for **300–500 SUPPORTS** and an equal number of
+NOT_ENOUGH_INFO negatives (balanced classes). If you have fewer positives, use all of
+them and oversample negatives.
+
+Hold out 15–20% as a validation set before training.
+
+---
+
+## Do You Need Negatives?
+
+Yes, but not necessarily hand-labeled ones. The model needs to see both classes during
+fine-tuning or it will over-predict `SUPPORTS`. The cross-BM construction above
+produces plausible negatives at no cost. Validate a sample manually (spot-check ~20
+cross-BM pairs) to confirm they are genuinely `NOT_ENOUGH_INFO` before using them.
+
+---
+
+## Fine-tuning Procedure
+
+### Environment
+
+```bash
+pip install transformers datasets torch accelerate scikit-learn
+```
+
+### Script outline (Python)
+
+```python
+from datasets import Dataset
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSequenceClassification,
+    TrainingArguments,
+    Trainer,
+)
+import pandas as pd
+import torch
+
+MODEL_ID = "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
+LABEL2ID  = {"SUPPORTS": 0, "REFUTES": 1, "NOT_ENOUGH_INFO": 2}
+ID2LABEL  = {v: k for k, v in LABEL2ID.items()}
+
+# --- Load data (export positives/negatives from R as CSV first) ---
+df = pd.read_csv("training_pairs.csv")   # columns: premise, hypothesis, label
+df["label_id"] = df["label"].map(LABEL2ID)
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+
+def tokenize(batch):
+    return tokenizer(
+        batch["premise"],
+        batch["hypothesis"],
+        truncation=True,
+        max_length=512,
+        padding="max_length",
+    )
+
+dataset = Dataset.from_pandas(df[["premise", "hypothesis", "label_id"]])
+dataset = dataset.rename_column("label_id", "labels")
+dataset = dataset.map(tokenize, batched=True)
+dataset = dataset.train_test_split(test_size=0.15, seed=42)
+
+model = AutoModelForSequenceClassification.from_pretrained(
+    MODEL_ID,
+    num_labels=3,
+    id2label=ID2LABEL,
+    label2id=LABEL2ID,
+    ignore_mismatched_sizes=True,   # classifier head is re-initialised
+)
+
+args = TrainingArguments(
+    output_dir        = "nli-ipbes-finetuned",
+    num_train_epochs  = 3,
+    per_device_train_batch_size = 16,
+    per_device_eval_batch_size  = 32,
+    evaluation_strategy = "epoch",
+    save_strategy       = "epoch",
+    load_best_model_at_end = True,
+    metric_for_best_model  = "eval_loss",
+    fp16 = torch.cuda.is_available(),
+    logging_steps = 20,
+)
+
+trainer = Trainer(
+    model         = model,
+    args          = args,
+    train_dataset = dataset["train"],
+    eval_dataset  = dataset["test"],
+)
+
+trainer.train()
+trainer.save_model("nli-ipbes-finetuned/best")
+tokenizer.save_pretrained("nli-ipbes-finetuned/best")
+```
+
+### Compute
+
+A single fine-tuning run on ~600 examples takes roughly **10–20 minutes** on a RunPod
+L4 GPU — the same instance already used for inference. No additional infrastructure
+needed.
+
+---
+
+## Evaluation
+
+Before deploying, check performance on the held-out validation set:
+
+```python
+from sklearn.metrics import classification_report
+
+preds = trainer.predict(dataset["test"])
+pred_labels = preds.predictions.argmax(axis=1)
+true_labels = dataset["test"]["labels"]
+
+print(classification_report(
+    true_labels, pred_labels,
+    target_names=list(LABEL2ID.keys())
+))
+```
+
+Also **manually inspect** 20–30 predictions on citing papers from `works_citing_parquet`
+(papers the model has never seen) to confirm the domain adaptation feels right before
+running a full pipeline rebuild.
+
+---
+
+## Deployment
+
+The fine-tuned model is a drop-in replacement for the original. Update the model path
+in the Docker container ([docker/nli-runpod/](docker/nli-runpod/)) and redeploy:
+
+```dockerfile
+# In docker/nli-runpod/Dockerfile (or equivalent entrypoint)
+# Replace:
+MODEL_ID = "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
+# With:
+MODEL_ID = "/app/nli-ipbes-finetuned/best"   # local path inside container
+```
+
+Upload the fine-tuned model directory to the RunPod volume or push to a private
+HuggingFace Hub repo, then update the path accordingly.
+
+---
+
+## Single Combined Model vs. Assessment-Specific Models
+
+### Train on all assessments (recommended first approach)
+
+- More total examples → better generalisation
+- The model learns "IPBES scientific claim language" broadly — all BMs share a common
+  style and conventions regardless of topic area
+- A combined model handles a *new* assessment better than one trained on a single
+  assessment
+- When a new assessment is added, no retraining is needed
+
+### Assessment-specific models
+
+- Only worth considering if assessments cover genuinely distinct vocabulary domains
+  (e.g. land degradation vs. marine ecosystems) and per-assessment evaluation reveals
+  a clear performance gap
+- More maintenance overhead: one model per assessment to deploy, version, and update
+- Higher risk of overfitting if a single assessment has few BMs or citations
+
+### Practical middle ground
+
+Train once on all assessments combined, but **evaluate per assessment** — compute F1
+separately for each assessment's held-out validation set. If one assessment performs
+noticeably worse, a targeted top-up fine-tuning pass can be run starting from the
+combined model (not from scratch), using only that assessment's data.
+
+| Scenario | Recommendation |
+|---|---|
+| First fine-tuning run | Combined model across all assessments |
+| New assessment added later | Combined model already generalises; no retraining needed |
+| One assessment has clearly worse F1 | Top-up fine-tune from combined model on that assessment's data |
+| Assessments have very different domain vocabularies | Evaluate first; split only if evidence warrants it |
+
+Add an `assessment` column to `training_pairs.csv` so you can always filter to a
+per-assessment subset for evaluation or top-up training without regenerating the data.
+
+---
+
+## Recommended Steps
+
+1. **Extract positives** from `works_parquet` × `key_messages_parquet` join (R script
+   above); export as `training_pairs.csv`
+2. **Construct negatives** using cross-assessment BM pairing; spot-check 20 pairs
+   manually
+3. **Check class balance** — target roughly 50/50 SUPPORTS / NOT_ENOUGH_INFO; add
+   synthetic `REFUTES` negations if that class is wanted
+4. **Fine-tune** on RunPod L4 using the script above (~15 min)
+5. **Evaluate** on held-out set; compare F1 on SUPPORTS against zero-shot baseline
+6. **Spot-check** on a sample from `works_citing_parquet`
+7. **Redeploy** Docker container with updated model path
+8. **Invalidate** `nli_scores_parquet` target and re-run pipeline
+
+---
+
+## See Also
+
+- [TD_BM NLI approach.md](TD_BM%20NLI%20approach.md) — zero-shot pipeline design and
+  compute estimates
+- [R/build_nli_scores_parquet.R](R/build_nli_scores_parquet.R) — current inference
+  implementation
+- [docker/nli-runpod/](docker/nli-runpod/) — inference server Docker setup
+- SciFact dataset: https://github.com/allenai/scifact
+- HuggingFace fine-tuning docs: https://huggingface.co/docs/transformers/training

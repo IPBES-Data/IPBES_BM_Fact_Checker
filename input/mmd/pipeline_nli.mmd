@@ -1,0 +1,37 @@
+graph TD
+  subgraph Graph
+    direction TD
+    xf8f6f156e3c3b679(["assessments_list"]) --> x7096e63b1af7fc2e(["assessment"])
+    x20aa1e7dd2a106e5(["config"]) --> xf8f6f156e3c3b679(["assessments_list"])
+    x9909b451a6a56060(["config_file"]) --> x20aa1e7dd2a106e5(["config"])
+    x20aa1e7dd2a106e5(["config"]) --> x8a0deb79ae55ae78(["fulltext_list"])
+    x71e70b33567e8c77(["key_messages_sparql"]) --> x1b5c1cdf9ba064e4["key_messages_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x1b5c1cdf9ba064e4["key_messages_parquet"]
+    xda2ef7d9d7074388["ttl_path"] --> x1b5c1cdf9ba064e4["key_messages_parquet"]
+    xcae032f895dcdbee(["sparql_url"]) --> x1b5c1cdf9ba064e4["key_messages_parquet"]
+    x20aa1e7dd2a106e5(["config"]) --> xc1390bdb2b35a1c0(["nli_config"])
+    x1b5c1cdf9ba064e4["key_messages_parquet"] --> x3015a9149aaf3008["nli_scores_parquet"]
+    xc1390bdb2b35a1c0(["nli_config"]) --> x3015a9149aaf3008["nli_scores_parquet"]
+    x6bd40d1623e4b2a6["works_citing_parquet"] --> x3015a9149aaf3008["nli_scores_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x3015a9149aaf3008["nli_scores_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x4c5608b5b57c599b["refs_parquet"]
+    xf258716a437e6a24(["refs_sparql"]) --> x4c5608b5b57c599b["refs_parquet"]
+    xcae032f895dcdbee(["sparql_url"]) --> x4c5608b5b57c599b["refs_parquet"]
+    xda2ef7d9d7074388["ttl_path"] --> x4c5608b5b57c599b["refs_parquet"]
+    xcae032f895dcdbee(["sparql_url"]) --> xc27197d40d6acf57["sections_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> xc27197d40d6acf57["sections_parquet"]
+    xda2ef7d9d7074388["ttl_path"] --> xc27197d40d6acf57["sections_parquet"]
+    xbaf7d5ee2a70bea4(["sections_sparql"]) --> xc27197d40d6acf57["sections_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> xdb22778f9ff9b079["snowball_parquet"]
+    x31e4fc98a3c6921c["works_parquet"] --> xdb22778f9ff9b079["snowball_parquet"]
+    x20aa1e7dd2a106e5(["config"]) --> xcae032f895dcdbee(["sparql_url"])
+    x7096e63b1af7fc2e(["assessment"]) --> xda2ef7d9d7074388["ttl_path"]
+    x7096e63b1af7fc2e(["assessment"]) --> x6bd40d1623e4b2a6["works_citing_parquet"]
+    xdb22778f9ff9b079["snowball_parquet"] --> x6bd40d1623e4b2a6["works_citing_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x31e4fc98a3c6921c["works_parquet"]
+    x4c5608b5b57c599b["refs_parquet"] --> x31e4fc98a3c6921c["works_parquet"]
+    xe6d26d705b0e239b["zotero_parquet"] --> x31e4fc98a3c6921c["works_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> xe6d26d705b0e239b["zotero_parquet"]
+    x4c5608b5b57c599b["refs_parquet"] --> xe6d26d705b0e239b["zotero_parquet"]
+    
+  end

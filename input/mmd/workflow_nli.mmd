@@ -1,0 +1,113 @@
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementStrategy: BRANDES_KOEPF
+---
+flowchart TD
+
+  %% Configuration
+  config_file@{ shape: doc, label: "Configuration <br><tt>input/config.yaml</tt>" }
+  assessment_list@{ shape: rect, label: "Assessments to process" }
+  assessment_id@{ shape: rect, label: "Assessment &lt;id&gt;" }
+  nli_active@{ shape: rect, label: "Active NLI profile<br/><tt>nli.active</tt>" }
+
+  config_file --> assessment_list
+  assessment_list --> assessment_id
+  assessment_id --> build_refs
+
+  %% LOD Extraction — grouped so the three parallel queries stay in one horizontal band
+  subgraph lod["IPBES LOD Extraction"]
+    direction TB
+
+    %% Nodes
+    sparql@{ shape: cloud, label: "IPBES SPARQL endpoint" }
+    build_refs@{ shape: rect, label: "Extract references<br/>KM → BM → SM → SubChapter ← Reference" }
+    build_sections@{ shape: rect, label: "Extract section content<br/>KM → BM → SM → SubChapter → Chapter" }
+    build_key_messages@{ shape: rect, label: "Extract Key/Background Messages<br/>KM → BM (with descriptions)" }
+
+    %% Edges
+    sparql <--> build_refs
+    sparql <--> build_sections
+    sparql <--> build_key_messages
+  end
+
+  assessment_id --> build_sections
+  assessment_id --> build_key_messages
+
+  subgraph data["Retrieve and prepare data"]
+    direction TD
+
+    %% Nodes
+    refs_db@{ shape: lin-cyl, label: "References DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
+    sections_db@{ shape: lin-cyl, label: "Sections DB<br/><tt>output/sections/assessment=&lt;id&gt;/</tt>" }
+    key_messages_db@{ shape: lin-cyl, label: "Key + Background Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
+    zotero_api@{ shape: cloud, label: "Zotero API" }
+    zotero_db@{ shape: lin-cyl, label: "Zotero DB<br/><tt>output/zotero/assessment=&lt;id&gt;/</tt>" }
+    openalex@{ shape: cloud, label: "OpenAlex API" }
+    works_db@{ shape: lin-cyl, label: "OpenAlex Works DB<br/><tt>output/works/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    citing_db@{ shape: lin-cyl, label: "Citing Works DB<br/><tt>output/works_citing/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    download_zotero@{ shape: rect, label: "Download Zotero group items<br/>page by page via Zotero API" }
+    download_works@{ shape: rect, label: "Query OpenAlex works by DOI<br/>via openalexPro" }
+    snowball@{ shape: rect, label: "Snowball search<br/>keypaper + citing" }
+
+    %% Edges
+    build_refs        --> refs_db
+    build_sections    --> sections_db
+    build_key_messages --> key_messages_db
+
+    %% Download spine
+    refs_db --> download_zotero
+    zotero_api --> download_zotero
+    download_zotero --> zotero_db
+
+    zotero_db --> download_works
+    openalex <--> download_works
+    download_works --> works_db
+
+    works_db --> snowball
+    snowball --> citing_db
+  end
+
+  subgraph nli_assessment["Assessment of the alignement of the BMs and the Citing Publications (NLI)"]
+    direction TB
+
+    %% Nodes
+    nli_server@{ shape: cloud, label: "Zero-shot NLI server<br/>DeBERTa-v3-large-zeroshot<br/><tt>docker/nli-runpod/</tt>" }
+    nli_scoring@{ shape: rect, label: "Classify each citing work vs its BM<br/>premise = clean(title + abstract)<br/>hypothesis = BM description<br/>→ SUPPORTS / REFUTES / NEI" }
+    nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+
+    %% Edges
+    nli_server <--> nli_scoring
+    nli_scoring --> nli_scores_db
+  end
+
+  %% Inputs to the NLI scoring step: BM text (hypothesis) + citing works (premise)
+  key_messages_db --> nli_scoring
+  citing_db --> nli_scoring
+
+  %% Active NLI profile feeds scoring (determines model config + output partition)
+  config_file --> nli_active
+  nli_active --> nli_scoring
+
+  %% Force `nli_assessment` to sit below `data` (subgraph-to-subgraph edge).
+  %% Made invisible via linkStyle below so it doesn't add visual noise.
+  data --> nli_assessment
+
+  %% Styles
+  classDef input_file  fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
+  classDef config      fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
+  classDef database    fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
+  classDef processing  fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1px;
+  classDef helper      fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
+  classDef disabled    fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px,stroke-dasharray:4 3;
+
+  %% Hide the data → nli_assessment subgraph-level constraint edge (last edge, index 25).
+  %% If you add or remove edges above, bump this index.
+  linkStyle 25 stroke:transparent,fill:none;
+
+  class config_file input_file;
+  class assessment_list,assessment_id,nli_active config;
+  class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db,nli_scores_db database;
+  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,nli_scoring processing;
+  class sparql,zotero_api,openalex,nli_server helper;

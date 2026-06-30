@@ -1,15 +1,19 @@
-build_pipeline_mmd <- function(r_files, path = "input/mmd/pipeline.mmd") {
+build_pipeline_mmd <- function(r_files, path = "input/mmd/pipeline_nli.mmd") {
   force(r_files)
   mmd <- targets::tar_mermaid(
     targets_only = TRUE,
     outdated = FALSE,
     legend = FALSE,
     exclude = c(
-      "mmd_workflow",
-      "diagram_workflow",
+      "mmd_workflow_lm",
+      "mmd_workflow_nli",
+      "diagram_workflow_lm",
+      "diagram_workflow_nli",
       "r_files",
       "pipeline_mmd",
-      "diagram_pipeline"
+      "diagram_pipeline_nli",
+      "pipeline_lm",
+      "diagram_pipeline_lm"
     )
   )
 
