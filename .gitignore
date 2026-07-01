@@ -71,6 +71,7 @@ output/alignement/*
 output/alignement_scores/*
 output/nli_scores/*
 output/nli_ready/*
+output/tables/*
 
 # Generated pod inventory from scripts/runpod/create_pods.sh — specific pod
 # ids/hostnames, stale the moment a pod is torn down. pods.conf* files (the

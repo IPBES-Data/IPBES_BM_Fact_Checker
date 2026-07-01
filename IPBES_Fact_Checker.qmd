@@ -29,17 +29,17 @@ version: 0.0.1
 format:
     html:
         toc: true
-        toc-depth: 4
+        toc-depth: 6
         toc_expand: true
         embed-resources: false
         code-fold: true
         code-summary: 'Show the code'
         keep-md: false
-        grid:
-            sidebar-width: 0px
-            body-width: 4000px
-            margin-width: 200px
-            gutter-width: 1.5rem    
+        # grid:
+        #     sidebar-width: 0px
+        #     body-width: 4000px
+        #     margin-width: 200px
+        #     gutter-width: 1.5rem    
 ---
 
 ```{r}
@@ -56,68 +56,6 @@ library(htmlwidgets)
 library(htmltools)
 
 library(tictoc)
-
-snowball <- function(
-  background_message = NULL,
-  sub_message = NULL,
-  collect = TRUE
-) {
-  ## Both provided
-  if (!is.null(sub_message) & !is.null(background_message)) {
-    stop("Please provide either sub_message or backgrpund_message - not both!")
-  }
-
-  ## None provided
-  if (is.null(sub_message) & is.null(background_message)) {
-    result <- list(
-      nodes = nodes |>
-        distinct(),
-      edges = edges |>
-        distinct()
-    )
-  }
-
-  ## Only sub_message provided
-  if (!is.null(sub_message)) {
-    result <- list(
-      nodes = nodes |>
-        dplyr::filter(
-          sm == sub_message
-        ) |>
-        distinct(),
-      edges = edges |>
-        dplyr::filter(
-          sm == sub_message
-        ) |>
-        distinct()
-    )
-  }
-
-  ## Only background_message provided
-  if (!is.null(background_message)) {
-    result <- list(
-      nodes = nodes |>
-        dplyr::filter(
-          bm == background_message
-        ) |>
-        distinct(),
-      edges = edges |>
-        dplyr::filter(
-          bm == background_message
-        ) |>
-        distinct()
-    )
-  }
-
-  if (collect) {
-    result <- lapply(
-      result,
-      dplyr::collect
-    )
-  }
-
-  return(result)
-}
 ```
 
 # Introduction
@@ -126,644 +64,120 @@ IPBES assessments were converted / enhanced into [Linked Open Data (LOD)](https:
 Three assessments available in ttl format are currently:
 
 - the [First Global Assessment](https://github.com/IPBES-Data/IPBES_LOD/blob/main/Global%20Assessment%201/README_GA1.md) (GA1)
-- the [Values Assessment](https://github.com/IPBES-Data/IPBES_LOD/tree/main/Values%20Assessment) (VA)
 - the [Invasive Alien Species Assessment](https://github.com/IPBES-Data/IPBES_LOD/tree/main/Invasive%20Alien%20Species%20Assessment) (IAS).
+<!-- - the [Values Assessment](https://github.com/IPBES-Data/IPBES_LOD/tree/main/Values%20Assessment) (VA) -->
 
 # Methods
 
-## Manual fixes to ref list
+Methodology is documented separately in the `TD_*.md` design documents at the
+repository root. **Note: these are currently stale relative to the
+implementation** — treat them as a record of the design rationale rather than
+an up-to-date specification of the pipeline as it stands today.
 
-The following DOIS are wrong in the original csv and were corrected manually: `10.1016/j.ecolmodel.2017,04.005` should be `10.1016/j.ecolmodel.2017.04.005`
+- [TD_targets.md](TD_targets.md) — the `targets` pipeline architecture
+- [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md) — the active NLI scoring approach
+- [TD_LLM_approach.md](TD_LLM_approach.md) — the parked LLM-comparison approach
+- [TD_NLI_LLM_two_phase.md](TD_NLI_LLM_two_phase.md) — the two-phase NLI → LLM design
+- [TD_NLI_training.md](TD_NLI_training.md) — NLI fine-tuning plan
 
-## Import References and get OpenAlex Works 
-
-```{r}
-#| label: load_key_works
-
-fn <- file.path("output", "key_works.rds")
-if (!file.exists(fn)) {
-  refs_file <- file.path("input", "Query_Submessage_ref_GA.csv")
-
-  refs <- refs_file |>
-    read.csv(
-      header = TRUE,
-      sep = ",",
-      quote = "\"",
-      stringsAsFactors = FALSE
-    ) |>
-    tibble::as_tibble() |>
-    dplyr::mutate(
-      bm = gsub(
-        "http://ontology.ipbes.net/report/bgm/",
-        "",
-        Background.Message
-      ),
-      sm = gsub("http://ontology.ipbes.net/report/subm/", "", Sub.Message),
-      loc = Level.if.Confidence,
-      zotero = zotero,
-      doi = gsub("https://doi.org/", "", doi),
-      citation = description,
-      Level.if.Confidence = NULL,
-      Background.Message = NULL,
-      Sub.Message = NULL,
-      X = NULL
-    ) |>
-    select(
-      bm,
-      sm,
-      loc,
-      zotero,
-      doi,
-      citation
-    ) |>
-    distinct()
-
-  refs$loc[refs$loc == ""] <- as.character(NA)
-
-  key_works <- openalexR::oa_fetch(
-    entity = "works",
-    doi = refs$doi[refs$doi != ""] |> unique(),
-    options = list(
-      # select = c(
-      #     "id",
-      #     "doi",
-      #     "authorships",
-      #     "abstract_inverted_index",
-      #     "publication_year"
-      # )
-    ),
-    verbose = TRUE
-  )
-
-  refs$doi <- ifelse(
-    refs$doi == "",
-    as.character(NA),
-    paste0("https://doi.org/", refs$doi)
-  )
-
-  refs |>
-    dplyr::left_join(
-      y = key_works,
-      by = "doi"
-    ) |>
-    saveRDS(
-      file = fn
-    )
-}
-
-key_works <- readRDS(fn)
-```
-
-## Run Snowball Searches for each key-paper individually
-
-```{r}
-#| label: snowball_search
-
-kws <- key_works |>
-  dplyr::group_by(id) |>
-  dplyr::summarise(
-    bms = list(bm = bm),
-    .groups = "keep"
-  ) |>
-  dplyr::ungroup() |>
-  dplyr::mutate(
-    id = gsub(
-      pattern = "https://openalex.org/",
-      replacement = "",
-      x = id
-    )
-  )
-
-dir.create(file.path("output", "snowballs"), showWarnings = FALSE)
-
-tic()
-
-pbapply::pblapply(
-  seq_along(kws$id[!is.na(kws$id)]),
-  function(i) {
-    tic()
-    fn <- file.path("output", "snowballs", paste0(kws$id[i], ".rds"))
-    if (file.exists(fn)) {
-      message("Skippig ", i, " of ", nrow(kws), " - file exists")
-    } else {
-      message("Snowballing ", kws$id[i], " --- ", i, " of ", nrow(kws), " ...")
-
-      try(
-        kws$id[[i]] |>
-          openalexR::oa_snowball() |>
-          saveRDS(file = fn)
-      )
-    }
-    toc()
-  }
-) |>
-  invisible()
-
-toc()
-```
-
-## Convert to Parquet Database
-
-```{r}
-#| label: convert_to_parquet
-#|
-
-path_nodes <- file.path("output", "nodes")
-path_edges <- file.path("output", "edges")
-
-if (!(dir.exists(path_nodes) & dir.exists(path_edges))) {
-  dir.create(path_nodes, showWarnings = FALSE)
-  dir.create(path_edges, showWarnings = FALSE)
-
-  for (sm1 in unique(key_works$sm)) {
-    bm1 <- strsplit(
-      sm1,
-      split = "-"
-    )
-    bm1 <- paste0(bm1[[1]][[1]], "-", bm1[[1]][[2]])
-    message(
-      "\nProcessing ",
-      sm1,
-      " - ",
-      which(unique(key_works$bm) == sm1),
-      " of ",
-      length(unique(key_works$sm))
-    )
-
-    tic()
-    ids <- key_works |>
-      dplyr::filter(
-        sm == sm1,
-        id != is.na(id)
-      ) |>
-      dplyr::select(
-        id
-      ) |>
-      dplyr::mutate(
-        id = gsub(
-          pattern = "https://openalex.org/",
-          replacement = "",
-          x = id
-        )
-      ) |>
-      unlist() |>
-      unique()
-
-    ### Loading
-    message("  |- Loading files")
-    snowballs <- pbapply::pblapply(
-      ids,
-      function(id) {
-        result <- NULL
-        try(
-          result <- readRDS(file.path(
-            "output",
-            "snowballs",
-            paste0(id, ".rds")
-          )),
-          silent = TRUE
-        )
-        return(result)
-      }
-    )
-
-    ### Converting and saving nodes
-    message("  |- Combining and writing nodes")
-    pbapply::pblapply(
-      snowballs,
-      function(x) {
-        if (is.null(x)) {
-          node <- NULL
-        } else {
-          node <- x[["nodes"]]
-          node$author <- IPBES.R::abbreviate_authors(node)
-          if (!"ab" %in% colnames(node)) {
-            node <- node |>
-              dplyr::mutate(
-                ab = as.character(NA)
-              )
-          }
-          if (!"doi" %in% colnames(node)) {
-            node <- node |>
-              dplyr::mutate(
-                doi = as.character(NA)
-              )
-          }
-          node <- node |>
-            dplyr::mutate(
-              grants = NULL,
-              counts_by_year = NULL,
-              referenced_works = NULL,
-              related_works = NULL,
-              concepts = NULL,
-              topics = NULL
-            )
-          #     dplyr::select(
-          #       id,
-          #       doi,
-          #       author,
-          #       publication_year,
-          #       title,
-          #       ab,
-          #       oa_input
-          #     )
-        }
-        return(node)
-      }
-    ) |>
-      dplyr::bind_rows() |>
-      dplyr::distinct() |>
-      dplyr::mutate(
-        bm = bm1,
-        sm = sm1
-      ) |>
-      arrow::write_dataset(
-        path = path_nodes,
-        format = "parquet",
-        partitioning = c("bm", "sm"),
-        existing_data_behavior = "delete_matching"
-      )
-
-    ### Converting and saving edges
-    message("  |- Combining and writing edges")
-    pbapply::pblapply(
-      snowballs,
-      function(x) {
-        x[["edges"]]
-      }
-    ) |>
-      dplyr::bind_rows() |>
-      dplyr::distinct() |>
-      dplyr::mutate(
-        bm = bm1,
-        sm = sm1
-      ) |>
-      arrow::write_dataset(
-        path = path_edges,
-        format = "parquet",
-        partitioning = c("bm", "sm"),
-        existing_data_behavior = "delete_matching"
-      )
-    toc()
-  }
-}
-
-nodes <- arrow::open_dataset(
-  sources = path_nodes
-)
-
-edges <- arrow::open_dataset(
-  sources = path_edges
-)
-```
-
-
-## Extract number of references per background message per year
-
-```{r}
-#| label: refs_per_year_sm
-
-refs_per_year_sm <- nodes |>
-  dplyr::group_by(
-    sm,
-    publication_year
-  ) |>
-  dplyr::summarise(
-    n = dplyr::n()
-  ) |>
-  dplyr::arrange(
-    sm,
-    publication_year
-  ) |>
-  dplyr::collect() |>
-  saveRDS(file = file.path("output", "refs_per_year_sm.rds"))
-```
-
-## Figures
-
-### Publications per year
-
-```{r}
-#| label: fig_pub_per_year
-#|
-
-figname <- file.path("figures", "fig_pub_per_year")
-if (length(list.files("figures", "fig_pub_per_year")) < 2) {
-  fig <- file.path("output", "refs_per_year_sm.rds") |>
-    readRDS() |>
-    dplyr::collect() |>
-    ggplot(
-      aes(
-        x = publication_year,
-        y = n,
-        group = sm,
-        color = sm
-      )
-    ) +
-    geom_line() +
-    geom_point() +
-    geom_vline(
-      xintercept = 2019,
-      linetype = "dashed"
-    ) +
-    theme_minimal() +
-    labs(
-      title = "Number of New Publications per Year by Background Message",
-      x = "Publication Year",
-      y = "Number of Publications",
-      color = "Background Message"
-    ) +
-    theme(
-      legend.position = "bottom",
-      legend.title = element_blank()
-    ) +
-    xlim(2000, 2025) +
-    scale_y_log10()
-
-  ggplot2::ggsave(
-    filename = paste0(figname, ".png"),
-    plot = fig,
-    width = 10,
-    height = 20
-  )
-  ggplot2::ggsave(
-    filename = paste0(figname, ".pdf"),
-    plot = fig,
-    width = 10,
-    height = 20
-  )
-  ggplot2::ggsave(
-    filename = paste0(figname, ".svg"),
-    plot = fig,
-    width = 10,
-    height = 20
-  )
-}
-```
-
-## Overlap
-
-
-```{r}
-#| label: overlap_key_paper
-#|
-
-fn <- file.path("output", "overlap_key_paper_sub_messages.rds")
-
-if (!file.exists(fn)) {
-  overlap_keypapers <- nodes |>
-    dplyr::filter(
-      oa_input,
-      !is.na(id)
-    ) |>
-    dplyr::collect() |>
-    dplyr::summarise(
-      n = n(),
-      author,
-      title,
-      doi = gsub("https://doi.org/", "", doi),
-      sms = list(sm),
-      .by = id
-    ) |>
-    dplyr::distinct() |>
-    dplyr::arrange(
-      desc(n)
-    ) |>
-    dplyr::filter(
-      n > 1,
-      !is.na(id)
-    ) |>
-    dplyr::mutate(
-      id = paste0(
-        '<a href="https://openalex.org/',
-        id,
-        '" target="_blank">',
-        id,
-        "</a>"
-      ),
-      doi = paste0(
-        '<a href="https://doi.org/',
-        doi,
-        '" target="_blank">',
-        doi,
-        "</a>"
-      )
-    ) |>
-    dplyr::select(
-      n,
-      id,
-      author,
-      title,
-      doi,
-      sms
-    )
-
-  saveRDS(
-    overlap_keypapers,
-    file = fn
-  )
-
-  overlap_keypapers |>
-    IPBES.R::table_dt(
-      fixedColumns = list(leftColumns = 2)
-    ) |>
-    htmlwidgets::saveWidget(
-      file = file.path("output", "overlap_key_paper_sub_messages.html"),
-      selfcontained = TRUE
-    )
-
-  rm(overlap_keypapers)
-}
-```
-
-```{r}
-#| label: overlap_after_2018_sub_messages
-#|
-
-fn <- file.path("output", "overlap_after_2018_sub_messages.rds")
-
-if (!file.exists(fn)) {
-  after_2018_overlap <- nodes |>
-    dplyr::filter(
-      !oa_input,
-      !is.na(id),
-      publication_year > 2018
-    ) |>
-    collect() |>
-    summarise(
-      n = n(),
-      author,
-      title,
-      doi = gsub("https://doi.org/", "", doi),
-      sms = list(sm),
-      .by = id
-    ) |>
-    dplyr::distinct() |>
-    dplyr::arrange(
-      desc(n)
-    ) |>
-    dplyr::filter(
-      n > 5,
-      !is.na(id)
-    ) |>
-    dplyr::mutate(
-      id = paste0(
-        '<a href="https://openalex.org/',
-        id,
-        '" target="_blank">',
-        id,
-        "</a>"
-      ),
-      doi = paste0(
-        '<a href="https://doi.org/',
-        doi,
-        '" target="_blank">',
-        doi,
-        "</a>"
-      )
-    ) |>
-    dplyr::select(
-      n,
-      id,
-      author,
-      title,
-      doi,
-      sms
-    )
-
-  saveRDS(
-    after_2018_overlap,
-    file = fn
-  )
-
-  after_2018_overlap |>
-    IPBES.R::table_dt(
-      fixedColumns = list(leftColumns = 2)
-    ) |>
-    htmlwidgets::saveWidget(
-      file = file.path("output", "overlap_after_2018_sub_messages.html"),
-      selfcontained = TRUE
-    )
-
-  rm(after_2018_overlap)
-}
-```
-
-
-```{r}
-#| label: overlap_after_2018_background_messages
-#|
-
-fn <- file.path("output", "overlap_after_2018_background_messages.rds")
-
-if (!file.exists(fn)) {
-  after_2018_overlap <- nodes |>
-    dplyr::filter(
-      !oa_input,
-      !is.na(id),
-      publication_year > 2018
-    ) |>
-    dplyr::select(
-      author,
-      title,
-      doi,
-      bm,
-      id,
-      abstract = ab
-    ) |>
-    dplyr::mutate(
-      sm = NULL
-    ) |>
-    dplyr::distinct() |>
-    collect() |>
-    summarise(
-      n = n(),
-      author,
-      title,
-      abstract,
-      doi = gsub("https://doi.org/", "", doi),
-      bms = list(bm),
-      .by = id
-    ) |>
-    dplyr::distinct() |>
-    dplyr::arrange(
-      desc(n)
-    ) |>
-    dplyr::filter(
-      n > 5,
-      !is.na(id)
-    ) |>
-    dplyr::mutate(
-      id = paste0(
-        '<a href="https://openalex.org/',
-        id,
-        '" target="_blank">',
-        id,
-        "</a>"
-      ),
-      doi = paste0(
-        '<a href="https://doi.org/',
-        doi,
-        '" target="_blank">',
-        doi,
-        "</a>"
-      )
-    ) |>
-    dplyr::select(
-      n,
-      id,
-      author,
-      title,
-      doi,
-      abstract,
-      bms
-    )
-
-  saveRDS(
-    after_2018_overlap,
-    file = fn
-  )
-
-  after_2018_overlap |>
-    IPBES.R::table_dt(
-      fixedColumns = list(leftColumns = 2)
-    ) |>
-    htmlwidgets::saveWidget(
-      file = file.path("output", "overlap_after_2018_background_messages.html"),
-      selfcontained = TRUE
-    )
-
-  rm(after_2018_overlap)
-}
-```
+The figures and tables in the Results section below are all produced by
+`targets` pipeline targets — see `_targets.R` and the corresponding
+`R/build_*.R` files for the exact computation behind each one.
 
 # Results
 
-The dataset contains **`r key_works |> select(zotero) |> distinct() |> collect() |> nrow()`** paper referenced in the background messages. Out of these, **`r nodes |> filter(oa_input) |> select(id) |> distinct() |> collect() |> nrow()`** were usable for the snowball search and also yielded results.
+```{r}
+#| label: results_data
+#| include: false
+
+refs_paths <- targets::tar_read(refs_parquet)
+works_paths <- targets::tar_read(works_parquet)
+works_citing_paths <- targets::tar_read(works_citing_parquet)
+
+refs <- dplyr::bind_rows(lapply(refs_paths, function(p) {
+  arrow::open_dataset(p) |> dplyr::select(doi) |> dplyr::collect()
+}))
+
+key_papers <- dplyr::bind_rows(lapply(works_paths, function(p) {
+  arrow::open_dataset(p) |>
+    dplyr::select(km, bm, doi, publication_year, type) |>
+    dplyr::collect()
+})) |>
+  dplyr::mutate(oa_input = TRUE)
+
+citing_papers <- dplyr::bind_rows(lapply(works_citing_paths, function(p) {
+  arrow::open_dataset(p) |>
+    dplyr::select(km, bm, doi, publication_year, type) |>
+    dplyr::collect()
+})) |>
+  dplyr::mutate(oa_input = FALSE)
+
+all_papers <- dplyr::bind_rows(key_papers, citing_papers)
+
+# Figure and table artifact paths — resolved via tar_read() so the report
+# always shows what the pipeline actually last built, never a stale/hardcoded
+# path.
+fig_pub_per_year_paths <- targets::tar_read(fig_pub_per_year)
+fig_pub_per_year_png <- fig_pub_per_year_paths[grepl(
+  "\\.png$",
+  fig_pub_per_year_paths
+)]
+fig_pub_per_year_pdf <- fig_pub_per_year_paths[grepl(
+  "\\.pdf$",
+  fig_pub_per_year_paths
+)]
+fig_pub_per_year_svg <- fig_pub_per_year_paths[grepl(
+  "\\.svg$",
+  fig_pub_per_year_paths
+)]
+
+overlap_key_paper_html <- targets::tar_read(overlap_key_paper_table)
+overlap_key_paper_html <- overlap_key_paper_html[grepl(
+  "\\.html$",
+  overlap_key_paper_html
+)]
+
+overlap_after_2018_sub_messages_html <- targets::tar_read(
+  overlap_after_2018_sub_messages_table
+)
+overlap_after_2018_sub_messages_html <- overlap_after_2018_sub_messages_html[grepl(
+  "\\.html$",
+  overlap_after_2018_sub_messages_html
+)]
+
+overlap_after_2018_background_messages_html <- targets::tar_read(
+  overlap_after_2018_background_messages_table
+)
+overlap_after_2018_background_messages_html <- overlap_after_2018_background_messages_html[grepl(
+  "\\.html$",
+  overlap_after_2018_background_messages_html
+)]
+```
+
+The dataset contains **`r refs |> dplyr::distinct(doi) |> nrow()`** papers
+referenced in the background messages. Out of these, **`r key_papers |> dplyr::distinct(doi) |> nrow()`**
+were usable for the snowball search and also yielded results.
 
 ```{r}
 #| label: numbers_table
 #|
 
-nodes |>
+all_papers |>
   dplyr::summarise(
     n = dplyr::n(),
-    n_key_paper = sum(oa_input == TRUE, na.rm = TRUE),
-    n_non_key_paper = sum(oa_input == FALSE, na.rm = TRUE),
+    n_key_paper = sum(oa_input, na.rm = TRUE),
+    n_non_key_paper = sum(!oa_input, na.rm = TRUE),
     n_nkp_pre_2018 = sum(
-      ((oa_input == FALSE) & (publication_year <= 2018)),
+      (!oa_input) & (publication_year <= 2018),
       na.rm = TRUE
-    ), # Count of papers with publication_year <= 2018
+    ), # Count of citing papers with publication_year <= 2018
     n_nkp_post_2018 = sum(
-      ((oa_input == FALSE) & (publication_year > 2018)),
+      (!oa_input) & (publication_year > 2018),
       na.rm = TRUE
-    ), # Count of papers with publication_year > 2018,
-    .by = sm
+    ), # Count of citing papers with publication_year > 2018
+    .by = c(km, bm)
   ) |>
-  dplyr::arrange(
-    sm
-  ) |>
-  dplyr::collect() |>
+  dplyr::arrange(km, bm) |>
   IPBES.R::table_dt()
 ```
 
@@ -775,21 +189,17 @@ Here we show the different types of publication after 2018 as identified by the 
 #| label: publication_types_grouped
 #| echo: false
 
-nodes |>
+all_papers |>
   dplyr::filter(
     publication_year > 2018
   ) |>
-  dplyr::select(
-    type
-  ) |>
   dplyr::summarize(
-    n = n(),
+    n = dplyr::n(),
     .by = type
   ) |>
   dplyr::arrange(
     dplyr::desc(n)
   ) |>
-  dplyr::collect() |>
   knitr::kable()
 ```
 
@@ -799,22 +209,17 @@ This table shows the number of work types per sub-background message. It allows 
 #| label: publication_types_non_grouped
 #| echo: false
 
-nodes |>
+all_papers |>
   dplyr::filter(
     publication_year > 2018
   ) |>
-  dplyr::select(
-    bm,
-    type
-  ) |>
   dplyr::summarize(
-    n = n(),
-    .by = c(type, bm)
+    n = dplyr::n(),
+    .by = c(type, km, bm)
   ) |>
   dplyr::arrange(
     dplyr::desc(n)
   ) |>
-  dplyr::collect() |>
   IPBES.R::table_dt(
     fixed_columns = NULL
   )
@@ -822,11 +227,11 @@ nodes |>
 
 ## Publications per year
 
-![](figures/fig_pub_per_year.png)
+![](`r fig_pub_per_year_png`)
 
-- [Download `png`](figures/fig_pub_per_year.png)
-- [Download `pdf`](figures/fig_pub_per_year.pdf)
-- [Download `svg`](figures/fig_pub_per_year.svg)
+- [Download `png`](`r fig_pub_per_year_png`)
+- [Download `pdf`](`r fig_pub_per_year_pdf`)
+- [Download `svg`](`r fig_pub_per_year_svg`)
 
 ## Overlap
 
@@ -836,13 +241,13 @@ In the following tables only the papers which occur in more than one background 
 
 This overlap can have different causes. Either there is an overlap of the key-papers, ehich results in an overlap of the new publications, or there is a topical overlap betweent the new paper themselves. 
 
-### Overlap of Key Papers in Sub Messages
+### Overlap of Key Papers in Background Messages
 
-The first table shows the overlap of the key-papers only regarding sub messages.
+The first table shows the overlap of the key-papers only regarding background messages.
 
-Only papers with in more then 1 Sub Messages are shown.
+Only papers occurring in more than 1 background message are shown.
 
-<iframe src="output/overlap_key_paper_sub_messages.html" width="100%" height="500px"></iframe>
+<iframe src="`r overlap_key_paper_html`" width="100%" height="500px"></iframe>
 
 ### Overlap of Papers after 2018 in Sub Messages
 
@@ -850,7 +255,7 @@ The second table shows the overlap of all papers after 2018 regarding sub messag
 
 Only papers with in more then 5 Sub Messages are shown.
 
-<iframe src="output/overlap_after_2018_sub_messages.html" width="100%" height="500px"></iframe>
+<iframe src="`r overlap_after_2018_sub_messages_html`" width="100%" height="500px"></iframe>
 
 ### Overlap of Papers after 2018 in Background Messages
 
@@ -858,6 +263,182 @@ The third table shows the overlap of all papers after 2018 regarding background 
 
 Only papers with in more then 5 Background Messages are shown.
 
-<iframe src="output/overlap_after_2018_background_messages.html" width="100%" height="500px"></iframe>
+<iframe src="`r overlap_after_2018_background_messages_html`" width="100%" height="500px"></iframe>
+
+## NLI Alignment Scores
+
+Each citing work is scored against its partition's Background Message (BM) as `SUPPORTS`, `REFUTES`, or `NOT_ENOUGH_INFO` using a zero-shot NLI model. See [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md) for methodology.
+
+```{r}
+#| label: nli_overview_paths
+#| include: false
+
+nli_overview_data_paths <- targets::tar_read(nli_overview_data)
+nli_overview_figures_paths <- targets::tar_read(nli_overview_figures)
+```
+
+```{r}
+#| label: nli_overview_sections
+#| results: asis
+
+for (data_path in nli_overview_data_paths) {
+  x <- readRDS(data_path)
+  cat(sprintf("\n### %s\n\n", x$assessment))
+
+  if (isTRUE(x$empty)) {
+    cat("No NLI scores available yet for this assessment.\n\n")
+    next
+  }
+
+  cat(sprintf(
+    "- **%s** works scored\n- **%d** background messages\n- **%d** key messages\n- **%s%%** uncertain (confidence < 0.60)\n\n",
+    format(x$n_total, big.mark = ","),
+    x$n_bm,
+    x$n_km,
+    x$pct_unc
+  ))
+
+  fig_this <- nli_overview_figures_paths[
+    grepl(paste0("_", x$assessment, "\\.png$"), nli_overview_figures_paths)
+  ]
+  plot_overall <- fig_this[grepl("plot_overall", fig_this)]
+  plot_km <- fig_this[grepl("plot_km", fig_this)]
+  plot_bm <- fig_this[grepl("plot_bm", fig_this)]
+  plot_conf <- fig_this[grepl("plot_conf", fig_this)]
+  plot_aln <- fig_this[grepl("plot_aln", fig_this)]
+
+  cat("#### Label distribution\n\n")
+  cat(
+    knitr::kable(
+      x$label_overall |>
+        dplyr::mutate(
+          label = factor(
+            label,
+            levels = c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
+          )
+        ) |>
+        dplyr::arrange(label),
+      col.names = c("Label", "Works", "%")
+    ),
+    sep = "\n"
+  )
+  cat("\n\n")
+  if (length(plot_overall)) {
+    cat(sprintf("![](%s)\n\n", plot_overall))
+  }
+
+  cat("#### Per Key Message\n\n")
+  cat(
+    knitr::kable(
+      x$label_km,
+      col.names = c("KM", "SUPPORTS %", "NEI %", "REFUTES %")
+    ),
+    sep = "\n"
+  )
+  cat("\n\n")
+  if (length(plot_km)) {
+    cat(sprintf("![](%s)\n\n", plot_km))
+  }
+
+  cat("#### Per Background Message\n\n")
+  if (length(plot_bm)) {
+    cat(sprintf("![](%s)\n\n", plot_bm))
+  }
+  cat(
+    knitr::kable(
+      x$table_bm,
+      col.names = c("KM", "BM", "SUPPORTS %", "NEI %", "REFUTES %")
+    ),
+    sep = "\n"
+  )
+  cat("\n\n")
+
+  cat("#### Confidence by label\n\n")
+  cat(
+    knitr::kable(
+      x$conf_table,
+      col.names = c("Label", "n", "Mean", "Median", "P25", "P75")
+    ),
+    sep = "\n"
+  )
+  cat("\n\n")
+  if (length(plot_conf)) {
+    cat(sprintf("![](%s)\n\n", plot_conf))
+  }
+
+  cat("#### Alignment score per BM\n\n")
+  cat(
+    knitr::kable(
+      x$align_table,
+      col.names = c(
+        "KM",
+        "BM",
+        "n",
+        "Mean aln",
+        "SD",
+        "SUPP %",
+        "REF %",
+        "NEI %",
+        "Unc %"
+      )
+    ),
+    sep = "\n"
+  )
+  cat("\n\n")
+  if (length(plot_aln)) cat(sprintf("![](%s)\n\n", plot_aln))
+}
+```
+
+### GA1 — Detailed Interpretation (static, 2026-07-01)
+
+::: {.callout-note}
+## About this section
+Written against an earlier sample of GA1 scores and does **not** auto-update from the live data above — treat as illustrative commentary pending a refreshed pass once scoring is more complete.
+:::
+
+**Key finding.** **KM D is in a different class from A, B, C.** With 48.8 % SUPPORTS and only 14.6 % REFUTES overall, and individual BMs D1 (79.8 % SUPPORTS), D3 (78.6 %), and D12 (60.1 %) showing clear, consistent signals at comparatively lower uncertainty (65–84 %), KM D is the only part of GA1 where zero-shot NLI produces credible output. D3 and D1 have the best-calibrated scores in the entire dataset.
+
+Likely reason: D-series BMs are probably more concrete and empirically testable — biodiversity metrics, species trends, ecosystem services — the kind of claims abstracts engage with directly.
+
+::: {.callout-warning}
+## REFUTES inflation — KMs A, B, C
+
+Several BMs have REFUTES > SUPPORTS by a wide margin that is not scientifically credible:
+
+| BM | SUPPORTS | REFUTES | Interpretation |
+|----|---------|---------|----------------|
+| B11 | 13 % | 56 % | Likely false positives |
+| B5  | 27 % | 55 % | Likely false positives |
+| C6  |  8 % | 55 % | Likely false positives |
+| A3  |  4 % | 45 % | Likely false positives |
+| A7  |  5 % | 43 % | Likely false positives |
+| A8  | 15 % | 47 % | Likely false positives |
+
+These are not credible. Citing papers of an assessment should not be 55 % refuting it. This is the well-documented zero-shot NLI failure mode: the hypothesis *"This paper refutes the following claim: …"* draws spurious entailment when the BM contains complex, multi-part, or politically nuanced language. The model fires on surface-level topical tension rather than genuine contradiction.
+:::
+
+::: {.callout-note}
+## Noise BMs — effectively random
+
+Three BMs show SUPPORTS ≈ REFUTES — the argmax label is meaningless here:
+
+- **A2** 29.5 % vs 29.9 % — coin flip
+- **C2** 24.7 % vs 25.4 % — coin flip
+- **B4** 29.0 % vs 35.4 % — near coin flip
+
+For these, only the continuous alignment score and the raw probability triplet carry any information.
+:::
+
+#### Notable exception in KM A
+
+**A5** (39.8 % SUPPORTS, 5.7 % REFUTES, mean alignment +0.095) is the only BM in KMs A–C with a clearly positive signal. Its claim is likely more concrete or empirically specific than its neighbours — worth inspecting manually as a calibration reference.
+
+#### Operational implications
+
+1. **Do not act on raw REFUTES labels for KMs A–C** without Phase-2 LLM review. NLI here is a coarse NEI filter, not a judgment.
+2. **KM D SUPPORTS at high confidence (> 0.70) can be treated as real** — D1, D3, D12 in particular.
+3. **Use `p_supports − p_refutes` for ranking** rather than argmax labels. Papers with very high `p_nei` can be deprioritised for expert review.
+4. **`max_length: 256` is probably hurting KMs A–C.** Truncating abstract tails removes findings — the part that matters most for support/refute judgements on conceptual BMs. The base-model-at-512 comparison (`deberta_zeroshot_v3`) is the highest-priority next experiment.
+5. **Fine-tuning on BM citations** ([TD_NLI_training.md](TD_NLI_training.md)) would most help KMs A–C — the support/refute axis that zero-shot is fumbling. D-series BMs are already working.
 
 

@@ -36,7 +36,11 @@ tar_option_set(
     "future",
     "future.apply",
     "xml2",
-    "stringr"
+    "stringr",
+    "ggplot2",
+    "IPBES.R",
+    "htmlwidgets",
+    "tidyr"
   )
 )
 
@@ -252,6 +256,41 @@ list(
     format = "file"
   ),
 
+  # Target 2f2: Publications-per-year-by-BM figure — aggregated across every
+  # assessment's works_citing branches (no `pattern =` here: targets combines
+  # all dynamic branches of works_citing_parquet into one vector).
+  tar_target(
+    fig_pub_per_year,
+    build_fig_pub_per_year(works_citing_parquet, "output/figures"),
+    format = "file"
+  ),
+
+  # Target 2f3: Key-paper overlap table — key/seed papers (works_parquet)
+  # referenced in more than one background message. Aggregated across every
+  # assessment's works branches, same aggregation pattern as fig_pub_per_year.
+  tar_target(
+    overlap_key_paper_table,
+    build_overlap_key_paper_table(works_parquet, "output/tables"),
+    format = "file"
+  ),
+
+  # Target 2f4/2f5: Citing-paper overlap tables — citing papers
+  # (works_citing_parquet) published after 2018, referenced from more than 5
+  # background messages. "sub_messages" and "background_messages" group
+  # identically under the active schema (no sub-message level) — kept as two
+  # targets only for report-section continuity with the legacy qmd; the
+  # background_messages variant additionally carries the abstract column.
+  tar_target(
+    overlap_after_2018_sub_messages_table,
+    build_overlap_after_2018_sub_messages_table(works_citing_parquet, 2018, "output/tables"),
+    format = "file"
+  ),
+  tar_target(
+    overlap_after_2018_background_messages_table,
+    build_overlap_after_2018_background_messages_table(works_citing_parquet, 2018, "output/tables"),
+    format = "file"
+  ),
+
   # ==========================================================================
   # PARKED — LLM-comparison approach (truth/citing prompts + ellmer/OpenRouter
   # alignement scoring). Superseded by the NLI approach (nli_scores_parquet
@@ -348,15 +387,50 @@ list(
     format = "file"
   ),
 
-  # Commented out: render report once QMD is migrated to consume output/refs/ and output/sections/
-  # tar_target(
-  #   report,
-  #   {
-  #     quarto::quarto_render("IPBES_KnowledgsDiscovery.qmd")
-  #     "IPBES_KnowledgsDiscovery.html"
-  #   },
-  #   format = "file"
-  # )
+  # Target 2h2: NLI overview data — per-assessment label/confidence/alignment
+  # summary tables, collected once from nli_scores_parquet and cached so
+  # neither the figures target nor the report re-collect() the raw dataset.
+  #
+  # TEMPORARY: depends on a hardcoded path (mirroring build_nli_scores_parquet's
+  # own naming: output/nli_scores/nli_config=<active>/assessment=<id>) instead
+  # of the nli_scores_parquet target itself. nli_scores_parquet is currently
+  # outdated (host-pooling rewrite) and IAS has no output yet, so depending on
+  # it directly would force a full from-scratch GPU scoring run for IAS via
+  # tar_make(). Revert to `nli_scores_parquet` (and pattern = map(assessment,
+  # nli_scores_parquet)) once that's been run deliberately.
+  tar_target(
+    nli_overview_data,
+    build_nli_overview_data(
+      assessment,
+      file.path(
+        "output/nli_scores",
+        paste0("nli_config=", nli_active),
+        paste0("assessment=", assessment$id)
+      ),
+      nli_active,
+      "output/tables"
+    ),
+    pattern = map(assessment),
+    format = "file"
+  ),
+
+  # Target 2h3: NLI overview figures — label split (overall/per-KM/per-BM),
+  # confidence density, alignment density, per assessment.
+  tar_target(
+    nli_overview_figures,
+    build_nli_overview_figures(nli_overview_data, "output/figures"),
+    pattern = map(nli_overview_data),
+    format = "file"
+  ),
+
+  tar_target(
+    report_fact_checker,
+    {
+      quarto::quarto_render("IPBES_Fact_Checker.qmd")
+      "IPBES_Fact_Checker.html"
+    },
+    format = "file"
+  ),
 
   NULL
 )
