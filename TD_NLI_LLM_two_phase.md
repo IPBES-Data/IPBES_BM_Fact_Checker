@@ -1,0 +1,157 @@
+# Two-Phase Alignment Scoring: NLI → LLM
+
+## Overview
+
+A two-phase pipeline that combines the speed and scale of NLI with the nuance and
+explanatory power of an LLM. NLI handles all pairs cheaply; the LLM only processes
+the remainder where a richer judgement is needed.
+
+This is pure **inference** — no model training is involved. The LLM acts as a
+classifier and explainer on top of the NLI output.
+
+---
+
+## Phase 1 — NLI (all pairs)
+
+Run the existing `nli_scores_parquet` pipeline across all citing works × BMs.
+The NLI model returns `label` + `p_supports` / `p_refutes` / `p_nei` /
+`confidence` / `uncertain` for every pair.
+
+**Routing after Phase 1:**
+
+| NLI result | Action |
+|---|---|
+| `SUPPORTS`, `confidence ≥ threshold` | Accept as SUPPORTS — done |
+| `REFUTES`, any confidence | Always send to LLM — rare, high value |
+| `NOT_ENOUGH_INFO`, `p_nei > nei_threshold` | Discard as not relevant — done |
+| `uncertain = TRUE` (confidence < threshold) | Send to LLM for refinement |
+| `NOT_ENOUGH_INFO`, `uncertain = TRUE` | Send to LLM — model was unsure |
+
+In practice the LLM input is roughly:
+- All `REFUTES` predictions
+- All `uncertain = TRUE` predictions
+- Optionally: `SUPPORTS` with low confidence (borderline cases)
+
+Expected volume reduction from your data (~330k total pairs):
+- ~10–20% sent to LLM after filtering → ~30–60k pairs
+
+---
+
+## Phase 2 — LLM (remainder only)
+
+### Prompt design
+
+Feed the LLM the abstract, the BM text, and the NLI result as a prior:
+
+```
+You are reviewing whether a scientific paper supports or contradicts an IPBES
+Background Message.
+
+Background Message:
+{bm_description}
+
+Paper title and abstract:
+{title}. {abstract}
+
+A zero-shot NLI model classified this pair as "{nli_label}" with confidence
+{confidence:.2f} (p_supports={p_supports:.2f}, p_refutes={p_refutes:.2f},
+p_nei={p_nei:.2f}).
+
+Tasks:
+1. Do you agree with the NLI classification? Answer: SUPPORTS / REFUTES /
+   NOT_ENOUGH_INFO.
+2. Explain in 2–3 sentences why, referencing specific content from the abstract.
+3. If you disagree with the NLI label, explain what likely caused the error.
+```
+
+The NLI result as a prior serves two purposes:
+- It focuses the LLM on the borderline or surprising cases
+- It gives the LLM a signal to agree with, refine, or override — reducing the
+  chance of the LLM ignoring a genuine connection
+
+### Model choice
+
+| Model | Notes |
+|---|---|
+| `openai/gpt-4o-mini` | Good balance of quality and cost; recommended first choice |
+| `google/gemma-3-27b-it` | Free tier on OpenRouter; slower, weaker explanations |
+| `openai/gpt-4o` | Best quality; use for `REFUTES` cases only (high stakes) |
+| `anthropic/claude-haiku-4-5` | Fast and cheap; strong at structured extraction |
+
+Use a cheaper model for `uncertain` cases and a stronger model for `REFUTES`.
+
+### Output schema
+
+```r
+# One row per LLM-reviewed pair (ellmer structured output)
+tibble(
+  nli_config       = character(),   # NLI profile used in Phase 1
+  llm_model        = character(),   # model used for Phase 2
+  assessment       = character(),
+  km               = character(),
+  bm               = character(),
+  work_id          = character(),
+  nli_label        = character(),   # original NLI label
+  nli_confidence   = double(),      # original NLI confidence
+  llm_label        = character(),   # SUPPORTS / REFUTES / NOT_ENOUGH_INFO
+  llm_agrees       = logical(),     # TRUE if llm_label == nli_label
+  explanation      = character(),   # 2–3 sentence free-text explanation
+  disagreement_reason = character() # filled when llm_agrees == FALSE
+)
+```
+
+### Caching / prefix caching
+
+Group calls by BM — send all papers for the same BM in sequence so the provider's
+automatic prefix cache kicks in on the shared `(system + BM text)` prefix. This
+matches the parked LLM-comparison chain pattern in
+[R/build_alignement_scores_parquet.R](R/build_alignement_scores_parquet.R).
+
+---
+
+## Using LLM Output as Training Data
+
+The LLM explanations are high-quality labeled examples for fine-tuning the NLI
+model (see [TD_NLI_training.md](TD_NLI_training.md)):
+
+- `llm_agrees = TRUE` → confirms the NLI label; strong training signal
+- `llm_agrees = FALSE` → NLI error with explanation; gold-standard correction
+- `REFUTES` cases reviewed by LLM → rare but valuable negative examples
+
+Running Phase 2 on one assessment effectively generates a domain-specific labeled
+dataset for free as a side effect of the inference pipeline.
+
+---
+
+## Estimated Cost (Phase 2 only)
+
+Assuming ~50k pairs sent to LLM, average prompt ~400 tokens, completion ~150 tokens:
+
+| Model | Input cost | Output cost | Total (~50k pairs) |
+|---|---|---|---|
+| `gpt-4o-mini` | $0.15/1M | $0.60/1M | ~$8 |
+| `gpt-4o` | $2.50/1M | $10/1M | ~$125 |
+| `claude-haiku-4-5` | $0.80/1M | $4/1M | ~$26 |
+
+`gpt-4o-mini` is the practical default. Reserve `gpt-4o` for `REFUTES` cases only.
+
+---
+
+## Recommended Workflow
+
+1. Run `nli_scores_parquet` (Phase 1) — existing pipeline
+2. Filter output to LLM candidates (routing table above)
+3. Run Phase 2 LLM scoring — new `llm_scores_parquet` target
+4. Merge: use `llm_label` where available, fall back to `nli_label` elsewhere
+5. Human expert review of all `REFUTES` calls regardless of source
+6. Optionally: use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
+
+---
+
+## See Also
+
+- [TD_BM NLI approach.md](TD_BM%20NLI%20approach.md) — Phase 1 design and compute
+- [TD_NLI_training.md](TD_NLI_training.md) — fine-tuning the NLI model
+- [R/build_nli_scores_parquet.R](R/build_nli_scores_parquet.R) — Phase 1 implementation
+- [R/build_alignement_scores_parquet.R](R/build_alignement_scores_parquet.R) — parked
+  LLM-comparison chain (reference implementation for Phase 2)

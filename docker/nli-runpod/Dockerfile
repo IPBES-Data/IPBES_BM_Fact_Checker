@@ -6,14 +6,14 @@
 #
 # Build (from repo root):
 #   docker buildx build --platform linux/amd64 \
-#     -t ghcr.io/rkrug/nli-runpod:v0.1.0 \
+#     -t ghcr.io/rkrug/nli-runpod:v0.2.3 \
 #     -f docker/nli-runpod/Dockerfile .
-#   docker push ghcr.io/rkrug/nli-runpod:v0.1.0
+#   docker push ghcr.io/rkrug/nli-runpod:v0.2.3
 #
 # `--platform linux/amd64` matters on Apple Silicon — RunPod nodes are amd64.
 #
 # RunPod pod template:
-#   Container Image: ghcr.io/rkrug/nli-runpod:v0.1.0 (or an immutable @sha256 digest)
+#   Container Image: ghcr.io/rkrug/nli-runpod:v0.2.3 (or an immutable @sha256 digest)
 #   Expose HTTP port: 8080
 #   Container Start Command: (leave blank — entrypoint launches uvicorn)
 #   Env: RUNPOD_API_KEY (required for the idle watchdog), IDLE_MIN, POLL_SEC
@@ -30,6 +30,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HF_HOME=/opt/hf-cache \
     NLI_PORT=8080 \
     NLI_MAX_LENGTH=512 \
+    NLI_DTYPE=float16 \
     IDLE_MIN=5
 
 ARG NLI_MODEL=MoritzLaurer/deberta-v3-large-zeroshot-v2.0

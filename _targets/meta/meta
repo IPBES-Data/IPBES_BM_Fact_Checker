@@ -83,41 +83,40 @@ prompts_citing_parquet|pattern|57f639233fe3b848|72b11134c2a01abe||-591540906||||
 citing_wrapper_file|stem|4b14f60b8a60f97b|05d236ec3a1833ec|2c530c1562a7fbd1|87538220|input/prompts/citing_wrapper.md|t20606.4292332807s|s1102b|1102|file|local|vector|||0.352||
 truth_wrapper_file|stem|1951589831670472|48385938736244fa|2c530c1562a7fbd1|-1371380137|input/prompts/truth_wrapper.md|t20606.4291162277s|s1438b|1438|file|local|vector|||0||
 alignement_scores_run_specs|stem|ed73b0c9aefb7da0|9a6b7df33637d88a|4e8638dddae3c683|-1283180392||t20606.4333548805s|s335b|335|rds|local|list|||0.014||
-config_file|stem|22d8166fda3f1b98|8a509d56b3459c7e|2c530c1562a7fbd1|-615108176|input/config.yaml|t20633.7184815034s|s2388b|2388|file|local|vector|||0.789||
 mmd_workflow_lm|stem|01e5839ed86e4266|fe8e844b71eb35a6|2c530c1562a7fbd1|-2100084758|input/mmd/workflow_lm.mmd|t20606.4446054017s|s6291b|6291|file|local|vector|||0||
 pipeline_lm|stem|eee6d81a6837c7c2|f18c9285489bff15|2c530c1562a7fbd1|1208093258|input/mmd/pipeline_lm.mmd|t20605.6477385645s|s2979b|2979|file|local|vector|||0||
-config|stem|22a7046643aee23c|a8e842b5a57e39b7|872af81b8b25b72d|-1931060652||t20634.2850281176s|s554b|554|rds|local|vector|||0.001||
 diagram_workflow_lm|stem|5b431175fb0d5b6c|2e7c15fa8a703e85|c711f2d310a26fc4|-1247600539|output/figures/workflow_lm.svg*output/figures/workflow_lm.png|t20634.2850580665s|s333371b|333371|file|local|vector|||2.695||
 diagram_pipeline_lm|stem|475ae1f5372e5de7|82e0b55805a4cb99|a31c4095c4ac44c2|1273047049|output/figures/pipeline_lm.svg*output/figures/pipeline_lm.png|t20634.2851066262s|s718770b|718770|file|local|vector|||1.925||
-nli_config|stem|14d88071d2ef8210|def4de8a26a67ecd|46ecdc510663d631|-1786223254||t20634.2851153594s|s352b|352|rds|local|vector|||0||
-assessments_list|stem|ef3e5d5358c77359|018785310735f56b|46ecdc510663d631|-2022784872||t20634.2851154188s|s242b|242|rds|local|vector|||0||
-sparql_url|stem|7d4ee6c648fd8a0e|7b9362b81ca3ec2e|46ecdc510663d631|265476876||t20634.2851154777s|s59b|59|rds|local|vector|||0||
-fulltext_list|stem|a2213f763e9ef76a|128c5e7389875986|46ecdc510663d631|816017925||t20634.2851155271s|s126b|126|rds|local|vector|||0||
-diagram_pipeline_nli|stem|5840cf718d98959f|2f85f188e02adcb6|48ff091027815902|425344336|output/figures/pipeline_nli.svg*output/figures/pipeline_nli.png|t20634.2851355761s|s546080b|546080|file|local|vector|||1.834||
-assessment|stem|68288e40df3d4119|ae1b74426a7e508a|176c368f76b4dd68|1623788928||t20634.2851370446s|s265b|265|rds|local|list||assessment_80b2f2ad9ef886f0*assessment_641c15b8028660e0|0||
-key_messages_parquet_3988b288110d41af|branch|a086f9799b9b3ac8|1bdccb85f05f2b83|fcd5c164c72c2bb7|-1141682681|output/key_messages/assessment=GA1|t20634.2851582466s|s86666b|86666|file|local|vector|key_messages_parquet||1.822||
-key_messages_parquet_3f579115edf85da9|branch|5148707d633723a4|1bdccb85f05f2b83|28c99ccf6a14dfc3|160452395|output/key_messages/assessment=IAS|t20634.2851768818s|s105669b|105669|file|local|vector|key_messages_parquet||1.598||
-refs_parquet_3988b288110d41af|branch|1795897598895a62|9745f55b58fdcf7e|7c695f67e02c6d43|-1661167170|output/refs/assessment=GA1|t20634.2852060001s|s885798b|885798|file|local|vector|refs_parquet||2.503||
-refs_parquet_3f579115edf85da9|branch|afb2f677d9219694|9745f55b58fdcf7e|a5e215a9e9052d31|-2020924811|output/refs/assessment=IAS|t20634.2853066184s|s10464205b|10464205|file|local|vector|refs_parquet||8.693||
-refs_parquet|pattern|23381b80fefa24a0|9745f55b58fdcf7e||1650781270||||11350003|file|local|vector||refs_parquet_3988b288110d41af*refs_parquet_3f579115edf85da9|11.196||
-sections_parquet_3988b288110d41af|branch|911b7970b066a5bd|9da21a910b82a89e|07d9d414af9c4683|1333797241|output/sections/assessment=GA1|t20634.2853259705s|s532998b|532998|file|local|vector|sections_parquet||1.651||
-sections_parquet_3f579115edf85da9|branch|dea4d32cce6f5382|9da21a910b82a89e|ec91369cdc8caed6|-1815777220|output/sections/assessment=IAS|t20634.2853655188s|s1018670b|1018670|file|local|vector|sections_parquet||3.413||
-zotero_parquet_b7689dcbf2d6a705|branch|0f1ba1e27b50f58d|82c6c84749ec39b5|73386b11062c9d36|-516070157|output/zotero/assessment=GA1|t20634.2887700723s|s4037367b|4037367|file|local|vector|zotero_parquet||294.132|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
-zotero_parquet_85d88b290c3fbbc6|branch|ccefa08a189af2bf|82c6c84749ec39b5|4e54472befc8fed7|-1522435211|output/zotero/assessment=IAS|t20634.2915098602s|s3327796b|3327796|file|local|vector|zotero_parquet||236.686|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
-zotero_parquet|pattern|e5232b220160ae1b|82c6c84749ec39b5||-933570212||||7365163|file|local|vector||zotero_parquet_b7689dcbf2d6a705*zotero_parquet_85d88b290c3fbbc6|530.818||
-works_parquet_d92410c91b60b8b4|branch|cdd64691d9b74781|c405382f2acbc853|4988642d69b805ca|1420870494|output/works/assessment=GA1|t20634.2924241646s|s5995237b|5995237|file|local|vector|works_parquet||78.966|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
-works_parquet_93667d59d1a7a1c1|branch|29767b310ec3a19c|c405382f2acbc853|29cfd5757ca31dc5|914856445|output/works/assessment=IAS|t20634.2929970736s|s12675342b|12675342|file|local|vector|works_parquet||49.488|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
-works_parquet|pattern|43809d08fe1768d5|c405382f2acbc853||1967066260||||18670579|file|local|vector||works_parquet_d92410c91b60b8b4*works_parquet_93667d59d1a7a1c1|128.454||
-r_files|stem|2b10ec7bd623771d|5346fc6fd5a62417|2c530c1562a7fbd1|969205733|_targets.R*R/alignement_schema.R*R/branch_helpers.R*R/build_alignement_parquet.R*R/build_alignement_scores_parquet.R*R/build_fulltext.R*R/build_nli_scores_parquet.R*R/build_prompts_citing_parquet.R*R/build_prompts_truth_parquet.R*R/build_snowball_parquet.R*R/build_works_citing_parquet.R*R/clean_text.R*R/download_ttls.R*R/download_works.R*R/download_zotero.R*R/extract_lod.R*R/manage_fuseki.R*R/render_diagrams.R*R/resolve_citations.R*R/write_key_messages_parquet.R*R/write_refs_parquet.R*R/write_sections_parquet.R|t20634.3990337215s|s105215b|105215|file|local|vector|||0.097|package ‘httr2’ was built under R version 4.6.1. package ‘xml2’ was built under R version 4.6.1|
-pipeline_mmd|stem|66f7eb5c8bedb24b|c8c446faa2ca5040|c5ef29aec91219c5|-164121517|input/mmd/pipeline_nli.mmd|t20634.3990729638s|s2607b|2607|file|local|vector|||0.934||
-snowball_parquet_ed9d1c219bde80ae|branch|23bebeccd8a8eb90|27f6b13dbf873bb8|5d2ce85e483c300b|1091226375|output/snowball/nodes/assessment=GA1*output/snowball/edges/assessment=GA1*output/snowball/keypaper/assessment=GA1|t20634.4629588083s|s1711571385b|1711571385|file|local|vector|snowball_parquet||5519.649||
-snowball_parquet_8d54f805b331658e|branch|c4f57fc30f77e61f|27f6b13dbf873bb8|6b3043a0c582e3ef|655133157|output/snowball/nodes/assessment=IAS*output/snowball/edges/assessment=IAS*output/snowball/keypaper/assessment=IAS|t20634.5301009624s|s1365628977b|1365628977|file|local|vector|snowball_parquet||5800.26||
-snowball_parquet|pattern|612e838836233182|27f6b13dbf873bb8||-1490676469||||3077200362|file|local|vector||snowball_parquet_ed9d1c219bde80ae*snowball_parquet_8d54f805b331658e|11319.909||
-works_citing_parquet_d1d9cb33f2278561|branch|098b04c616026524|8062d92dd0347aaf|98b6ffe4990b8b78|138015028|output/works_citing/assessment=GA1|t20634.5301220354s|s1188942705b|1188942705|file|local|vector|works_citing_parquet||1.013||
-works_citing_parquet_96ee57553d74254d|branch|4e881fd73d728abc|8062d92dd0347aaf|66dedacc198ddf9d|98802747|output/works_citing/assessment=IAS|t20634.530131535s|s771288717b|771288717|file|local|vector|works_citing_parquet||0.46||
-works_citing_parquet|pattern|ce6f009dae72f3cf|8062d92dd0347aaf||-1385308626||||1960231422|file|local|vector||works_citing_parquet_d1d9cb33f2278561*works_citing_parquet_96ee57553d74254d|1.473||
-nli_scores_parquet_ee400dcab719e43e|branch||04caaf9b1178c340|3b4789bad47c789f|-1789459937||t20634.5303505734s||0|file|local|vector|nli_scores_parquet||18.718||Failed to parse URL: Bad hostname
 mmd_workflow_nli|stem|d9068858e9de84db|291e3b8bb9b9de4a|2c530c1562a7fbd1|-48567711|input/mmd/workflow_nli.mmd|t20634.5645438396s|s5106b|5106|file|local|vector|||0.107|package ‘httr2’ was built under R version 4.6.1. package ‘xml2’ was built under R version 4.6.1|
+diagram_workflow_nli|stem|144f088e4b0acae2|3b2e422741bbb8f9|bda34a943d83bd25|542749245|output/figures/workflow_nli.svg*output/figures/workflow_nli.png|t20634.5688707532s|s242886b|242886|file|local|vector|||3.503||
+config|stem|6a6426d80c347412|a8e842b5a57e39b7|6c333c7bc284edd8|-1931060652||t20634.6527900986s|s595b|595|rds|local|vector|||0.001||
+assessment|stem|8be4d9ef23880a9c|ae1b74426a7e508a|7d25f0871ebddd28|1623788928||t20634.6527905216s|s266b|266|rds|local|list||assessment_80b2f2ad9ef886f0*assessment_641c15b8028660e0|0||
+key_messages_parquet_3988b288110d41af|branch|a086f9799b9b3ac8|1bdccb85f05f2b83|6defc7c324d0d17a|-1141682681|output/key_messages/assessment=GA1|t20634.6528221063s|s86666b|86666|file|local|vector|key_messages_parquet||2.724|The `file` argument of `read_csv()` should use `I()` for literal data as of readr 2.2.0.      # Bad (for example):   read_csv('x,y\n1,2')      # Good:   read_csv(I('x,y\n1,2'))|
+key_messages_parquet_3f579115edf85da9|branch|5148707d633723a4|1bdccb85f05f2b83|65a102b222d2b40c|160452395|output/key_messages/assessment=IAS|t20634.6528405657s|s105669b|105669|file|local|vector|key_messages_parquet||1.576||
+r_files|stem|9ff5bb4f70baf6fb|5346fc6fd5a62417|2c530c1562a7fbd1|969205733|_targets.R*R/alignement_schema.R*R/branch_helpers.R*R/build_alignement_parquet.R*R/build_alignement_scores_parquet.R*R/build_fulltext.R*R/build_nli_scores_parquet.R*R/build_prompts_citing_parquet.R*R/build_prompts_truth_parquet.R*R/build_snowball_parquet.R*R/build_works_citing_parquet.R*R/clean_text.R*R/download_ttls.R*R/download_works.R*R/download_zotero.R*R/extract_lod.R*R/manage_fuseki.R*R/render_diagrams.R*R/resolve_citations.R*R/write_key_messages_parquet.R*R/write_refs_parquet.R*R/write_sections_parquet.R|t20634.6568782448s|s106009b|106009|file|local|vector|||0.11|package ‘httr2’ was built under R version 4.6.1. package ‘xml2’ was built under R version 4.6.1|
+pipeline_mmd|stem|ae2c18faaab2e5a3|c8c446faa2ca5040|6d36d2d68d51120a|-164121517|input/mmd/pipeline_nli.mmd|t20634.6571798084s|s2287b|2287|file|local|vector|||1.206||
+diagram_pipeline_nli|stem|29daf3a0150decd3|2f85f188e02adcb6|ef3e8b78f9f3e138|425344336|output/figures/pipeline_nli.svg*output/figures/pipeline_nli.png|t20634.6572089454s|s540598b|540598|file|local|vector|||2.619||
+refs_parquet_3988b288110d41af|branch|073d0eea7fe87d4b|9745f55b58fdcf7e|5530ac555ca5b413|-1661167170|output/refs/assessment=GA1|t20634.657902964s|s885798b|885798|file|local|vector|refs_parquet||2.559|The `file` argument of `read_csv()` should use `I()` for literal data as of readr 2.2.0.      # Bad (for example):   read_csv('x,y\n1,2')      # Good:   read_csv(I('x,y\n1,2'))|
+refs_parquet_3f579115edf85da9|branch|ba3d949197f1a87c|9745f55b58fdcf7e|57c37f52ac66af7f|-2020924811|output/refs/assessment=IAS|t20634.6580009452s|s10464216b|10464216|file|local|vector|refs_parquet||8.464||
+refs_parquet|pattern|b4065c04a0752271|9745f55b58fdcf7e||1650781270||||11350014|file|local|vector||refs_parquet_3988b288110d41af*refs_parquet_3f579115edf85da9|11.023||
+sections_parquet_3988b288110d41af|branch|911b7970b066a5bd|9da21a910b82a89e|c5134e7b1f4f150d|1333797241|output/sections/assessment=GA1|t20634.6580206997s|s532998b|532998|file|local|vector|sections_parquet||1.681||
+sections_parquet_3f579115edf85da9|branch|dea4d32cce6f5382|9da21a910b82a89e|b8beb26089621833|-1815777220|output/sections/assessment=IAS|t20634.6580586887s|s1018670b|1018670|file|local|vector|sections_parquet||3.28||
+zotero_parquet_b7689dcbf2d6a705|branch|fb01f7e9c4b8fc0d|82c6c84749ec39b5|57548a0683cc1ebf|-516070157|output/zotero/assessment=GA1|t20634.6613040033s|s4037367b|4037367|file|local|vector|zotero_parquet||280.355|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
+zotero_parquet_85d88b290c3fbbc6|branch|0a4ad37a2ca1aac5|82c6c84749ec39b5|a217a5e083a29b75|-1522435211|output/zotero/assessment=IAS|t20634.6639593695s|s3327796b|3327796|file|local|vector|zotero_parquet||229.389|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
+zotero_parquet|pattern|70611a2b789fcee7|82c6c84749ec39b5||-933570212||||7365163|file|local|vector||zotero_parquet_b7689dcbf2d6a705*zotero_parquet_85d88b290c3fbbc6|509.744||
+works_parquet_d92410c91b60b8b4|branch|455428163b4dd757|c405382f2acbc853|77f6c029d319df6f|1420870494|output/works/assessment=GA1|t20634.6646573354s|s6592880b|6592880|file|local|vector|works_parquet||60.273|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
+works_parquet_93667d59d1a7a1c1|branch|db7fefff5582d5a1|c405382f2acbc853|6a3f2db9f94960d7|914856445|output/works/assessment=IAS|t20634.6652052479s|s14255498b|14255498|file|local|vector|works_parquet||47.33|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
+works_parquet|pattern|97c56680be4b1664|c405382f2acbc853||1967066260||||20848378|file|local|vector||works_parquet_d92410c91b60b8b4*works_parquet_93667d59d1a7a1c1|107.603||
+snowball_parquet_ed9d1c219bde80ae|branch|fc8ef6d205c57d48|27f6b13dbf873bb8|da56a1180fefbcd1|1091226375|output/snowball/nodes/assessment=GA1*output/snowball/edges/assessment=GA1*output/snowball/keypaper/assessment=GA1|t20634.7202147675s|s1709745802b|1709745802|file|local|vector|snowball_parquet||4752.804||
+snowball_parquet_8d54f805b331658e|branch|970265c042b1dd23|27f6b13dbf873bb8|94f761645c5907d0|655133157|output/snowball/nodes/assessment=IAS*output/snowball/edges/assessment=IAS*output/snowball/keypaper/assessment=IAS|t20634.7721547483s|s1366303248b|1366303248|file|local|vector|snowball_parquet||4486.842||
+snowball_parquet|pattern|f1a45334cb57c04f|27f6b13dbf873bb8||-1490676469||||3076049050|file|local|vector||snowball_parquet_ed9d1c219bde80ae*snowball_parquet_8d54f805b331658e|9239.646||
+works_citing_parquet_d1d9cb33f2278561|branch|409c18efc404a302|8062d92dd0347aaf|75c5c5f4bd8b852b|138015028|output/works_citing/assessment=GA1|t20634.772174402s|s1189230940b|1189230940|file|local|vector|works_citing_parquet||0.993||
+works_citing_parquet_96ee57553d74254d|branch|0f4c4c7cdde1641b|8062d92dd0347aaf|ff0974d50af2091a|98802747|output/works_citing/assessment=IAS|t20634.7721836418s|s771816334b|771816334|file|local|vector|works_citing_parquet||0.487||
+works_citing_parquet|pattern|2077038fe16d53f7|8062d92dd0347aaf||-1385308626||||1961047274|file|local|vector||works_citing_parquet_d1d9cb33f2278561*works_citing_parquet_96ee57553d74254d|1.48||
+fulltext_list|stem|8f303b18de3dcbe2|64b5af90dc164e9c|69f763c5386d8b49|816017925||t20634.7954880216s|s125b|125|rds|local|vector|||0||
+nli_scores_parquet_ee400dcab719e43e|branch||cfd31a182ce31e9b|e0fc945c016f70ff|-1789459937||t20634.5303505734s||0|file|local|vector|nli_scores_parquet||8014.568||Failed to perform HTTP request. Caused by error in `curl::curl_fetch_memory()`: ! Failure when receiving data from the peer [1a1pafct1ivnir-8080.proxy.runpod.net]: Recv failure: Connection reset by peer
+nli_active|stem|ef6d6ea195191ecd|0335ae88abd325ef|094e225e6da2354f|-418857209||t20635.3327016119s|s71b|71|rds|local|vector|||0||
+nli_config|stem|3fcaf37501c8fafe|3e80788a303cefbe|094e225e6da2354f|-1786223254||t20635.3327018037s|s371b|371|rds|local|vector|||0||
 extract_zotero_group|function|e09c7c60c9e3721c
 github_blob_sha|function|0002b259c2c0c9a7
 clean_text|function|2e4b6c161dbea6a4
@@ -146,10 +145,11 @@ normalize_km_id|function|0c110a25076e6ae4
 build_snowball_parquet|function|5d6c049654d21e94
 render_template|function|48a8db5605bb43f0
 alignement_scoring_guide|function|26ff818ca56eebb1
+nli_health|function|3785a2c2aa7991fd
 assessment_ids|function|d880b5ff5631da3a
-nli_classify_request|function|c63bc068917d9e25
+nli_classify_request|function|740176b9b862c20e
 replace_citations_in_text|function|60f9e2ecac6da5a2
-rl|object|29952552e4d7973c
+rl|object|c2f709c61832e992
 nli_cfg_get|function|7df0660f0ade4360
 build_pipeline_mmd|function|82f45133f0d3e0dc
 download_ttl|function|a1341e281ccb212b
@@ -173,6 +173,7 @@ assessment_index|function|072a85fb60c0deac
 resolve_citations|function|f82e1d4d2f1ce302
 nli_classify_url|function|bb254ec83c615e50
 download_ttls|function|19a6118975a30c39
+build_nli_ready_parquet|function|c6fdb65079ca9d70
 build_alignement_scores_run_specs|function|2291a2f63a1b6e7b
 build_alignement_run_specs|function|1f52ce684306b836
 with_fuseki_session|function|2a9ca22ebcbf09d4
@@ -181,8 +182,14 @@ extract_refs_from_endpoint|function|28f95c1df922070c
 extract_sections_from_endpoint|function|d5f610ef88c07ce6
 build_alignement_scores_parquet|function|da90dfda54a4d8dc
 build_alignement_parquet|function|bc7d9983b20bfafe
-build_nli_scores_parquet|function|ff9c899412b93ca8
+build_nli_scores_parquet|function|22664fe2ec35402f
 build_key_messages_parquet|function|1a02b0e88d088f28
 build_refs_parquet|function|e3ed9cc45e38c3db
 build_sections_parquet|function|9a500a604754b06c
-diagram_workflow_nli|stem|144f088e4b0acae2|3b2e422741bbb8f9|bda34a943d83bd25|542749245|output/figures/workflow_nli.svg*output/figures/workflow_nli.png|t20634.5688707532s|s242886b|242886|file|local|vector|||3.503||
+config_file|stem|7f13291925609347|8a509d56b3459c7e|2c530c1562a7fbd1|-615108176|input/config.yaml|t20635.3907957551s|s4063b|4063|file|local|vector|||0.107|package ‘httr2’ was built under R version 4.6.1. package ‘xml2’ was built under R version 4.6.1|
+workers|stem|a57ca58bbf6846b8|19deb56d55aa4500|4f19faea09278e91|845121955||t20635.3910795787s|s48b|48|rds|local|vector|||0.001||
+sparql_url|stem|d5f86b914564e161|443fe57c0fb6e0d7|4f19faea09278e91|265476876||t20635.3910797488s|s58b|58|rds|local|vector|||0.001||
+assessments_list|stem|59c6cfc13215fdb0|b872f4fd4b4abdf0|4f19faea09278e91|-2022784872||t20635.3910797954s|s240b|240|rds|local|vector|||0.001||
+nli_ready_parquet_ee400dcab719e43e|branch|0f31ef3687cf6eaf|30ed3eee8398cc69|87c97255e8c91666|1924766078|output/nli_ready/assessment=GA1|t20635.392644731s|s1604812660b|1604812660|file|local|vector|nli_ready_parquet||135.091||
+nli_ready_parquet_322d24a4230cb076|branch|bda2f4ad89ad7ae5|30ed3eee8398cc69|9ff1806731478275|574017963|output/nli_ready/assessment=IAS|t20635.3930491265s|s1294090128b|1294090128|file|local|vector|nli_ready_parquet||34.478||
+nli_ready_parquet|pattern|4be822774d664214|30ed3eee8398cc69||-1944418017||||2898902788|file|local|vector||nli_ready_parquet_ee400dcab719e43e*nli_ready_parquet_322d24a4230cb076|169.569||

@@ -3,18 +3,24 @@
 #
 # `make help` prints all targets.
 # Override image versions on the command line:
-#   make docker-nli-build   VERSION=v0.1.1
-#   make docker-nli-push    VERSION=v0.1.1
+#   make docker-nli-build   VERSION=v0.2.3
+#   make docker-nli-push    VERSION=v0.2.3
 # ----------------------------------------------------------------------------
 
 # Image registry namespace. Override with REGISTRY=ghcr.io/<other-user> if you fork.
 REGISTRY ?= ghcr.io/rkrug
 
 # Default image version. Bump for each new build (see docker/nli-runpod/README.md).
-VERSION  ?= v0.1.0
+VERSION  ?= v0.2.3
 
 # Docker buildx platform — RunPod nodes are amd64 even from Apple Silicon.
 PLATFORM ?= linux/amd64
+
+# Model baked into the NLI image. Empty = use the Dockerfile default
+# (deberta-v3-large-zeroshot-v2.0). Override to bake the faster base model:
+#   make docker-nli VERSION=v0.2.3-base \
+#     NLI_MODEL=MoritzLaurer/deberta-v3-base-zeroshot-v2.0
+NLI_MODEL ?=
 
 .PHONY: help \
         tar-make tar-visnetwork tar-outdated tar-invalidate tar-clean \
@@ -60,8 +66,9 @@ tar-clean: ## Remove all target outputs
 
 # --- docker images ----------------------------------------------------------
 
-docker-nli-build: ## Build the NLI RunPod image
+docker-nli-build: ## Build the NLI RunPod image (NLI_MODEL=... to override the baked model)
 	docker buildx build --platform $(PLATFORM) \
+	    $(if $(NLI_MODEL),--build-arg NLI_MODEL=$(NLI_MODEL),) \
 	    -t $(REGISTRY)/nli-runpod:$(VERSION) \
 	    -f docker/nli-runpod/Dockerfile .
 

@@ -1,0 +1,579 @@
+---
+title: "IPBES BM Fact Checker — NLI Scores: Basic Overview"
+subtitle: "GA1 · config: deberta_zeroshot"
+date: today
+date-format: "D MMMM YYYY"
+author: "IPBES Data Team"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    toc-location: left
+    number-sections: false
+    embed-resources: true
+    smooth-scroll: true
+    theme: none
+    css: |
+      /* ── tokens ── */
+      :root {
+        --c-forest:   #1C3A2E;
+        --c-moss:     #2E6B4F;
+        --c-sienna:   #8B2E2E;
+        --c-sand:     #A8896A;
+        --c-parch:    #F5F3EE;
+        --c-body:     #3A4A41;
+        --c-muted:    #6B7B71;
+        --c-rule:     #D4CFC6;
+        --c-sup-bg:   #EBF3EE;
+        --c-ref-bg:   #F5EBEB;
+        --c-nei-bg:   #F5F1EB;
+        --c-card:     #FFFFFF;
+        --r-card:     6px;
+        --font-serif: Georgia, "Times New Roman", serif;
+        --font-ui:    system-ui, -apple-system, sans-serif;
+        --font-mono:  "SF Mono", "Fira Code", monospace;
+      }
+
+      /* ── base ── */
+      body {
+        font-family:  var(--font-serif);
+        font-size:    16px;
+        line-height:  1.7;
+        color:        var(--c-body);
+        background:   var(--c-parch);
+        margin: 0;
+        padding: 0;
+      }
+
+      /* ── layout ── */
+      #quarto-content, .page-layout-article {
+        background: var(--c-parch);
+      }
+      .content-container, #quarto-margin-sidebar, main {
+        max-width: 860px;
+      }
+
+      /* ── headings ── */
+      h1, h2, h3, h4 {
+        font-family: var(--font-ui);
+        color:       var(--c-forest);
+        font-weight: 700;
+        text-wrap:   balance;
+        line-height: 1.25;
+      }
+      h1 { font-size: 2rem;   border-bottom: 3px solid var(--c-moss);
+           padding-bottom: .5rem; margin-top: 2rem; }
+      h2 { font-size: 1.35rem; border-bottom: 1px solid var(--c-rule);
+           padding-bottom: .3rem; margin-top: 2.5rem; }
+      h3 { font-size: 1.1rem; color: var(--c-moss); margin-top: 2rem; }
+
+      /* ── subtitle block ── */
+      .quarto-title-meta { font-family: var(--font-ui); font-size: .85rem;
+                            color: var(--c-muted); }
+      .quarto-title-meta-heading { color: var(--c-forest); font-weight: 600; }
+
+      /* ── tables ── */
+      .table-wrap { overflow-x: auto; margin: 1.5rem 0; }
+      table {
+        font-family:  var(--font-ui);
+        font-size:    .82rem;
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 480px;
+        font-variant-numeric: tabular-nums;
+      }
+      thead tr { background: var(--c-forest); color: #fff; }
+      thead th { padding: .5rem .75rem; text-align: left; font-weight: 600;
+                  letter-spacing: .03em; }
+      tbody tr:nth-child(odd)  { background: var(--c-card); }
+      tbody tr:nth-child(even) { background: #EFEDE8; }
+      tbody td { padding: .4rem .75rem; border-bottom: 1px solid var(--c-rule); }
+      tbody tr:last-child td   { border-bottom: none; }
+
+      /* ── callout boxes ── */
+      .callout {
+        border-left: 4px solid var(--c-moss);
+        background:  var(--c-card);
+        padding: 1rem 1.25rem;
+        margin: 1.75rem 0;
+        border-radius: 0 var(--r-card) var(--r-card) 0;
+        box-shadow: 0 1px 4px rgba(0,0,0,.07);
+      }
+      .callout.warning { border-color: var(--c-sienna); background: var(--c-ref-bg); }
+      .callout.neutral { border-color: var(--c-sand);   background: var(--c-nei-bg); }
+      .callout-title {
+        font-family: var(--font-ui);
+        font-weight: 700;
+        font-size: .85rem;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: var(--c-forest);
+        margin-bottom: .4rem;
+      }
+      .callout.warning .callout-title { color: var(--c-sienna); }
+      .callout.neutral  .callout-title { color: var(--c-sand); }
+
+      /* ── label chips ── */
+      .chip {
+        display: inline-block;
+        font-family: var(--font-ui);
+        font-size: .75rem;
+        font-weight: 700;
+        letter-spacing: .05em;
+        padding: .15em .6em;
+        border-radius: 3px;
+      }
+      .chip-sup  { background: var(--c-sup-bg); color: var(--c-moss);   }
+      .chip-ref  { background: var(--c-ref-bg); color: var(--c-sienna); }
+      .chip-nei  { background: var(--c-nei-bg); color: var(--c-sand);   }
+
+      /* ── figures ── */
+      figure { margin: 2rem 0; }
+      figcaption { font-family: var(--font-ui); font-size: .8rem;
+                    color: var(--c-muted); margin-top: .5rem; }
+      img { max-width: 100%; border-radius: var(--r-card);
+             box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+
+      /* ── code ── */
+      pre, code {
+        font-family: var(--font-mono);
+        font-size: .8rem;
+        background: #EAE8E3;
+        border-radius: 4px;
+      }
+      pre { padding: 1rem; overflow-x: auto; }
+
+      /* ── TOC ── */
+      #quarto-sidebar, nav[role=doc-toc] {
+        font-family: var(--font-ui);
+        font-size: .82rem;
+      }
+      nav[role=doc-toc] a { color: var(--c-muted); text-decoration: none; }
+      nav[role=doc-toc] a:hover { color: var(--c-moss); }
+      nav[role=doc-toc] .active { color: var(--c-forest); font-weight: 600; }
+
+      /* ── metric strip ── */
+      .metrics {
+        display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0;
+      }
+      .metric {
+        flex: 1 1 140px;
+        background: var(--c-card);
+        border-radius: var(--r-card);
+        padding: .9rem 1rem;
+        box-shadow: 0 1px 4px rgba(0,0,0,.07);
+        font-family: var(--font-ui);
+      }
+      .metric-value {
+        font-size: 1.8rem; font-weight: 800; line-height: 1;
+        color: var(--c-forest);
+        font-variant-numeric: tabular-nums;
+      }
+      .metric-label {
+        font-size: .75rem; color: var(--c-muted);
+        text-transform: uppercase; letter-spacing: .06em;
+        margin-top: .3rem;
+      }
+
+      /* ── assessment section ── */
+      .assessment-block {
+        background: var(--c-card);
+        border-radius: var(--r-card);
+        padding: 1.5rem;
+        margin: 2rem 0;
+        box-shadow: 0 1px 4px rgba(0,0,0,.07);
+      }
+      .assessment-block h4 {
+        font-family: var(--font-ui);
+        font-size: .8rem;
+        text-transform: uppercase;
+        letter-spacing: .07em;
+        color: var(--c-muted);
+        margin: 0 0 .5rem 0;
+      }
+
+      /* ── print ── */
+      @media print {
+        body { background: white; }
+        .callout, .metric, .assessment-block { box-shadow: none; }
+      }
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(arrow)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+DATASET <- "output/nli_scores/nli_config=deberta_zeroshot/assessment=GA1"
+
+C_SUPPORTS <- "#2E6B4F"
+C_REFUTES <- "#8B2E2E"
+C_NEI <- "#A8896A"
+LABEL_COLS <- c(
+  SUPPORTS = C_SUPPORTS,
+  NOT_ENOUGH_INFO = C_NEI,
+  REFUTES = C_REFUTES
+)
+
+d <- open_dataset(DATASET) |>
+  mutate(alignment = p_supports - p_refutes) |>
+  collect()
+
+n_total <- nrow(d)
+n_bm <- n_distinct(d$bm)
+n_km <- n_distinct(d$km)
+pct_unc <- round(100 * mean(d$uncertain), 1)
+
+label_overall <- d |>
+  count(label) |>
+  mutate(pct = round(100 * n / sum(n), 1))
+
+pct_sup <- label_overall |> filter(label == "SUPPORTS") |> pull(pct)
+pct_ref <- label_overall |> filter(label == "REFUTES") |> pull(pct)
+pct_nei <- label_overall |> filter(label == "NOT_ENOUGH_INFO") |> pull(pct)
+```
+
+## Overview
+
+This report summarises the first-pass NLI alignment scores for **GA1** (Global Assessment 1), produced by the `deberta_zeroshot` pipeline using `MoritzLaurer/deberta-v3-large-zeroshot-v2.0` at `max_length = 256`. Each citing work is scored against its partition's Background Message (BM) as
+<span class="chip chip-sup">SUPPORTS</span>,
+<span class="chip chip-ref">REFUTES</span>, or
+<span class="chip chip-nei">NOT_ENOUGH_INFO</span>.
+
+<div class="metrics">
+<div class="metric">
+  <div class="metric-value">`r format(n_total, big.mark=",")`</div>
+  <div class="metric-label">Works scored</div>
+</div>
+<div class="metric">
+  <div class="metric-value">`r n_bm`</div>
+  <div class="metric-label">Background messages</div>
+</div>
+<div class="metric">
+  <div class="metric-value">`r n_km`</div>
+  <div class="metric-label">Key messages</div>
+</div>
+<div class="metric">
+  <div class="metric-value">`r pct_unc`%</div>
+  <div class="metric-label">Uncertain (conf < 0.60)</div>
+</div>
+</div>
+
+<div class="callout warning">
+<div class="callout-title">Interpretation caveat</div>
+The 86 % uncertainty rate and near-chance median confidence (~0.47) reflect a known limitation of zero-shot NLI on this task, not a pipeline failure. The per-BM breakdown below shows the signal is highly structured — KM D performs well; KMs A–C show REFUTES inflation. Use the continuous alignment score (`p_supports − p_refutes`) for thresholding; do not act on raw argmax labels for KMs A–C without Phase-2 LLM review.
+</div>
+
+## Label distribution
+
+### Overall
+
+```{r label-overall}
+label_overall |>
+  mutate(
+    label = factor(label, levels = c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES"))
+  ) |>
+  arrange(label) |>
+  knitr::kable(
+    col.names = c("Label", "Works", "%"),
+    format.args = list(big.mark = ",")
+  )
+```
+
+<br>
+
+```{r plot-overall, fig.height=2.2, fig.width=7, fig.cap="Overall label split — GA1, all 27 BMs combined."}
+ggplot(
+  label_overall,
+  aes(
+    x = pct,
+    y = "GA1",
+    fill = factor(label, levels = c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES"))
+  )
+) +
+  geom_col(width = 0.55) +
+  geom_text(
+    aes(label = paste0(pct, "%")),
+    position = position_stack(vjust = 0.5),
+    colour = "white",
+    size = 3.5,
+    fontface = "bold",
+    family = "sans"
+  ) +
+  scale_fill_manual(
+    values = LABEL_COLS,
+    labels = c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
+  ) +
+  labs(x = NULL, y = NULL, fill = NULL) +
+  theme_void(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(family = "sans", size = 10),
+    plot.background = element_rect(fill = "#F5F3EE", colour = NA)
+  )
+```
+
+### Per Key Message
+
+```{r label-km}
+d |>
+  count(km, label) |>
+  group_by(km) |>
+  mutate(pct = round(100 * n / sum(n), 1)) |>
+  ungroup() |>
+  select(km, label, pct) |>
+  pivot_wider(names_from = label, values_from = pct, values_fill = 0) |>
+  select(km, SUPPORTS, NOT_ENOUGH_INFO, REFUTES) |>
+  arrange(km) |>
+  knitr::kable(col.names = c("KM", "SUPPORTS %", "NEI %", "REFUTES %"))
+```
+
+```{r plot-km, fig.height=3, fig.width=7, fig.cap="Label split per Key Message."}
+d |>
+  count(km, label) |>
+  group_by(km) |>
+  mutate(pct = 100 * n / sum(n)) |>
+  ungroup() |>
+  mutate(
+    label = factor(label, levels = c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES"))
+  ) |>
+  ggplot(aes(x = pct, y = km, fill = label)) +
+  geom_col(width = 0.65) +
+  geom_text(
+    aes(label = paste0(round(pct), "%")),
+    position = position_stack(vjust = 0.5),
+    colour = "white",
+    size = 3.2,
+    fontface = "bold",
+    family = "sans"
+  ) +
+  scale_fill_manual(values = LABEL_COLS) +
+  labs(x = "% of citing works", y = NULL, fill = NULL) +
+  theme_minimal(base_size = 11, base_family = "sans") +
+  theme(
+    panel.grid.major.y = element_blank(),
+    legend.position = "bottom",
+    plot.background = element_rect(fill = "#F5F3EE", colour = NA)
+  )
+```
+
+### Per Background Message
+
+```{r plot-bm, fig.height=5, fig.width=10, fig.cap="Label split per BM, faceted by KM. D-series BMs show clearly stronger SUPPORTS signal."}
+d |>
+  count(km, bm, label) |>
+  group_by(km, bm) |>
+  mutate(pct = 100 * n / sum(n)) |>
+  ungroup() |>
+  mutate(
+    bm = factor(bm),
+    label = factor(label, levels = c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES"))
+  ) |>
+  ggplot(aes(x = bm, y = pct, fill = label)) +
+  geom_col(width = 0.8) +
+  facet_grid(. ~ km, scales = "free_x", space = "free_x") +
+  scale_fill_manual(values = LABEL_COLS) +
+  labs(x = NULL, y = "% of citing works", fill = NULL) +
+  theme_bw(base_size = 10, base_family = "sans") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",
+    strip.background = element_rect(fill = "#1C3A2E"),
+    strip.text = element_text(colour = "white", face = "bold"),
+    plot.background = element_rect(fill = "#F5F3EE", colour = NA),
+    panel.background = element_rect(fill = "#FAFAF7")
+  )
+```
+
+```{r table-bm}
+d |>
+  count(km, bm, label) |>
+  group_by(km, bm) |>
+  mutate(pct = round(100 * n / sum(n), 1)) |>
+  ungroup() |>
+  select(km, bm, label, pct) |>
+  pivot_wider(names_from = label, values_from = pct, values_fill = 0) |>
+  select(km, bm, SUPPORTS, NOT_ENOUGH_INFO, REFUTES) |>
+  arrange(km, bm) |>
+  knitr::kable(col.names = c("KM", "BM", "SUPPORTS %", "NEI %", "REFUTES %"))
+```
+
+## Confidence and alignment
+
+### Confidence by label
+
+```{r conf-table}
+d |>
+  group_by(label) |>
+  summarise(
+    n = n(),
+    mean = round(mean(confidence, na.rm = TRUE), 3),
+    median = round(median(confidence, na.rm = TRUE), 3),
+    p25 = round(quantile(confidence, 0.25, na.rm = TRUE), 3),
+    p75 = round(quantile(confidence, 0.75, na.rm = TRUE), 3),
+    .groups = "drop"
+  ) |>
+  arrange(factor(
+    label,
+    levels = c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
+  )) |>
+  knitr::kable(
+    col.names = c("Label", "n", "Mean", "Median", "P25", "P75"),
+    format.args = list(big.mark = ",")
+  )
+```
+
+```{r plot-conf, fig.height=3.5, fig.width=7, fig.cap="Confidence (max class probability) density per label. The dashed line marks the uncertain threshold (0.60). Distributions barely separate — the model has limited certainty on this task."}
+ggplot(d, aes(x = confidence, fill = label, colour = label)) +
+  geom_density(alpha = 0.30, linewidth = 0.6) +
+  geom_vline(
+    xintercept = 0.60,
+    linetype = "dashed",
+    colour = "#3A4A41",
+    linewidth = 0.5
+  ) +
+  annotate(
+    "text",
+    x = 0.62,
+    y = Inf,
+    label = "uncertain\nthreshold",
+    hjust = 0,
+    vjust = 1.4,
+    size = 3,
+    family = "sans",
+    colour = "#3A4A41"
+  ) +
+  scale_fill_manual(values = LABEL_COLS) +
+  scale_colour_manual(values = LABEL_COLS) +
+  labs(x = "confidence", y = "density", fill = NULL, colour = NULL) +
+  theme_minimal(base_size = 11, base_family = "sans") +
+  theme(
+    legend.position = "bottom",
+    plot.background = element_rect(fill = "#F5F3EE", colour = NA)
+  )
+```
+
+### Alignment score per BM
+
+The alignment score (`p_supports − p_refutes`) is a continuous summary on [−1, +1] that is more informative than the argmax label for downstream thresholding and ranking.
+
+```{r align-table}
+d |>
+  group_by(km, bm) |>
+  summarise(
+    n = n(),
+    mean_aln = round(mean(alignment, na.rm = TRUE), 3),
+    sd_aln = round(sd(alignment, na.rm = TRUE), 3),
+    pct_supp = round(100 * mean(label == "SUPPORTS"), 1),
+    pct_ref = round(100 * mean(label == "REFUTES"), 1),
+    pct_nei = round(100 * mean(label == "NOT_ENOUGH_INFO"), 1),
+    pct_unc = round(100 * mean(uncertain), 1),
+    .groups = "drop"
+  ) |>
+  arrange(km, bm) |>
+  knitr::kable(
+    col.names = c(
+      "KM",
+      "BM",
+      "n",
+      "Mean aln",
+      "SD",
+      "SUPP %",
+      "REF %",
+      "NEI %",
+      "Unc %"
+    ),
+    format.args = list(big.mark = ",")
+  )
+```
+
+```{r plot-aln, fig.height=3.5, fig.width=7, fig.cap="Distribution of alignment scores (p_supports − p_refutes) by label. Negative overall median (−0.065) reflects REFUTES inflation in KMs A–C; the KM D signal pulls the tail positive."}
+ggplot(d, aes(x = alignment, fill = label, colour = label)) +
+  geom_density(alpha = 0.30, linewidth = 0.6) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    colour = "#3A4A41",
+    linewidth = 0.5
+  ) +
+  scale_fill_manual(values = LABEL_COLS) +
+  scale_colour_manual(values = LABEL_COLS) +
+  labs(
+    x = "alignment score (p_supports − p_refutes)",
+    y = "density",
+    fill = NULL,
+    colour = NULL,
+    subtitle = "Positive → net support · Negative → net refutation"
+  ) +
+  theme_minimal(base_size = 11, base_family = "sans") +
+  theme(
+    legend.position = "bottom",
+    plot.background = element_rect(fill = "#F5F3EE", colour = NA)
+  )
+```
+
+## Assessment
+
+### KM D performs well; KMs A–C show systematic REFUTES inflation
+
+<div class="assessment-block">
+<h4>Key finding</h4>
+
+**KM D is in a different class from A, B, C.** With 48.8 % SUPPORTS and only 14.6 % REFUTES overall, and individual BMs D1 (79.8 % SUPPORTS), D3 (78.6 %), and D12 (60.1 %) showing clear, consistent signals at comparatively lower uncertainty (65–84 %), KM D is the only part of GA1 where zero-shot NLI produces credible output. D3 and D1 have the best-calibrated scores in the entire dataset.
+
+Likely reason: D-series BMs are probably more concrete and empirically testable — biodiversity metrics, species trends, ecosystem services — the kind of claims abstracts engage with directly.
+
+</div>
+
+<div class="callout warning">
+<div class="callout-title">REFUTES inflation — KMs A, B, C</div>
+
+Several BMs have REFUTES > SUPPORTS by a wide margin that is not scientifically credible:
+
+| BM | SUPPORTS | REFUTES | Interpretation |
+|----|---------|---------|----------------|
+| B11 | 13 % | 56 % | Likely false positives |
+| B5  | 27 % | 55 % | Likely false positives |
+| C6  |  8 % | 55 % | Likely false positives |
+| A3  |  4 % | 45 % | Likely false positives |
+| A7  |  5 % | 43 % | Likely false positives |
+| A8  | 15 % | 47 % | Likely false positives |
+
+These are not credible. Citing papers of an assessment should not be 55 % refuting it. This is the well-documented zero-shot NLI failure mode: the hypothesis *"This paper refutes the following claim: …"* draws spurious entailment when the BM contains complex, multi-part, or politically nuanced language. The model fires on surface-level topical tension rather than genuine contradiction.
+
+</div>
+
+<div class="callout neutral">
+<div class="callout-title">Noise BMs — effectively random</div>
+
+Three BMs show SUPPORTS ≈ REFUTES — the argmax label is meaningless here:
+
+- **A2** 29.5 % vs 29.9 % — coin flip
+- **C2** 24.7 % vs 25.4 % — coin flip
+- **B4** 29.0 % vs 35.4 % — near coin flip
+
+For these, only the continuous alignment score and the raw probability triplet carry any information.
+
+</div>
+
+### Notable exception in KM A
+
+**A5** (39.8 % SUPPORTS, 5.7 % REFUTES, mean alignment +0.095) is the only BM in KMs A–C with a clearly positive signal. Its claim is likely more concrete or empirically specific than its neighbours — worth inspecting manually as a calibration reference.
+
+### Operational implications
+
+1. **Do not act on raw REFUTES labels for KMs A–C** without Phase-2 LLM review. NLI here is a coarse NEI filter, not a judgment.
+2. **KM D SUPPORTS at high confidence (> 0.70) can be treated as real** — D1, D3, D12 in particular.
+3. **Use `p_supports − p_refutes` for ranking** rather than argmax labels. Papers with very high `p_nei` can be deprioritised for expert review.
+4. **`max_length: 256` is probably hurting KMs A–C.** Truncating abstract tails removes findings — the part that matters most for support/refute judgements on conceptual BMs. The base-model-at-512 comparison (`deberta_zeroshot_v3`) is the highest-priority next experiment.
+5. **Fine-tuning on BM citations** ([TD_NLI_training.md](TD_NLI_training.md)) would most help KMs A–C — the support/refute axis that zero-shot is fumbling. D-series BMs are already working.
+
+---
+
+*Pipeline: IPBES BM Fact Checker · NLI server: `ghcr.io/rkrug/nli-runpod` · Model read from `/health` at run time and recorded as `nli_model` in output parquet.*

@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="IPBES Data Team">
+<meta name="dcterms.date" content="2026-07-01">
+
+<title>IPBES BM Fact Checker — NLI Scores: Basic Overview</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+</style>
+
+
+<script src="Fact_Checker_nli_report_basic_files/libs/clipboard/clipboard.min.js"></script>
+<script src="Fact_Checker_nli_report_basic_files/libs/quarto-html/tabby.min.js"></script>
+<script src="Fact_Checker_nli_report_basic_files/libs/quarto-html/popper.min.js"></script>
+<script src="Fact_Checker_nli_report_basic_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="Fact_Checker_nli_report_basic_files/libs/quarto-html/anchor.min.js"></script>
+<link href="Fact_Checker_nli_report_basic_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="Fact_Checker_nli_report_basic_files/libs/quarto-html/light-border.css" rel="stylesheet">
+<link href="Fact_Checker_nli_report_basic_files/libs/quarto-html/quarto-html-640605f58ae58ee79329c070719e555b.min.css" rel="stylesheet" append-hash="true" data-mode="light">
+<link href="Fact_Checker_nli_report_basic_files/libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<style>html{ scroll-behavior: smooth; }</style>
+
+
+<link rel="stylesheet" href="/* ── tokens ── */
+:root {
+  --c-forest:   #1C3A2E;
+  --c-moss:     #2E6B4F;
+  --c-sienna:   #8B2E2E;
+  --c-sand:     #A8896A;
+  --c-parch:    #F5F3EE;
+  --c-body:     #3A4A41;
+  --c-muted:    #6B7B71;
+  --c-rule:     #D4CFC6;
+  --c-sup-bg:   #EBF3EE;
+  --c-ref-bg:   #F5EBEB;
+  --c-nei-bg:   #F5F1EB;
+  --c-card:     #FFFFFF;
+  --r-card:     6px;
+  --font-serif: Georgia, " times="" new="" roman",="" serif;="" --font-ui:="" system-ui,="" -apple-system,="" sans-serif;="" --font-mono:="" "sf="" mono",="" "fira="" code",="" monospace;="" }="" *="" ──="" base="" body="" {="" font-family:="" var(--font-serif);="" font-size:="" 16px;="" line-height:="" 1.7;="" color:="" var(--c-body);="" background:="" var(--c-parch);="" margin:="" 0;="" padding:="" layout="" #quarto-content,="" .page-layout-article="" .content-container,="" #quarto-margin-sidebar,="" main="" max-width:="" 860px;="" headings="" h1,="" h2,="" h3,="" h4="" var(--font-ui);="" var(--c-forest);="" font-weight:="" 700;="" text-wrap:="" balance;="" 1.25;="" h1="" 2rem;="" border-bottom:="" 3px="" solid="" var(--c-moss);="" padding-bottom:="" .5rem;="" margin-top:="" h2="" 1.35rem;="" 1px="" var(--c-rule);="" .3rem;="" 2.5rem;="" h3="" 1.1rem;="" subtitle="" block="" .quarto-title-meta="" .85rem;="" var(--c-muted);="" .quarto-title-meta-heading="" 600;="" tables="" .table-wrap="" overflow-x:="" auto;="" 1.5rem="" table="" .82rem;="" border-collapse:="" collapse;="" width:="" 100%;="" min-width:="" 480px;="" font-variant-numeric:="" tabular-nums;="" thead="" tr="" #fff;="" th="" .5rem="" .75rem;="" text-align:="" left;="" letter-spacing:="" .03em;="" tbody="" tr:nth-child(odd)="" var(--c-card);="" tr:nth-child(even)="" #efede8;="" td="" .4rem="" tr:last-child="" none;="" callout="" boxes="" .callout="" border-left:="" 4px="" 1rem="" 1.25rem;="" 1.75rem="" border-radius:="" 0="" var(--r-card)="" box-shadow:="" rgba(0,0,0,.07);="" .callout.warning="" border-color:="" var(--c-sienna);="" var(--c-ref-bg);="" .callout.neutral="" var(--c-sand);="" var(--c-nei-bg);="" .callout-title="" .06em;="" text-transform:="" uppercase;="" margin-bottom:="" .4rem;="" label="" chips="" .chip="" display:="" inline-block;="" .05em;="" .15em="" .6em;="" 3px;="" .chip-sup="" var(--c-sup-bg);="" .chip-ref="" .chip-nei="" figures="" figure="" 2rem="" figcaption="" .8rem;="" img="" var(--r-card);="" 2px="" 8px="" rgba(0,0,0,.1);="" code="" pre,="" var(--font-mono);="" #eae8e3;="" 4px;="" pre="" 1rem;="" toc="" #quarto-sidebar,="" nav[role="doc-toc]" a="" text-decoration:="" a:hover="" .active="" metric="" strip="" .metrics="" flex;="" gap:="" flex-wrap:="" wrap;="" .metric="" flex:="" 1="" 140px;="" .9rem="" .metric-value="" 1.8rem;="" 800;="" 1;="" .metric-label="" assessment="" section="" .assessment-block="" 1.5rem;="" .07em;="" print="" @media="" white;="" .callout,="" .metric,="" }"="">
+</head>
+
+<body>
+
+
+<header id="title-block-header">
+<h1 class="title">IPBES BM Fact Checker — NLI Scores: Basic Overview</h1>
+<p class="subtitle">GA1 · config: deberta_zeroshot</p>
+<p class="author">IPBES Data Team</p>
+
+<p class="date">1 July 2026</p>
+</header>
+
+<nav id="TOC" role="doc-toc">
+    <h2 id="toc-title">Contents</h2>
+   
+  <ul>
+  <li><a href="#overview" id="toc-overview">Overview</a></li>
+  <li><a href="#label-distribution" id="toc-label-distribution">Label distribution</a>
+  <ul>
+  <li><a href="#overall" id="toc-overall">Overall</a></li>
+  <li><a href="#per-key-message" id="toc-per-key-message">Per Key Message</a></li>
+  <li><a href="#per-background-message" id="toc-per-background-message">Per Background Message</a></li>
+  </ul></li>
+  <li><a href="#confidence-and-alignment" id="toc-confidence-and-alignment">Confidence and alignment</a>
+  <ul>
+  <li><a href="#confidence-by-label" id="toc-confidence-by-label">Confidence by label</a></li>
+  <li><a href="#alignment-score-per-bm" id="toc-alignment-score-per-bm">Alignment score per BM</a></li>
+  </ul></li>
+  <li><a href="#assessment" id="toc-assessment">Assessment</a>
+  <ul>
+  <li><a href="#km-d-performs-well-kms-ac-show-systematic-refutes-inflation" id="toc-km-d-performs-well-kms-ac-show-systematic-refutes-inflation">KM D performs well; KMs A–C show systematic REFUTES inflation</a></li>
+  <li><a href="#notable-exception-in-km-a" id="toc-notable-exception-in-km-a">Notable exception in KM A</a></li>
+  <li><a href="#operational-implications" id="toc-operational-implications">Operational implications</a></li>
+  </ul></li>
+  </ul>
+</nav>
+<h2 id="overview" class="anchored">Overview</h2>
+<p>This report summarises the first-pass NLI alignment scores for <strong>GA1</strong> (Global Assessment 1), produced by the <code>deberta_zeroshot</code> pipeline using <code>MoritzLaurer/deberta-v3-large-zeroshot-v2.0</code> at <code>max_length = 256</code>. Each citing work is scored against its partition’s Background Message (BM) as <span class="chip chip-sup">SUPPORTS</span>, <span class="chip chip-ref">REFUTES</span>, or <span class="chip chip-nei">NOT_ENOUGH_INFO</span>.</p>
+<div class="metrics">
+<div class="metric">
+<div class="metric-value">
+194,661
+</div>
+<div class="metric-label">
+Works scored
+</div>
+</div>
+<div class="metric">
+<div class="metric-value">
+27
+</div>
+<div class="metric-label">
+Background messages
+</div>
+</div>
+<div class="metric">
+<div class="metric-value">
+4
+</div>
+<div class="metric-label">
+Key messages
+</div>
+</div>
+<div class="metric">
+<div class="metric-value">
+86.1%
+</div>
+<div class="metric-label">
+Uncertain (conf &lt; 0.60)
+</div>
+</div>
+</div>
+<div>
+<blockquote>
+<p><strong>None</strong></p>
+<div class="callout-title">
+Interpretation caveat
+</div>
+<p>The 86 % uncertainty rate and near-chance median confidence (~0.47) reflect a known limitation of zero-shot NLI on this task, not a pipeline failure. The per-BM breakdown below shows the signal is highly structured — KM D performs well; KMs A–C show REFUTES inflation. Use the continuous alignment score (<code>p_supports − p_refutes</code>) for thresholding; do not act on raw argmax labels for KMs A–C without Phase-2 LLM review.</p>
+</blockquote>
+</div>
+<h2 id="label-distribution" class="anchored">Label distribution</h2>
+<h3 id="overall" class="anchored">Overall</h3>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Label</th>
+<th style="text-align: right;">Works</th>
+<th style="text-align: right;">%</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">SUPPORTS</td>
+<td style="text-align: right;">49,484</td>
+<td style="text-align: right;">25.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">NOT_ENOUGH_INFO</td>
+<td style="text-align: right;">96,164</td>
+<td style="text-align: right;">49.4</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">REFUTES</td>
+<td style="text-align: right;">49,013</td>
+<td style="text-align: right;">25.2</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p><br></p>
+<div class="cell">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img src="Fact_Checker_nli_report_basic_files/figure-html/plot-overall-1.png" class="img-fluid" width="672"></p>
+<figcaption>Overall label split — GA1, all 27 BMs combined.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<h3 id="per-key-message" class="anchored">Per Key Message</h3>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">KM</th>
+<th style="text-align: right;">SUPPORTS %</th>
+<th style="text-align: right;">NEI %</th>
+<th style="text-align: right;">REFUTES %</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: right;">21.4</td>
+<td style="text-align: right;">52.2</td>
+<td style="text-align: right;">26.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: right;">20.5</td>
+<td style="text-align: right;">51.7</td>
+<td style="text-align: right;">27.7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: right;">18.1</td>
+<td style="text-align: right;">50.1</td>
+<td style="text-align: right;">31.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: right;">48.8</td>
+<td style="text-align: right;">36.6</td>
+<td style="text-align: right;">14.6</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img src="Fact_Checker_nli_report_basic_files/figure-html/plot-km-1.png" class="img-fluid" width="672"></p>
+<figcaption>Label split per Key Message.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<h3 id="per-background-message" class="anchored">Per Background Message</h3>
+<div class="cell">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img src="Fact_Checker_nli_report_basic_files/figure-html/plot-bm-1.png" class="img-fluid" width="960"></p>
+<figcaption>Label split per BM, faceted by KM. D-series BMs show clearly stronger SUPPORTS signal.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">KM</th>
+<th style="text-align: left;">BM</th>
+<th style="text-align: right;">SUPPORTS %</th>
+<th style="text-align: right;">NEI %</th>
+<th style="text-align: right;">REFUTES %</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A1</td>
+<td style="text-align: right;">13.8</td>
+<td style="text-align: right;">54.3</td>
+<td style="text-align: right;">32.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A2</td>
+<td style="text-align: right;">29.5</td>
+<td style="text-align: right;">40.6</td>
+<td style="text-align: right;">29.9</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A3</td>
+<td style="text-align: right;">4.3</td>
+<td style="text-align: right;">51.1</td>
+<td style="text-align: right;">44.6</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A4</td>
+<td style="text-align: right;">12.9</td>
+<td style="text-align: right;">58.6</td>
+<td style="text-align: right;">28.5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A5</td>
+<td style="text-align: right;">39.8</td>
+<td style="text-align: right;">54.5</td>
+<td style="text-align: right;">5.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A6</td>
+<td style="text-align: right;">9.2</td>
+<td style="text-align: right;">59.6</td>
+<td style="text-align: right;">31.2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A7</td>
+<td style="text-align: right;">5.3</td>
+<td style="text-align: right;">52.0</td>
+<td style="text-align: right;">42.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A8</td>
+<td style="text-align: right;">15.3</td>
+<td style="text-align: right;">38.1</td>
+<td style="text-align: right;">46.7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A9</td>
+<td style="text-align: right;">27.2</td>
+<td style="text-align: right;">60.2</td>
+<td style="text-align: right;">12.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B10</td>
+<td style="text-align: right;">33.1</td>
+<td style="text-align: right;">48.2</td>
+<td style="text-align: right;">18.7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B11</td>
+<td style="text-align: right;">13.3</td>
+<td style="text-align: right;">31.1</td>
+<td style="text-align: right;">55.6</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B3</td>
+<td style="text-align: right;">1.5</td>
+<td style="text-align: right;">67.0</td>
+<td style="text-align: right;">31.5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B4</td>
+<td style="text-align: right;">29.0</td>
+<td style="text-align: right;">35.6</td>
+<td style="text-align: right;">35.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B5</td>
+<td style="text-align: right;">26.9</td>
+<td style="text-align: right;">17.7</td>
+<td style="text-align: right;">55.4</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C2</td>
+<td style="text-align: right;">24.7</td>
+<td style="text-align: right;">50.0</td>
+<td style="text-align: right;">25.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C4</td>
+<td style="text-align: right;">17.7</td>
+<td style="text-align: right;">46.8</td>
+<td style="text-align: right;">35.5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C6</td>
+<td style="text-align: right;">7.8</td>
+<td style="text-align: right;">37.3</td>
+<td style="text-align: right;">55.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C7</td>
+<td style="text-align: right;">15.9</td>
+<td style="text-align: right;">66.7</td>
+<td style="text-align: right;">17.4</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C8</td>
+<td style="text-align: right;">2.3</td>
+<td style="text-align: right;">83.1</td>
+<td style="text-align: right;">14.6</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D1</td>
+<td style="text-align: right;">79.8</td>
+<td style="text-align: right;">10.1</td>
+<td style="text-align: right;">10.1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D10</td>
+<td style="text-align: right;">14.7</td>
+<td style="text-align: right;">62.7</td>
+<td style="text-align: right;">22.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D11</td>
+<td style="text-align: right;">9.6</td>
+<td style="text-align: right;">68.5</td>
+<td style="text-align: right;">21.9</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D12</td>
+<td style="text-align: right;">60.1</td>
+<td style="text-align: right;">30.4</td>
+<td style="text-align: right;">9.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D2</td>
+<td style="text-align: right;">46.3</td>
+<td style="text-align: right;">36.1</td>
+<td style="text-align: right;">17.6</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D3</td>
+<td style="text-align: right;">78.6</td>
+<td style="text-align: right;">14.0</td>
+<td style="text-align: right;">7.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D5</td>
+<td style="text-align: right;">38.6</td>
+<td style="text-align: right;">43.7</td>
+<td style="text-align: right;">17.7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D6</td>
+<td style="text-align: right;">14.6</td>
+<td style="text-align: right;">66.1</td>
+<td style="text-align: right;">19.3</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<h2 id="confidence-and-alignment" class="anchored">Confidence and alignment</h2>
+<h3 id="confidence-by-label" class="anchored">Confidence by label</h3>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Label</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: right;">Mean</th>
+<th style="text-align: right;">Median</th>
+<th style="text-align: right;">P25</th>
+<th style="text-align: right;">P75</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">SUPPORTS</td>
+<td style="text-align: right;">49,484</td>
+<td style="text-align: right;">0.508</td>
+<td style="text-align: right;">0.483</td>
+<td style="text-align: right;">0.422</td>
+<td style="text-align: right;">0.574</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">NOT_ENOUGH_INFO</td>
+<td style="text-align: right;">96,164</td>
+<td style="text-align: right;">0.499</td>
+<td style="text-align: right;">0.484</td>
+<td style="text-align: right;">0.432</td>
+<td style="text-align: right;">0.552</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">REFUTES</td>
+<td style="text-align: right;">49,013</td>
+<td style="text-align: right;">0.475</td>
+<td style="text-align: right;">0.458</td>
+<td style="text-align: right;">0.415</td>
+<td style="text-align: right;">0.512</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img src="Fact_Checker_nli_report_basic_files/figure-html/plot-conf-1.png" class="img-fluid" width="672"></p>
+<figcaption>Confidence (max class probability) density per label. The dashed line marks the uncertain threshold (0.60). Distributions barely separate — the model has limited certainty on this task.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<h3 id="alignment-score-per-bm" class="anchored">Alignment score per BM</h3>
+<p>The alignment score (<code>p_supports − p_refutes</code>) is a continuous summary on [−1, +1] that is more informative than the argmax label for downstream thresholding and ranking.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">KM</th>
+<th style="text-align: left;">BM</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: right;">Mean aln</th>
+<th style="text-align: right;">SD</th>
+<th style="text-align: right;">SUPP %</th>
+<th style="text-align: right;">REF %</th>
+<th style="text-align: right;">NEI %</th>
+<th style="text-align: right;">Unc %</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A1</td>
+<td style="text-align: right;">15,588</td>
+<td style="text-align: right;">-0.085</td>
+<td style="text-align: right;">0.183</td>
+<td style="text-align: right;">13.8</td>
+<td style="text-align: right;">32.0</td>
+<td style="text-align: right;">54.3</td>
+<td style="text-align: right;">95.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A2</td>
+<td style="text-align: right;">19,974</td>
+<td style="text-align: right;">-0.012</td>
+<td style="text-align: right;">0.307</td>
+<td style="text-align: right;">29.5</td>
+<td style="text-align: right;">29.9</td>
+<td style="text-align: right;">40.6</td>
+<td style="text-align: right;">81.8</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A3</td>
+<td style="text-align: right;">3,045</td>
+<td style="text-align: right;">-0.195</td>
+<td style="text-align: right;">0.131</td>
+<td style="text-align: right;">4.3</td>
+<td style="text-align: right;">44.6</td>
+<td style="text-align: right;">51.1</td>
+<td style="text-align: right;">93.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A4</td>
+<td style="text-align: right;">1,273</td>
+<td style="text-align: right;">-0.090</td>
+<td style="text-align: right;">0.187</td>
+<td style="text-align: right;">12.9</td>
+<td style="text-align: right;">28.5</td>
+<td style="text-align: right;">58.6</td>
+<td style="text-align: right;">90.1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A5</td>
+<td style="text-align: right;">21,645</td>
+<td style="text-align: right;">0.095</td>
+<td style="text-align: right;">0.188</td>
+<td style="text-align: right;">39.8</td>
+<td style="text-align: right;">5.7</td>
+<td style="text-align: right;">54.5</td>
+<td style="text-align: right;">87.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A6</td>
+<td style="text-align: right;">24,082</td>
+<td style="text-align: right;">-0.137</td>
+<td style="text-align: right;">0.157</td>
+<td style="text-align: right;">9.2</td>
+<td style="text-align: right;">31.2</td>
+<td style="text-align: right;">59.6</td>
+<td style="text-align: right;">89.5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A7</td>
+<td style="text-align: right;">4,536</td>
+<td style="text-align: right;">-0.190</td>
+<td style="text-align: right;">0.165</td>
+<td style="text-align: right;">5.3</td>
+<td style="text-align: right;">42.7</td>
+<td style="text-align: right;">52.0</td>
+<td style="text-align: right;">91.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A8</td>
+<td style="text-align: right;">3,474</td>
+<td style="text-align: right;">-0.087</td>
+<td style="text-align: right;">0.161</td>
+<td style="text-align: right;">15.3</td>
+<td style="text-align: right;">46.7</td>
+<td style="text-align: right;">38.1</td>
+<td style="text-align: right;">95.5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A9</td>
+<td style="text-align: right;">1,567</td>
+<td style="text-align: right;">0.019</td>
+<td style="text-align: right;">0.159</td>
+<td style="text-align: right;">27.2</td>
+<td style="text-align: right;">12.5</td>
+<td style="text-align: right;">60.2</td>
+<td style="text-align: right;">95.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B10</td>
+<td style="text-align: right;">27,480</td>
+<td style="text-align: right;">0.034</td>
+<td style="text-align: right;">0.222</td>
+<td style="text-align: right;">33.1</td>
+<td style="text-align: right;">18.7</td>
+<td style="text-align: right;">48.2</td>
+<td style="text-align: right;">87.8</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B11</td>
+<td style="text-align: right;">270</td>
+<td style="text-align: right;">-0.148</td>
+<td style="text-align: right;">0.188</td>
+<td style="text-align: right;">13.3</td>
+<td style="text-align: right;">55.6</td>
+<td style="text-align: right;">31.1</td>
+<td style="text-align: right;">93.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B3</td>
+<td style="text-align: right;">21,412</td>
+<td style="text-align: right;">-0.275</td>
+<td style="text-align: right;">0.146</td>
+<td style="text-align: right;">1.5</td>
+<td style="text-align: right;">31.5</td>
+<td style="text-align: right;">67.0</td>
+<td style="text-align: right;">74.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B4</td>
+<td style="text-align: right;">4,320</td>
+<td style="text-align: right;">-0.021</td>
+<td style="text-align: right;">0.220</td>
+<td style="text-align: right;">29.0</td>
+<td style="text-align: right;">35.4</td>
+<td style="text-align: right;">35.6</td>
+<td style="text-align: right;">90.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B5</td>
+<td style="text-align: right;">4,612</td>
+<td style="text-align: right;">-0.081</td>
+<td style="text-align: right;">0.252</td>
+<td style="text-align: right;">26.9</td>
+<td style="text-align: right;">55.4</td>
+<td style="text-align: right;">17.7</td>
+<td style="text-align: right;">89.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C2</td>
+<td style="text-align: right;">4,073</td>
+<td style="text-align: right;">-0.024</td>
+<td style="text-align: right;">0.198</td>
+<td style="text-align: right;">24.7</td>
+<td style="text-align: right;">25.4</td>
+<td style="text-align: right;">50.0</td>
+<td style="text-align: right;">91.2</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C4</td>
+<td style="text-align: right;">3,387</td>
+<td style="text-align: right;">-0.078</td>
+<td style="text-align: right;">0.195</td>
+<td style="text-align: right;">17.7</td>
+<td style="text-align: right;">35.5</td>
+<td style="text-align: right;">46.8</td>
+<td style="text-align: right;">94.2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C6</td>
+<td style="text-align: right;">1,315</td>
+<td style="text-align: right;">-0.159</td>
+<td style="text-align: right;">0.137</td>
+<td style="text-align: right;">7.8</td>
+<td style="text-align: right;">55.0</td>
+<td style="text-align: right;">37.3</td>
+<td style="text-align: right;">97.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C7</td>
+<td style="text-align: right;">264</td>
+<td style="text-align: right;">-0.017</td>
+<td style="text-align: right;">0.179</td>
+<td style="text-align: right;">15.9</td>
+<td style="text-align: right;">17.4</td>
+<td style="text-align: right;">66.7</td>
+<td style="text-align: right;">95.5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C8</td>
+<td style="text-align: right;">741</td>
+<td style="text-align: right;">-0.185</td>
+<td style="text-align: right;">0.131</td>
+<td style="text-align: right;">2.3</td>
+<td style="text-align: right;">14.6</td>
+<td style="text-align: right;">83.1</td>
+<td style="text-align: right;">72.9</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D1</td>
+<td style="text-align: right;">7,412</td>
+<td style="text-align: right;">0.258</td>
+<td style="text-align: right;">0.244</td>
+<td style="text-align: right;">79.8</td>
+<td style="text-align: right;">10.1</td>
+<td style="text-align: right;">10.1</td>
+<td style="text-align: right;">71.5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D10</td>
+<td style="text-align: right;">825</td>
+<td style="text-align: right;">-0.058</td>
+<td style="text-align: right;">0.204</td>
+<td style="text-align: right;">14.7</td>
+<td style="text-align: right;">22.7</td>
+<td style="text-align: right;">62.7</td>
+<td style="text-align: right;">83.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D11</td>
+<td style="text-align: right;">5,716</td>
+<td style="text-align: right;">-0.103</td>
+<td style="text-align: right;">0.174</td>
+<td style="text-align: right;">9.6</td>
+<td style="text-align: right;">21.9</td>
+<td style="text-align: right;">68.5</td>
+<td style="text-align: right;">86.9</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D12</td>
+<td style="text-align: right;">7,232</td>
+<td style="text-align: right;">0.185</td>
+<td style="text-align: right;">0.216</td>
+<td style="text-align: right;">60.1</td>
+<td style="text-align: right;">9.5</td>
+<td style="text-align: right;">30.4</td>
+<td style="text-align: right;">84.2</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D2</td>
+<td style="text-align: right;">6,210</td>
+<td style="text-align: right;">0.106</td>
+<td style="text-align: right;">0.253</td>
+<td style="text-align: right;">46.3</td>
+<td style="text-align: right;">17.6</td>
+<td style="text-align: right;">36.1</td>
+<td style="text-align: right;">84.2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D3</td>
+<td style="text-align: right;">1,234</td>
+<td style="text-align: right;">0.296</td>
+<td style="text-align: right;">0.251</td>
+<td style="text-align: right;">78.6</td>
+<td style="text-align: right;">7.4</td>
+<td style="text-align: right;">14.0</td>
+<td style="text-align: right;">64.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D5</td>
+<td style="text-align: right;">859</td>
+<td style="text-align: right;">0.071</td>
+<td style="text-align: right;">0.261</td>
+<td style="text-align: right;">38.6</td>
+<td style="text-align: right;">17.7</td>
+<td style="text-align: right;">43.7</td>
+<td style="text-align: right;">81.6</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D6</td>
+<td style="text-align: right;">2,115</td>
+<td style="text-align: right;">-0.025</td>
+<td style="text-align: right;">0.156</td>
+<td style="text-align: right;">14.6</td>
+<td style="text-align: right;">19.3</td>
+<td style="text-align: right;">66.1</td>
+<td style="text-align: right;">88.6</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img src="Fact_Checker_nli_report_basic_files/figure-html/plot-aln-1.png" class="img-fluid" width="672"></p>
+<figcaption>Distribution of alignment scores (p_supports − p_refutes) by label. Negative overall median (−0.065) reflects REFUTES inflation in KMs A–C; the KM D signal pulls the tail positive.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<h2 id="assessment" class="anchored">Assessment</h2>
+<h3 id="km-d-performs-well-kms-ac-show-systematic-refutes-inflation" class="anchored">KM D performs well; KMs A–C show systematic REFUTES inflation</h3>
+<div class="assessment-block">
+<h4 class="anchored">
+Key finding
+</h4>
+<p><strong>KM D is in a different class from A, B, C.</strong> With 48.8 % SUPPORTS and only 14.6 % REFUTES overall, and individual BMs D1 (79.8 % SUPPORTS), D3 (78.6 %), and D12 (60.1 %) showing clear, consistent signals at comparatively lower uncertainty (65–84 %), KM D is the only part of GA1 where zero-shot NLI produces credible output. D3 and D1 have the best-calibrated scores in the entire dataset.</p>
+<p>Likely reason: D-series BMs are probably more concrete and empirically testable — biodiversity metrics, species trends, ecosystem services — the kind of claims abstracts engage with directly.</p>
+</div>
+<div>
+<blockquote>
+<p><strong>None</strong></p>
+<div class="callout-title">
+REFUTES inflation — KMs A, B, C
+</div>
+<p>Several BMs have REFUTES &gt; SUPPORTS by a wide margin that is not scientifically credible:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>BM</th>
+<th>SUPPORTS</th>
+<th>REFUTES</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>B11</td>
+<td>13 %</td>
+<td>56 %</td>
+<td>Likely false positives</td>
+</tr>
+<tr class="even">
+<td>B5</td>
+<td>27 %</td>
+<td>55 %</td>
+<td>Likely false positives</td>
+</tr>
+<tr class="odd">
+<td>C6</td>
+<td>8 %</td>
+<td>55 %</td>
+<td>Likely false positives</td>
+</tr>
+<tr class="even">
+<td>A3</td>
+<td>4 %</td>
+<td>45 %</td>
+<td>Likely false positives</td>
+</tr>
+<tr class="odd">
+<td>A7</td>
+<td>5 %</td>
+<td>43 %</td>
+<td>Likely false positives</td>
+</tr>
+<tr class="even">
+<td>A8</td>
+<td>15 %</td>
+<td>47 %</td>
+<td>Likely false positives</td>
+</tr>
+</tbody>
+</table>
+<p>These are not credible. Citing papers of an assessment should not be 55 % refuting it. This is the well-documented zero-shot NLI failure mode: the hypothesis <em>“This paper refutes the following claim: …”</em> draws spurious entailment when the BM contains complex, multi-part, or politically nuanced language. The model fires on surface-level topical tension rather than genuine contradiction.</p>
+</blockquote>
+</div>
+<div>
+<blockquote>
+<p><strong>None</strong></p>
+<div class="callout-title">
+Noise BMs — effectively random
+</div>
+<p>Three BMs show SUPPORTS ≈ REFUTES — the argmax label is meaningless here:</p>
+<ul>
+<li><strong>A2</strong> 29.5 % vs 29.9 % — coin flip</li>
+<li><strong>C2</strong> 24.7 % vs 25.4 % — coin flip</li>
+<li><strong>B4</strong> 29.0 % vs 35.4 % — near coin flip</li>
+</ul>
+<p>For these, only the continuous alignment score and the raw probability triplet carry any information.</p>
+</blockquote>
+</div>
+<h3 id="notable-exception-in-km-a" class="anchored">Notable exception in KM A</h3>
+<p><strong>A5</strong> (39.8 % SUPPORTS, 5.7 % REFUTES, mean alignment +0.095) is the only BM in KMs A–C with a clearly positive signal. Its claim is likely more concrete or empirically specific than its neighbours — worth inspecting manually as a calibration reference.</p>
+<h3 id="operational-implications" class="anchored">Operational implications</h3>
+<ol type="1">
+<li><strong>Do not act on raw REFUTES labels for KMs A–C</strong> without Phase-2 LLM review. NLI here is a coarse NEI filter, not a judgment.</li>
+<li><strong>KM D SUPPORTS at high confidence (&gt; 0.70) can be treated as real</strong> — D1, D3, D12 in particular.</li>
+<li><strong>Use <code>p_supports − p_refutes</code> for ranking</strong> rather than argmax labels. Papers with very high <code>p_nei</code> can be deprioritised for expert review.</li>
+<li><strong><code>max_length: 256</code> is probably hurting KMs A–C.</strong> Truncating abstract tails removes findings — the part that matters most for support/refute judgements on conceptual BMs. The base-model-at-512 comparison (<code>deberta_zeroshot_v3</code>) is the highest-priority next experiment.</li>
+<li><strong>Fine-tuning on BM citations</strong> (<a href="TD_NLI_training.md">TD_NLI_training.md</a>) would most help KMs A–C — the support/refute axis that zero-shot is fumbling. D-series BMs are already working.</li>
+</ol>
+<hr>
+<p><em>Pipeline: IPBES BM Fact Checker · NLI server: <code>ghcr.io/rkrug/nli-runpod</code> · Model read from <code>/health</code> at run time and recorded as <code>nli_model</code> in output parquet.</em></p>
+
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const tabsets =  window.document.querySelectorAll(".panel-tabset-tabby")
+    tabsets.forEach(function(tabset) {
+      const tabby = new Tabby('#' + tabset.id);
+    });
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'light-border',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+
+
+
+
+<script src="Fact_Checker_nli_report_basic_files/libs/quarto-html/zenscroll-min.js"></script>
+</body></html>

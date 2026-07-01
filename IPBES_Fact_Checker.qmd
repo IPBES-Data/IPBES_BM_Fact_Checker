@@ -1,6 +1,6 @@
 ---
-title: Knowledge Discovery DRAFT
-subtitle: Knowledge Discovery based on the IPBES Assessments
+title: Fact Checker DRAFT
+subtitle: Fact Checker of BMs of IPBES Assessments
 date: today
 author:
   - name: Rainer M Krug 
@@ -58,9 +58,10 @@ library(htmltools)
 library(tictoc)
 
 snowball <- function(
-    background_message = NULL,
-    sub_message = NULL,
-    collect = TRUE) {
+  background_message = NULL,
+  sub_message = NULL,
+  collect = TRUE
+) {
   ## Both provided
   if (!is.null(sub_message) & !is.null(background_message)) {
     stop("Please provide either sub_message or backgrpund_message - not both!")
@@ -117,7 +118,6 @@ snowball <- function(
 
   return(result)
 }
-
 ```
 
 # Introduction
@@ -153,7 +153,11 @@ if (!file.exists(fn)) {
     ) |>
     tibble::as_tibble() |>
     dplyr::mutate(
-      bm = gsub("http://ontology.ipbes.net/report/bgm/", "", Background.Message),
+      bm = gsub(
+        "http://ontology.ipbes.net/report/bgm/",
+        "",
+        Background.Message
+      ),
       sm = gsub("http://ontology.ipbes.net/report/subm/", "", Sub.Message),
       loc = Level.if.Confidence,
       zotero = zotero,
@@ -175,7 +179,6 @@ if (!file.exists(fn)) {
     distinct()
 
   refs$loc[refs$loc == ""] <- as.character(NA)
-
 
   key_works <- openalexR::oa_fetch(
     entity = "works",
@@ -278,7 +281,14 @@ if (!(dir.exists(path_nodes) & dir.exists(path_edges))) {
       split = "-"
     )
     bm1 <- paste0(bm1[[1]][[1]], "-", bm1[[1]][[2]])
-    message("\nProcessing ", sm1, " - ", which(unique(key_works$bm) == sm1), " of ", length(unique(key_works$sm)))
+    message(
+      "\nProcessing ",
+      sm1,
+      " - ",
+      which(unique(key_works$bm) == sm1),
+      " of ",
+      length(unique(key_works$sm))
+    )
 
     tic()
     ids <- key_works |>
@@ -306,7 +316,11 @@ if (!(dir.exists(path_nodes) & dir.exists(path_edges))) {
       function(id) {
         result <- NULL
         try(
-          result <- readRDS(file.path("output", "snowballs", paste0(id, ".rds"))),
+          result <- readRDS(file.path(
+            "output",
+            "snowballs",
+            paste0(id, ".rds")
+          )),
           silent = TRUE
         )
         return(result)
@@ -520,8 +534,20 @@ if (!file.exists(fn)) {
       !is.na(id)
     ) |>
     dplyr::mutate(
-      id = paste0('<a href="https://openalex.org/', id, '" target="_blank">', id, "</a>"),
-      doi = paste0('<a href="https://doi.org/', doi, '" target="_blank">', doi, "</a>")
+      id = paste0(
+        '<a href="https://openalex.org/',
+        id,
+        '" target="_blank">',
+        id,
+        "</a>"
+      ),
+      doi = paste0(
+        '<a href="https://doi.org/',
+        doi,
+        '" target="_blank">',
+        doi,
+        "</a>"
+      )
     ) |>
     dplyr::select(
       n,
@@ -581,8 +607,20 @@ if (!file.exists(fn)) {
       !is.na(id)
     ) |>
     dplyr::mutate(
-      id = paste0('<a href="https://openalex.org/', id, '" target="_blank">', id, "</a>"),
-      doi = paste0('<a href="https://doi.org/', doi, '" target="_blank">', doi, "</a>")
+      id = paste0(
+        '<a href="https://openalex.org/',
+        id,
+        '" target="_blank">',
+        id,
+        "</a>"
+      ),
+      doi = paste0(
+        '<a href="https://doi.org/',
+        doi,
+        '" target="_blank">',
+        doi,
+        "</a>"
+      )
     ) |>
     dplyr::select(
       n,
@@ -656,8 +694,20 @@ if (!file.exists(fn)) {
       !is.na(id)
     ) |>
     dplyr::mutate(
-      id = paste0('<a href="https://openalex.org/', id, '" target="_blank">', id, "</a>"),
-      doi = paste0('<a href="https://doi.org/', doi, '" target="_blank">', doi, "</a>")
+      id = paste0(
+        '<a href="https://openalex.org/',
+        id,
+        '" target="_blank">',
+        id,
+        "</a>"
+      ),
+      doi = paste0(
+        '<a href="https://doi.org/',
+        doi,
+        '" target="_blank">',
+        doi,
+        "</a>"
+      )
     ) |>
     dplyr::select(
       n,
@@ -700,8 +750,14 @@ nodes |>
     n = dplyr::n(),
     n_key_paper = sum(oa_input == TRUE, na.rm = TRUE),
     n_non_key_paper = sum(oa_input == FALSE, na.rm = TRUE),
-    n_nkp_pre_2018 = sum(((oa_input == FALSE) & (publication_year <= 2018)), na.rm = TRUE), # Count of papers with publication_year <= 2018
-    n_nkp_post_2018 = sum(((oa_input == FALSE) & (publication_year > 2018)), na.rm = TRUE), # Count of papers with publication_year > 2018,
+    n_nkp_pre_2018 = sum(
+      ((oa_input == FALSE) & (publication_year <= 2018)),
+      na.rm = TRUE
+    ), # Count of papers with publication_year <= 2018
+    n_nkp_post_2018 = sum(
+      ((oa_input == FALSE) & (publication_year > 2018)),
+      na.rm = TRUE
+    ), # Count of papers with publication_year > 2018,
     .by = sm
   ) |>
   dplyr::arrange(
@@ -718,7 +774,6 @@ Here we show the different types of publication after 2018 as identified by the 
 ```{r}
 #| label: publication_types_grouped
 #| echo: false
-
 
 nodes |>
   dplyr::filter(

@@ -104,13 +104,19 @@ list(
 
   # Config — split into fine-grained targets so unrelated changes don't cascade
   tar_target(config_file, "input/config.yaml", format = "file"),
-  tar_target(config, yaml::read_yaml(config_file)),
-  tar_target(sparql_url, config[["sparql_url"]]),
-  tar_target(nli_active, config[["nli"]][["active"]]),
-  tar_target(nli_config, config[["nli"]][["configs"]][[nli_active]]),
+  # Fine-grained config targets: each reads only its own section from config_file.
+  # This means changing e.g. nli.host only invalidates nli_config (and thus
+  # nli_scores_parquet), not sparql_url, assessments_list, or any upstream target.
+  tar_target(sparql_url, yaml::read_yaml(config_file)[["sparql_url"]]),
+  tar_target(nli_active, yaml::read_yaml(config_file)[["nli"]][["active"]]),
+  tar_target(workers, yaml::read_yaml(config_file)[["workers"]]),
+  tar_target(nli_config, {
+    nli <- yaml::read_yaml(config_file)[["nli"]]
+    nli[["configs"]][[nli[["active"]]]]
+  }),
   tar_target(
     assessments_list,
-    lapply(config[["assessments"]], function(a) {
+    lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
       a[setdiff(names(a), "full_text")]
     })
   ),
@@ -124,10 +130,10 @@ list(
     iteration = "list"
   ),
   # PARKED (LLM-comparison approach): consumed only by alignement_scores_run_specs.
-  # tar_target(analysis_list, config[["analysis"]]),
+  # tar_target(analysis_list, yaml::read_yaml(config_file)[["analysis"]]),
   tar_target(
     fulltext_list,
-    lapply(config[["assessments"]], function(a) {
+    lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
       list(assessment_id = a[["id"]], enabled = isTRUE(a[["full_text"]]))
     })
   ),
@@ -307,21 +313,38 @@ list(
   # ),
   # ==========================================================================
 
-  # Target 2g (NLI): NLI alignement scores — classify each citing work against
-  # its partition BM (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) via a zero-shot NLI
-  # model served on RunPod. Consumes the BG message DB (key_messages_parquet)
-  # and the citing works DB (works_citing_parquet) only.
+  # Target 2g (NLI-ready): NLI-ready parquet — BM descriptions split into
+  # sentences (falling back to bm_label when bm_description is absent), crossed
+  # with the cleaned (premise = title + abstract) of each citing work.
+  # One row per (work × BM sentence); sentence_number preserves original order.
+  tar_target(
+    nli_ready_parquet,
+    build_nli_ready_parquet(
+      assessment,
+      key_messages_parquet,
+      works_citing_parquet,
+      workers,
+      "output/nli_ready"
+    ),
+    pattern = map(assessment, key_messages_parquet, works_citing_parquet),
+    format = "file"
+  ),
+
+  # Target 2h (NLI): NLI alignement scores — classify each citing work against
+  # each BM sentence (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) via a zero-shot NLI
+  # model served on RunPod. Consumes nli_ready_parquet (work × BM sentence
+  # cross-join with approx_tokens). Rows where approx_tokens > max_length are
+  # skipped; see NEXT_STEPS.md for the planned chunking approach.
   tar_target(
     nli_scores_parquet,
     build_nli_scores_parquet(
       assessment,
-      key_messages_parquet,
-      works_citing_parquet,
+      nli_ready_parquet,
       nli_config,
       nli_active,
       "output/nli_scores"
     ),
-    pattern = map(assessment, key_messages_parquet, works_citing_parquet),
+    pattern = map(assessment, nli_ready_parquet),
     format = "file"
   ),
 

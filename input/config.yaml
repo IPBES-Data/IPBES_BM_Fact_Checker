@@ -3,6 +3,10 @@
 # Any URL = query that endpoint directly (e.g. a remote SPARQL endpoint).
 sparql_url: fuseki
 
+# Number of parallel workers for mclapply-based targets (nli_ready_parquet).
+# Falls back to 1 on Windows (mclapply does not fork there).
+workers: 8
+
 assessments:
   - id: GA1
     ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v09.ttl
@@ -20,18 +24,32 @@ assessments:
 # zero-shot NLI server (see docker/nli-runpod/). Switch models by changing
 # `active` to a key under `configs`. Use `~` to disable.
 nli:
-  active: deberta_zeroshot   # which entry under configs: is active
+  active: deberta_zeroshot_v3   # which entry under configs: is active
 
   configs:
     deberta_zeroshot:
       scheme: https
-      host: <pod-id>-8080.proxy.runpod.net   # fill in after the pod boots
+      host: 1a1pafct1ivnir-8080.proxy.runpod.net   # fill in after the pod boots 
       port: null                              # null → scheme://host (RunPod proxy)
       auth_token_keyring: null                # optional keyring entry for a bearer token
-      model: MoritzLaurer/deberta-v3-large-zeroshot-v2.0
+      model: MoritzLaurer/deberta-v3-large-zeroshot-v2.0   # label only; actual model is read from /health and recorded as nli_model. Warns on mismatch.
       candidate_labels: ["supports", "refutes", "is not relevant to"]
       hypothesis_template: "This paper {} the following claim: %s"
-      batch_size: 32
+      batch_size: 128
+      max_length: 256        # max tokens per (premise, hypothesis) pair; null → server default (512)
+      uncertain_threshold: 0.60
+      nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
+
+    deberta_zeroshot_v3:
+      scheme: https
+      host: 0p28ccn78phd50-8080.proxy.runpod.net    # fill in after the base-model pod boots
+      port: null                              # null → scheme://host (RunPod proxy)
+      auth_token_keyring: null                # optional keyring entry for a bearer token
+      model: MoritzLaurer/deberta-v3-base-zeroshot-v2.0   # label only; verified against /health
+      candidate_labels: ["supports", "refutes", "is not relevant to"]
+      hypothesis_template: "This paper {} the following claim: %s"
+      batch_size: 128
+      max_length: 512        # base model is cheap enough to keep the full window
       uncertain_threshold: 0.60
       nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
 

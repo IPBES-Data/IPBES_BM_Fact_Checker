@@ -32,6 +32,10 @@ vignettes/*.pdf
 *_cache/
 /cache/
 
+# Python bytecode cache (e.g. from docker/nli-runpod/server.py imports)
+__pycache__/
+*.pyc
+
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md
@@ -66,3 +70,4 @@ output/prompts/*
 output/alignement/*
 output/alignement_scores/*
 output/nli_scores/*
+output/nli_ready/*

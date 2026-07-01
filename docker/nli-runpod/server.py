@@ -1,13 +1,20 @@
 """Minimal zero-shot NLI inference server for the IPBES BM fact-checker.
 
-Wraps a single HuggingFace ``zero-shot-classification`` pipeline behind a tiny
-FastAPI app. One pipeline instance is held for the process lifetime; the model
-is baked into the image at build time (see ``download_model.py`` +
-``Dockerfile``), so there is no first-request download.
+Loads a single HuggingFace NLI sequence-classification model behind a tiny
+FastAPI app and runs zero-shot classification *manually* (tokenize → batched
+forward → softmax). The model is baked into the image at build time (see
+``download_model.py`` + ``Dockerfile``), so there is no first-request download.
+
+Why not the ``zero-shot-classification`` pipeline? On the transformers version
+in the base image the pipeline's ChunkPipeline path ignores ``batch_size`` and
+runs every (premise, hypothesis) pair through the GPU one at a time — ~9 pairs/s
+on an L4, regardless of batch size. Doing the batching by hand restores real
+GPU throughput (and the per-batch dynamic padding keeps short abstracts cheap).
 
 Endpoints
 ---------
-GET  /health   -> {"status": "ok", "model": "..."}
+GET  /health   -> {"status": "ok", "model": "...", "device": N, "dtype": "...",
+                   "entailment_id": K}
 GET  /metrics  -> Prometheus-style text; exposes ``nli_request_count`` so the
                   idle watchdog can detect inactivity (mirrors TEI).
 POST /classify -> body:
@@ -16,16 +23,19 @@ POST /classify -> body:
       "candidate_labels": ["supports", "refutes", "is not relevant to"],
       "hypothesis_template": "This paper {} the following claim: <BM text>",
       "multi_label": false,
-      "batch_size": 32
+      "batch_size": 128
     }
-  returns one {"labels": [...], "scores": [...]} object per input sequence
-  (labels sorted by descending score, as the HF pipeline returns them).
+  returns one {"labels": [...], "scores": [...]} object per input sequence,
+  labels sorted by descending score (same contract as the HF pipeline).
 
 Tuning via env vars (all optional):
   NLI_MODEL        model id (default: MoritzLaurer/deberta-v3-large-zeroshot-v2.0)
   NLI_PORT         listen port (default: 8080)
   NLI_DEVICE       device index; -1 = CPU (default: 0 if CUDA available else -1)
   NLI_MAX_LENGTH   tokenizer truncation length (default: 512)
+  NLI_DTYPE        torch dtype: float16, bfloat16, float32
+                   (default: float16 on GPU, float32 on CPU). float16/bfloat16
+                   use the L4/A100 Tensor Cores with no meaningful accuracy loss.
 """
 
 import os
@@ -35,7 +45,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 import torch
-from transformers import pipeline
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 MODEL_ID = os.environ.get(
     "NLI_MODEL", "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
@@ -50,19 +60,47 @@ def _resolve_device() -> int:
     return 0 if torch.cuda.is_available() else -1
 
 
-DEVICE = _resolve_device()
+def _resolve_dtype(device: int) -> torch.dtype:
+    env = os.environ.get("NLI_DTYPE", "").lower()
+    if env == "float16":
+        return torch.float16
+    if env in ("bfloat16", "bf16"):
+        return torch.bfloat16
+    if env == "float32":
+        return torch.float32
+    # Default: float16 on GPU for Tensor Core throughput; float32 on CPU.
+    return torch.float16 if device >= 0 else torch.float32
 
-app = FastAPI(title="nli-runpod", version="0.1.0")
+
+DEVICE = _resolve_device()
+DTYPE = _resolve_dtype(DEVICE)
+TORCH_DEVICE = torch.device(f"cuda:{DEVICE}" if DEVICE >= 0 else "cpu")
+
+_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+_model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, dtype=DTYPE)
+_model.to(TORCH_DEVICE)
+_model.eval()
+
+
+def _entailment_id() -> int:
+    """Index of the 'entailment' logit in the model head (mirrors HF pipeline)."""
+    label2id = getattr(_model.config, "label2id", None) or {}
+    for label, idx in label2id.items():
+        if str(label).lower().startswith("entail"):
+            return int(idx)
+    return -1
+
+
+ENTAILMENT_ID = _entailment_id()
+# Same convention the HF zero-shot pipeline uses to pick the "contradiction"
+# logit for multi_label scoring: opposite end of the head from entailment.
+CONTRADICTION_ID = -1 if ENTAILMENT_ID == 0 else 0
+
+app = FastAPI(title="nli-runpod", version="0.2.3")
 
 # Cumulative count of classified sequences, exposed at /metrics for the
 # idle watchdog (a request that classifies N sequences increments by N).
 _request_count = 0
-
-_classifier = pipeline(
-    "zero-shot-classification",
-    model=MODEL_ID,
-    device=DEVICE,
-)
 
 
 class ClassifyRequest(BaseModel):
@@ -70,7 +108,10 @@ class ClassifyRequest(BaseModel):
     candidate_labels: List[str]
     hypothesis_template: str = "This example is {}."
     multi_label: bool = False
-    batch_size: int = 32
+    batch_size: int = 128
+    # Per-request truncation length. Falls back to the NLI_MAX_LENGTH env
+    # default when omitted, so the client can drive it from config.yaml.
+    max_length: Optional[int] = None
 
 
 class ClassifyResult(BaseModel):
@@ -80,7 +121,15 @@ class ClassifyResult(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": MODEL_ID, "device": DEVICE}
+    return {
+        "status": "ok",
+        "model": MODEL_ID,
+        "device": DEVICE,
+        "dtype": str(DTYPE).replace("torch.", ""),
+        "entailment_id": ENTAILMENT_ID,
+        "max_length": MAX_LENGTH,
+        "tokenizer_fast": bool(getattr(_tokenizer, "is_fast", False)),
+    }
 
 
 @app.get("/metrics")
@@ -95,6 +144,32 @@ def metrics():
     return PlainTextResponse(body)
 
 
+@torch.no_grad()
+def _entail_logits(text_pairs, batch_size: int, max_length: int) -> torch.Tensor:
+    """Entailment logit for each (premise, hypothesis) pair, in input order.
+
+    Tokenizes and runs the model in batches of ``batch_size`` with per-batch
+    dynamic padding (short abstracts don't pay for the longest one in the
+    request). Returns a 1-D float32 tensor on CPU of length ``len(text_pairs)``.
+    """
+    premises = [p for p, _ in text_pairs]
+    hypotheses = [h for _, h in text_pairs]
+    out = []
+    for start in range(0, len(text_pairs), batch_size):
+        end = start + batch_size
+        enc = _tokenizer(
+            premises[start:end],
+            hypotheses[start:end],
+            truncation="longest_first",
+            max_length=max_length,
+            padding=True,
+            return_tensors="pt",
+        ).to(TORCH_DEVICE)
+        logits = _model(**enc).logits  # [b, n_head_labels]
+        out.append(logits[:, ENTAILMENT_ID].float().cpu())
+    return torch.cat(out) if out else torch.empty(0)
+
+
 @app.post("/classify", response_model=List[ClassifyResult])
 def classify(req: ClassifyRequest):
     global _request_count
@@ -102,23 +177,75 @@ def classify(req: ClassifyRequest):
     if not req.sequences:
         return []
 
-    out = _classifier(
-        req.sequences,
-        candidate_labels=req.candidate_labels,
-        hypothesis_template=req.hypothesis_template,
-        multi_label=req.multi_label,
-        batch_size=req.batch_size,
-        truncation=True,
-        max_length=MAX_LENGTH,
+    labels = req.candidate_labels
+    n_seq = len(req.sequences)
+    n_lab = len(labels)
+    # Per-request max_length overrides the NLI_MAX_LENGTH env default. Use an
+    # explicit None check (not `or`) so a genuine request value is always
+    # honoured; only a missing/None field falls back to the env default.
+    max_length = req.max_length if req.max_length is not None else MAX_LENGTH
+    # Log the effective value + its source so the truncation length actually
+    # used is verifiable in the RunPod logs (the /health endpoint only reports
+    # the env default, MAX_LENGTH).
+    print(
+        f"[classify] n_seq={n_seq} n_lab={n_lab} batch_size={req.batch_size} "
+        f"max_length={max_length} (from {'request' if req.max_length is not None else 'env NLI_MAX_LENGTH'}; "
+        f"env default={MAX_LENGTH})",
+        flush=True,
     )
+    hypotheses = [req.hypothesis_template.format(lbl) for lbl in labels]
 
-    # The pipeline returns a single dict for one input, a list for many.
-    if isinstance(out, dict):
-        out = [out]
-
-    _request_count += len(out)
-
-    return [
-        ClassifyResult(labels=list(o["labels"]), scores=[float(s) for s in o["scores"]])
-        for o in out
+    # All (premise, hypothesis) pairs, premise-major:
+    #   pair index = seq_i * n_lab + lab_i
+    pairs = [
+        (seq, hyp)
+        for seq in req.sequences
+        for hyp in hypotheses
     ]
+
+    if req.multi_label:
+        # Per-label 2-way softmax over (contradiction, entailment) logits.
+        with torch.no_grad():
+            premises = [p for p, _ in pairs]
+            hyps = [h for _, h in pairs]
+            entail = []
+            contra = []
+            bs = max(1, req.batch_size)
+            for start in range(0, len(pairs), bs):
+                end = start + bs
+                enc = _tokenizer(
+                    premises[start:end],
+                    hyps[start:end],
+                    truncation="longest_first",
+                    max_length=max_length,
+                    padding=True,
+                    return_tensors="pt",
+                ).to(TORCH_DEVICE)
+                logits = _model(**enc).logits.float()
+                entail.append(logits[:, ENTAILMENT_ID].cpu())
+                contra.append(logits[:, CONTRADICTION_ID].cpu())
+            entail = torch.cat(entail).reshape(n_seq, n_lab)
+            contra = torch.cat(contra).reshape(n_seq, n_lab)
+        # entailment prob per (seq, label) from its own 2-logit softmax
+        stacked = torch.stack([contra, entail], dim=-1)  # [n_seq, n_lab, 2]
+        scores = torch.softmax(stacked, dim=-1)[..., 1]  # [n_seq, n_lab]
+    else:
+        # Single-label: softmax the entailment logits across candidate labels.
+        entail = _entail_logits(
+            pairs, max(1, req.batch_size), max_length
+        ).reshape(n_seq, n_lab)
+        scores = torch.softmax(entail, dim=-1)
+
+    _request_count += n_seq
+
+    results = []
+    for i in range(n_seq):
+        row = scores[i]
+        order = torch.argsort(row, descending=True).tolist()
+        results.append(
+            ClassifyResult(
+                labels=[labels[j] for j in order],
+                scores=[float(row[j]) for j in order],
+            )
+        )
+    return results
