@@ -71,3 +71,12 @@ output/alignement/*
 output/alignement_scores/*
 output/nli_scores/*
 output/nli_ready/*
+
+# Local RunPod pool config (may reflect account-specific settings; pods.conf.*
+# covers ad-hoc named variants too, but keep the committed template) and
+# generated pod inventory from scripts/runpod/create_pods.sh.
+scripts/runpod/pods.conf
+scripts/runpod/pods.conf.*
+!scripts/runpod/pods.conf.example
+scripts/runpod/hosts.generated.csv
+scripts/runpod/hosts.generated.yaml

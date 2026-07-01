@@ -4,10 +4,16 @@
 # columns: km, bm, sentence_number, sentence_source, claim, work_id, premise,
 # abstract_tokens, sentence_tokens, approx_tokens.
 #
-# For each (km, bm) partition, groups by (sentence_number, claim) so all
-# premises for a given claim are POSTed in one HTTP request — restoring the
-# batch efficiency of the original BM-level approach while keeping short
-# sentence-level hypotheses.
+# Scoring is parallelized across a POOL of NLI server hosts (config `host:` can
+# be a single hostname or a list). The unit of work distribution is the CLAIM
+# — (km, bm, sentence_source, sentence_number) — not the BM: a single claim
+# already represents substantial GPU work (thousands of premises), and BMs
+# vary ~130x in size, so BM-level splitting would let one giant BM cap the
+# achievable speedup regardless of pool size. Claims are assigned to hosts via
+# greedy LPT (longest processing time first): sort by remaining pair count
+# descending, assign each to the currently least-loaded host. Output is
+# hive-partitioned by nli_config/assessment/km/bm/claim_id, one claim_id per
+# (sentence_source, sentence_number) pair.
 #
 # Rows where approx_tokens > max_length are skipped and logged.  The skipped
 # rows are NOT scored (no truncation, no summarisation).  See NEXT_STEPS.md for
@@ -19,6 +25,24 @@ nli_cfg_get <- function(cfg, key, default) {
   if (is.null(v)) return(default)
   if (is.character(v) && length(v) == 1L && !nzchar(v)) return(default)
   v
+}
+
+# Normalize cfg$host to a character vector of 1+ hostnames ("a pool of 1" for
+# single-host configs). yaml::read_yaml() parses a YAML flow-style list as an
+# R list, not an atomic vector, so unlist() first. This is the only place
+# cfg$host should be read directly — everything else goes through this.
+nli_hosts <- function(cfg) {
+  host <- nli_cfg_get(cfg, "host", NULL)
+  if (is.null(host)) {
+    stop("nli config is missing `host` (a hostname, or a list of hostnames for a pool)")
+  }
+  host <- unlist(host, use.names = FALSE)
+  host <- as.character(host)
+  host <- host[nzchar(host)]
+  if (!length(host)) {
+    stop("nli config `host` resolved to zero non-empty hostnames")
+  }
+  host
 }
 
 # Build the base /classify URL. `port: null` (or absent) → scheme://host with no
@@ -128,7 +152,17 @@ build_nli_scores_parquet <- function(
   max_length          <- nli_cfg_get(cfg, "max_length", NULL)
   if (!is.null(max_length)) max_length <- as.integer(max_length)
 
-  base_url <- nli_classify_url(cfg)
+  # Pool of 1+ NLI server hosts. base_urls is index-aligned with hosts; each
+  # is built via a synthetic single-host cfg so nli_classify_url() itself
+  # never needs to know about pools.
+  hosts <- nli_hosts(cfg)
+  n_hosts <- length(hosts)
+  base_urls <- vapply(hosts, function(h) {
+    cfg_h <- cfg
+    cfg_h$host <- h
+    nli_classify_url(cfg_h)
+  }, character(1L))
+
   auth_token <- NULL
   token_entry <- cfg[["auth_token_keyring"]]
   if (!is.null(token_entry) && is.character(token_entry) && nzchar(token_entry)) {
@@ -141,14 +175,54 @@ build_nli_scores_parquet <- function(
     )
   }
 
-  health <- nli_health(base_url, auth_token)
-  model_actual <- as.character(health[["model"]] %||% NA_character_)
-  message(sprintf(
-    "[NLI %s] %s server: model=%s dtype=%s device=%s max_length=%s",
-    assessment_id, now(), model_actual,
-    health[["dtype"]] %||% "?", health[["device"]] %||% "?",
-    health[["max_length"]] %||% "(server default)"
-  ))
+  # Health-check every host up front. Collect ALL failures before stopping so
+  # a broken pool is diagnosed in one shot, not host-by-host. A bad host must
+  # never be silently dropped — that would leave its assigned claims unscored
+  # with no clear signal why.
+  health_results <- lapply(seq_along(hosts), function(k) {
+    tryCatch(
+      list(ok = TRUE, host = hosts[[k]], health = nli_health(base_urls[[k]], auth_token)),
+      error = function(e) list(ok = FALSE, host = hosts[[k]], error = conditionMessage(e))
+    )
+  })
+  failed <- Filter(function(r) !r$ok, health_results)
+  if (length(failed)) {
+    stop(sprintf(
+      "[NLI %s] %d/%d pool host(s) failed health check:\n%s",
+      assessment_id, length(failed), length(hosts),
+      paste(sprintf("  - %s: %s",
+                     vapply(failed, `[[`, character(1), "host"),
+                     vapply(failed, `[[`, character(1), "error")),
+            collapse = "\n")
+    ))
+  }
+
+  for (k in seq_along(hosts)) {
+    h <- health_results[[k]]$health
+    message(sprintf(
+      "[NLI %s pool=%d/%d] %s server: model=%s dtype=%s device=%s max_length=%s",
+      assessment_id, k, n_hosts, now(), h[["model"]] %||% "?",
+      h[["dtype"]] %||% "?", h[["device"]] %||% "?",
+      h[["max_length"]] %||% "(server default)"
+    ))
+  }
+
+  # A pool scoring with genuinely different models per host would silently
+  # corrupt result provenance (one nli_model value stamped on rows actually
+  # produced by two different models) — stop, don't warn.
+  models_seen <- vapply(health_results, function(r) {
+    as.character(r$health[["model"]] %||% NA_character_)
+  }, character(1))
+  if (length(unique(stats::na.omit(models_seen))) > 1L) {
+    stop(sprintf(
+      "[NLI %s] pool hosts report different models — results would not be homogeneous: %s",
+      assessment_id,
+      paste(sprintf("%s=%s", hosts, models_seen), collapse = ", ")
+    ))
+  }
+  model_actual <- unique(stats::na.omit(models_seen))
+  model_actual <- if (length(model_actual)) model_actual[[1L]] else NA_character_
+
   model_label <- cfg[["model"]]
   if (!is.null(model_label) && nzchar(model_label) &&
         !is.na(model_actual) && !identical(model_label, model_actual)) {
@@ -173,7 +247,7 @@ build_nli_scores_parquet <- function(
   score_key <- function(df) {
     paste(
       df$km, df$bm, df$sentence_number, df$sentence_source, df$work_id, df$claim,
-      sep = ""
+      sep = ""
     )
   }
 
@@ -229,7 +303,13 @@ build_nli_scores_parquet <- function(
     }
   }
 
-  # Unique per-run filename stem so appended files never clobber earlier runs'.
+  # Unique per-run filename stem. Computed once in the PARENT, before forking
+  # below — it is therefore textually IDENTICAL across all pool workers (they
+  # inherit the parent's PID via copy-on-write fork), so it disambiguates
+  # across separate pipeline runs, not across hosts within one run. host_idx
+  # (added to basename_template further down) is what disambiguates hosts;
+  # claim_id-level directory partitioning makes cross-host collisions
+  # structurally impossible regardless.
   run_token <- paste0(format(Sys.time(), "%Y%m%d%H%M%S"), "-", Sys.getpid())
 
   pick <- function(sc, lab) {
@@ -238,51 +318,73 @@ build_nli_scores_parquet <- function(
   }
   label_levels <- c("SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO")
 
-  km_bm <- ready |>
-    dplyr::select(km, bm) |>
-    dplyr::distinct()
+  # Unit of work distribution is the CLAIM, not the BM: a BM's claims vary
+  # widely in size and a single claim already represents substantial GPU
+  # work, so BM-level splitting would let one giant BM cap achievable
+  # speedup. claim_id disambiguates bm_description vs bm_label sentences
+  # that share the same sentence_number within one BM.
+  claim_counts <- ready |>
+    dplyr::mutate(claim_id = sprintf("%s-%02d", sentence_source, sentence_number)) |>
+    dplyr::count(km, bm, sentence_number, sentence_source, claim, claim_id, name = "n_pairs") |>
+    dplyr::arrange(dplyr::desc(n_pairs))
 
-  wrote_any <- FALSE
+  # Greedy LPT (longest processing time first): sort claims descending by
+  # remaining pair count (done above), assign each to whichever host
+  # currently has the smallest cumulative assigned load. Computed on `ready`
+  # AFTER both filters above, so balancing reflects remaining work only.
+  host_load <- rep(0L, n_hosts)
+  assigned_host_idx <- integer(nrow(claim_counts))
+  for (i in seq_len(nrow(claim_counts))) {
+    h <- which.min(host_load)
+    assigned_host_idx[[i]] <- h
+    host_load[[h]] <- host_load[[h]] + claim_counts$n_pairs[[i]]
+  }
+  claim_counts$host_idx <- assigned_host_idx
 
-  for (i in seq_len(nrow(km_bm))) {
-    km_val <- km_bm$km[[i]]
-    bm_val <- km_bm$bm[[i]]
+  host_assignments <- lapply(seq_len(n_hosts), function(h) {
+    claim_counts[
+      claim_counts$host_idx == h,
+      c("km", "bm", "sentence_number", "sentence_source", "claim", "claim_id", "n_pairs"),
+      drop = FALSE
+    ]
+  })
 
-    part <- ready[ready$km == km_val & ready$bm == bm_val, , drop = FALSE]
+  message(sprintf(
+    "[NLI %s] %s LPT split: %d claim-unit(s), %d pair(s) total, across %d host(s): %s",
+    assessment_id, now(), nrow(claim_counts), sum(claim_counts$n_pairs), n_hosts,
+    paste(sprintf("host%d=%dpairs(%dclaims)", seq_len(n_hosts),
+                   vapply(host_assignments, function(a) sum(a$n_pairs), numeric(1)),
+                   vapply(host_assignments, nrow, integer(1))),
+          collapse = ", ")
+  ))
 
-    # Unique claims in this partition, ordered by sentence_number.
-    claim_groups <- part |>
-      dplyr::select(sentence_number, sentence_source, claim) |>
-      dplyr::distinct() |>
-      dplyr::arrange(sentence_number)
+  score_one_host <- function(host_idx) {
+    base_url    <- base_urls[[host_idx]]
+    claims_host <- host_assignments[[host_idx]]
+    pool_tag    <- sprintf("pool=%d/%d", host_idx, n_hosts)
 
-    n_claims <- nrow(claim_groups)
-    n_works  <- length(unique(part$work_id))
-    message(sprintf(
-      "[NLI %s] %s km=%s / bm=%s: %d claim(s) × %d work(s) = %d pair(s)",
-      assessment_id, now(), km_val, bm_val, n_claims, n_works, nrow(part)
-    ))
+    if (!nrow(claims_host)) {
+      message(sprintf("[NLI %s %s] no claims assigned — idle", assessment_id, pool_tag))
+      return(FALSE)
+    }
 
-    result_rows <- vector("list", n_claims)
+    wrote_any_host <- FALSE
 
-    for (j in seq_len(n_claims)) {
-      cg         <- claim_groups[j, ]
+    for (i in seq_len(nrow(claims_host))) {
+      cg <- claims_host[i, ]
       claim_text <- cg$claim
       claim_safe <- gsub("\\{", "{{", gsub("\\}", "}}", claim_text))
-      hyp_tmpl_j <- sprintf(template_fmt, claim_safe)
+      hyp_tmpl_i <- sprintf(template_fmt, claim_safe)
 
-      # Filter on BOTH sentence_number and sentence_source: a BM with both a
-      # description and a label contributes two sources whose sentence_numbers
-      # overlap, so number alone would mix premises across sources.
-      cw <- part[
-        part$sentence_number == cg$sentence_number &
-          part$sentence_source == cg$sentence_source, ,
+      cw <- ready[
+        ready$km == cg$km & ready$bm == cg$bm &
+          ready$sentence_number == cg$sentence_number &
+          ready$sentence_source == cg$sentence_source, ,
         drop = FALSE
       ]
       premises <- cw$premise
 
-      # Send premises in HTTP-sized chunks; model batches internally at batch_size.
-      chunks   <- split(
+      chunks <- split(
         seq_along(premises),
         ceiling(seq_along(premises) / max(1L, http_chunk))
       )
@@ -292,15 +394,15 @@ build_nli_scores_parquet <- function(
       for (chunk_i in seq_along(chunks)) {
         idx <- chunks[[chunk_i]]
         message(sprintf(
-          "[NLI %s] %s km=%s / bm=%s claim %d/%d: chunk %d/%d (%d works)",
-          assessment_id, now(), km_val, bm_val, j, n_claims,
+          "[NLI %s %s] km=%s / bm=%s / claim_id=%s: chunk %d/%d (%d works)",
+          assessment_id, pool_tag, cg$km, cg$bm, cg$claim_id,
           chunk_i, n_chunks, length(idx)
         ))
         res <- nli_classify_request(
           base_url            = base_url,
           sequences           = premises[idx],
           candidate_labels    = candidate_labels,
-          hypothesis_template = hyp_tmpl_j,
+          hypothesis_template = hyp_tmpl_i,
           multi_label         = multi_label,
           batch_size          = batch_size,
           max_length          = max_length,
@@ -308,8 +410,8 @@ build_nli_scores_parquet <- function(
         )
         if (length(res) != length(idx)) {
           stop(sprintf(
-            "NLI server returned %d results for %d sequences (km=%s/bm=%s/claim=%d)",
-            length(res), length(idx), km_val, bm_val, cg$sentence_number
+            "NLI server returned %d results for %d sequences (km=%s/bm=%s/claim_id=%s)",
+            length(res), length(idx), cg$km, cg$bm, cg$claim_id
           ))
         }
         scores_list[idx] <- res
@@ -328,12 +430,13 @@ build_nli_scores_parquet <- function(
         if (all(is.na(r))) NA_real_ else max(r, na.rm = TRUE)
       })
 
-      result_rows[[j]] <- dplyr::tibble(
+      out <- dplyr::tibble(
         nli_config      = nli_active,
         nli_model       = model_actual,
         assessment      = assessment_id,
-        km              = km_val,
-        bm              = bm_val,
+        km              = cg$km,
+        bm              = cg$bm,
+        claim_id        = cg$claim_id,
         sentence_number = cg$sentence_number,
         sentence_source = cg$sentence_source,
         claim           = claim_text,
@@ -345,27 +448,48 @@ build_nli_scores_parquet <- function(
         confidence      = confidence,
         uncertain       = !is.na(confidence) & confidence < uncertain_threshold
       )
+
+      # existing_data_behavior = "overwrite" only overwrites files with matching
+      # names. run_token (parent-inherited, identical across pool workers) plus
+      # host_idx plus the within-host index i plus Arrow's own {i} placeholder
+      # guarantee no two writes — same run or different, same host or not —
+      # ever produce colliding filenames; directory-level partitioning by
+      # claim_id makes cross-host collisions structurally impossible regardless.
+      arrow::write_dataset(
+        dataset                = out,
+        path                   = output_root,
+        format                 = "parquet",
+        partitioning           = c("nli_config", "assessment", "km", "bm", "claim_id"),
+        basename_template       = paste0("part-", run_token, "-", host_idx, "-", i, "-{i}.parquet"),
+        existing_data_behavior = "overwrite"
+      )
+      wrote_any_host <- TRUE
+      rm(cw, out)
     }
 
-    out <- dplyr::bind_rows(result_rows)
-
-    # existing_data_behavior = "overwrite" only overwrites files with matching
-    # names; the unique run_token stem means appended files never collide with
-    # earlier runs', so previously-scored pairs in this partition are preserved.
-    arrow::write_dataset(
-      dataset                = out,
-      path                   = output_root,
-      format                 = "parquet",
-      partitioning           = c("nli_config", "assessment", "km", "bm"),
-      basename_template       = paste0("part-", run_token, "-", i, "-{i}.parquet"),
-      existing_data_behavior = "overwrite"
-    )
-    wrote_any <- TRUE
-    rm(part, out)
+    wrote_any_host
   }
 
+  results <- parallel::mclapply(seq_len(n_hosts), score_one_host, mc.cores = n_hosts)
+
+  # mclapply forks even at mc.cores = 1 and does NOT propagate a child's error
+  # to the parent by default — it returns a "try-error"-classed object in that
+  # slot instead of raising. Without this check, a silently-failed host would
+  # be indistinguishable from a host that legitimately scored zero rows.
+  failed_idx <- which(vapply(results, function(r) inherits(r, "try-error"), logical(1)))
+  if (length(failed_idx)) {
+    stop(sprintf(
+      "[NLI %s] %d/%d pool host(s) errored during scoring:\n%s",
+      assessment_id, length(failed_idx), n_hosts,
+      paste(sprintf("  - pool=%d/%d: %s", failed_idx, n_hosts,
+                     vapply(results[failed_idx], conditionMessage, character(1))),
+            collapse = "\n")
+    ))
+  }
+
+  wrote_any <- any(unlist(results))
   if (!wrote_any) {
-    message(sprintf("[NLI %s] no partitions scored", assessment_id))
+    message(sprintf("[NLI %s] no claims scored", assessment_id))
   }
 
   output_path
