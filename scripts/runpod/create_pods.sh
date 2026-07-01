@@ -24,6 +24,9 @@ Usage: create_pods.sh -n <count> [-c <config-file>] [-o <output-csv>]
   -c <config-file> Path to a pods.conf-style config (default: scripts/runpod/pods.conf).
   -o <output-csv>  Where to write id,name,host (default: scripts/runpod/hosts.generated.csv).
   -h               Show this help.
+
+Set CREATE_DELAY_SEC in pods.conf to change the stagger between pod-creation
+calls (default: 10s; set to 0 to disable).
 EOF
 }
 
@@ -85,6 +88,10 @@ source "${CONFIG_FILE}"
 : "${POLL_SEC:=30}"
 : "${HEALTH_TIMEOUT_SEC:=300}"
 : "${HEALTH_POLL_INTERVAL_SEC:=10}"
+# Stagger pod-creation calls so N pods don't all start pulling the (multi-GB,
+# model-baked-in) image at the exact same instant — mitigates possible
+# shared-egress/registry contention if several pods land on nearby nodes.
+: "${CREATE_DELAY_SEC:=10}"
 # Value injected as each pod's own RUNPOD_API_KEY env var (used by the idle
 # watchdog's `runpodctl stop pod` call from inside the pod). Defaults to the
 # raw local RUNPOD_API_KEY, but pods.conf can override this with a RunPod
@@ -155,6 +162,10 @@ for i in $(seq 1 "${COUNT}"); do
   POD_IDS+=("${pod_id}")
   POD_NAMES+=("${name}")
   POD_HOSTS+=("${host}")
+
+  if [[ "${i}" -lt "${COUNT}" && "${CREATE_DELAY_SEC}" -gt 0 ]]; then
+    sleep "${CREATE_DELAY_SEC}"
+  fi
 done
 
 echo "id,name,host" > "${OUT_CSV}"

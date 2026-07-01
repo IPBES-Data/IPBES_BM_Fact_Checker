@@ -52,3 +52,10 @@ POD_ENV_RUNPOD_API_KEY='{{ RUNPOD_SECRET_TEI-RUNPOD-API }}'
 # How long (seconds) to poll each new pod's /health before giving up.
 HEALTH_TIMEOUT_SEC=300
 HEALTH_POLL_INTERVAL_SEC=10
+
+# Delay (seconds) between successive pod-creation calls when creating several
+# at once. Staggers the (multi-GB, model-baked-in) image pulls instead of N
+# pods all pulling simultaneously — mitigates possible shared-egress/registry
+# contention if RunPod schedules several pods onto nearby nodes. Set to 0 to
+# disable.
+CREATE_DELAY_SEC=10
