@@ -193,9 +193,9 @@ fi
 # Cursor control for flicker-free in-place refresh (TTY, looping mode only):
 # home the cursor, erase each line to its end (EOL), erase below the block (EOS).
 if [[ "${ONCE}" -eq 0 && -t 1 ]]; then
-  HOME=$'\033[H'; EOL=$'\033[K'; EOS=$'\033[J'
+  CUP=$'\033[H'; EOL=$'\033[K'; EOS=$'\033[J'
 else
-  HOME=""; EOL=""; EOS=""
+  CUP=""; EOL=""; EOS=""
 fi
 
 # Unicode block bar: value/max filled over `width` cells.
@@ -236,7 +236,7 @@ pass() {
   local elapsed=0
   if [[ -n "${PREV_T}" ]]; then elapsed=$((now - PREV_T)); fi
 
-  printf '%s' "${HOME}"
+  printf '%s' "${CUP}"
   printf '%s NLI POOL %s%s· %s hosts · %s %s(refresh %ss)%s%s\n' \
     "${CB}${CC}" "${C0}" "${CDIM}" "${N}" "$(date '+%H:%M:%S')" "${CGREY}" "${INTERVAL}" "${C0}" "${EOL}"
   printf '%s%s%s\n' "${CGREY}" "  host              seqs/s   throughput             state" "${C0}${EOL}"
