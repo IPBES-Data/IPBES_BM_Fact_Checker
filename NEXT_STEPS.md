@@ -126,19 +126,30 @@ for (e.g. the pre-claim-level `mclapply` design this replaced).
 
 ## Handling long (premise, claim) pairs
 
-### Current behaviour
+### Current behaviour — all pairs are scored (over-length ones truncated)
 
-Rows in `nli_ready_parquet` where `approx_tokens > max_length` are currently **skipped**
-(not scored). A count is logged per assessment. This happens when an abstract is very long
-relative to the sentence used as the claim.
+**Every work of every scored claim is scored.** `score_one_claim()` sends every
+`(premise, hypothesis)` pair to the server without re-applying a token filter; the server
+tokenizes with `truncation="longest_first"` at `max_length`, so a pair over the limit is
+**truncated, not dropped**. Because the hypothesis (a BM sentence/segment) is short and the
+premise (title + abstract) is the long side, truncation almost always trims the **tail of the
+abstract** and leaves the full claim intact.
 
-### Why not truncation or LLM summarisation?
+This is the intended behaviour — scoring every citing work is preferred over skipping long ones.
+(The `approx_tokens <= max_length` filter in `build_nli_claim_units` only affects the row
+*count* used for largest-first ordering; it does not drop any work from scoring, and in practice
+all 600 evidence claims are enumerated.)
 
-- **Auto-truncation**: the NLI model silently drops the tail of the abstract — opaque, hard to
-  audit, may remove the most relevant sentence.
-- **LLM summarisation**: non-deterministic, adds a dependency, risks meaning distortion.
+Consequence for progress accounting: the number of rows actually written exceeds the
+`approx_tokens <= max_length` count, so a progress bar using that filtered count as its
+denominator (e.g. `watch_gpu.sh`'s `get_target_total`) will read past 100%. The honest
+denominator is the *unfiltered* row count.
 
-### Planned approach — abstract chunking
+### Optional enhancement — abstract chunking (lossless alternative to truncation)
+
+Truncation silently drops the tail of a long abstract, which *could* omit the most relevant
+sentence — opaque and hard to audit. If lossless handling is ever wanted, replace truncation
+with chunking rather than reverting to skipping:
 
 Split long abstracts into overlapping windows (e.g. 400-token chunks, 50-token overlap), score
 each `(chunk, claim)` pair separately, then aggregate across chunks — e.g. `max(p_supports)`

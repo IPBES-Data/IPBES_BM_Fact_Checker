@@ -406,9 +406,13 @@ list(
   # Target 2h (NLI): NLI alignement scores — classify each citing work against
   # each BM sentence (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) via a zero-shot NLI
   # model served on a pool of RunPod hosts. Consumes nli_ready_parquet (work ×
-  # BM sentence cross-join with approx_tokens). Rows where approx_tokens >
-  # max_length are skipped; see NEXT_STEPS.md for the planned chunking
-  # approach.
+  # BM sentence cross-join with approx_tokens). Every work of every scored
+  # claim IS scored — pairs longer than max_length are TRUNCATED by the server
+  # (truncation="longest_first", so the abstract tail is trimmed and the short
+  # hypothesis is preserved), not skipped. approx_tokens is used only for
+  # ordering/counting, never to drop rows. See NEXT_STEPS.md for the optional
+  # abstract-chunking enhancement (score long abstracts in windows instead of
+  # truncating) if lossless handling of long abstracts is ever needed.
   #
   # Claim-level dynamic dispatch (crew + file locks), not per-host static LPT
   # assignment: each (km, bm, sentence_source, sentence_number) claim is its
