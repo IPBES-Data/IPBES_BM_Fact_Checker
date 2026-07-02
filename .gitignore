@@ -70,7 +70,9 @@ output/prompts/*
 output/alignement/*
 output/alignement_scores/*
 output/nli_scores/*
+output/nli_scores_evidence/*
 output/nli_ready/*
+output/nli_ready_evidence/*
 output/tables/*
 
 # Generated pod inventory from scripts/runpod/create_pods.sh — specific pod

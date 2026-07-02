@@ -40,7 +40,23 @@ tar_option_set(
     "ggplot2",
     "IPBES.R",
     "htmlwidgets",
-    "tidyr"
+    "tidyr",
+    "crew",
+    "filelock"
+  ),
+  # NLI claim-level scoring (score_one_claim) dispatches dynamically across
+  # the active nli pool's hosts via file locks — crew supplies genuine LOCAL
+  # concurrency so multiple claims can be in flight at once. Sized to the
+  # current host count (read directly from config.yaml at pipeline-definition
+  # time, not via a cached target — this is a worker-pool sizing decision,
+  # not part of the DAG's correctness). Falls back to 1 if config is missing
+  # or malformed at parse time.
+  controller = crew::crew_controller_local(
+    workers = tryCatch({
+      nli_cfg <- yaml::read_yaml("input/config.yaml")[["nli"]]
+      n <- length(unlist(nli_cfg[["configs"]][[nli_cfg[["active"]]]][["host"]]))
+      max(1L, n)
+    }, error = function(e) 1L)
   )
 )
 
@@ -369,35 +385,115 @@ list(
     format = "file"
   ),
 
-  # Target 2h (NLI): NLI alignement scores — classify each citing work against
-  # each BM sentence (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) via a zero-shot NLI
-  # model served on RunPod. Consumes nli_ready_parquet (work × BM sentence
-  # cross-join with approx_tokens). Rows where approx_tokens > max_length are
-  # skipped; see NEXT_STEPS.md for the planned chunking approach.
+  # Target 2g' (NLI-ready, SECOND approach): identical to nli_ready_parquet but
+  # BM text is cut into EVIDENCE-DELIMITED claims (split at braces that end a
+  # sentence, {5.4.1, 5.4.2}) rather than per sentence. Same column schema and
+  # separate output root (output/nli_ready_evidence), so the same claim-unit
+  # and scoring machinery consumes it unchanged. See NEXT_STEPS.md.
   tar_target(
-    nli_scores_parquet,
-    build_nli_scores_parquet(
+    nli_ready_evidence_parquet,
+    build_nli_ready_evidence_parquet(
       assessment,
-      nli_ready_parquet,
-      nli_config,
-      nli_active,
-      "output/nli_scores"
+      key_messages_parquet,
+      works_citing_parquet,
+      workers,
+      "output/nli_ready_evidence"
     ),
-    pattern = map(assessment, nli_ready_parquet),
+    pattern = map(assessment, key_messages_parquet, works_citing_parquet),
     format = "file"
   ),
 
-  # Target 2h2: NLI overview data — per-assessment label/confidence/alignment
-  # summary tables, collected once from nli_scores_parquet and cached so
-  # neither the figures target nor the report re-collect() the raw dataset.
+  # Target 2h (NLI): NLI alignement scores — classify each citing work against
+  # each BM sentence (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) via a zero-shot NLI
+  # model served on a pool of RunPod hosts. Consumes nli_ready_parquet (work ×
+  # BM sentence cross-join with approx_tokens). Rows where approx_tokens >
+  # max_length are skipped; see NEXT_STEPS.md for the planned chunking
+  # approach.
   #
-  # TEMPORARY: depends on a hardcoded path (mirroring build_nli_scores_parquet's
-  # own naming: output/nli_scores/nli_config=<active>/assessment=<id>) instead
-  # of the nli_scores_parquet target itself. nli_scores_parquet is currently
-  # outdated (host-pooling rewrite) and IAS has no output yet, so depending on
-  # it directly would force a full from-scratch GPU scoring run for IAS via
-  # tar_make(). Revert to `nli_scores_parquet` (and pattern = map(assessment,
-  # nli_scores_parquet)) once that's been run deliberately.
+  # Claim-level dynamic dispatch (crew + file locks), not per-host static LPT
+  # assignment: each (km, bm, sentence_source, sentence_number) claim is its
+  # own target branch, so a) targets' own progress reporting shows a failing
+  # claim live, by name, the moment it happens (previously: an mclapply fork
+  # dying produced zero visible output until every other fork also finished),
+  # b) one bad claim no longer costs an entire host's remaining backlog
+  # (previously ~1/6th of all remaining work per lost host), and c) host
+  # assignment happens when a worker actually becomes free (via
+  # score_one_claim()'s lock-per-host loop), not from an upfront size
+  # estimate — genuine work-stealing instead of static LPT balancing.
+
+  # Target 2h0: Pool health check, once per pipeline build. Fails loudly if
+  # any host is unreachable, or hosts report different models.
+  tar_target(
+    nli_pool_health,
+    check_nli_pool_health(nli_config, nli_active)
+  ),
+
+  # Target 2h1: Claim-units to score, per assessment.
+  tar_target(
+    nli_claim_units,
+    build_nli_claim_units(assessment, nli_ready_parquet, nli_config),
+    pattern = map(assessment, nli_ready_parquet),
+    iteration = "list"
+  ),
+
+  # Target 2h2: Flatten to one element per claim across ALL assessments, so
+  # the next target can branch one-target-per-claim.
+  tar_target(
+    nli_claim_units_flat,
+    unlist(nli_claim_units, recursive = FALSE),
+    iteration = "list"
+  ),
+
+  # Target 2h3: Score one claim per branch. error = "continue": a failing
+  # claim is reported live and marked failed; every other claim's branch
+  # proceeds independently. Re-running tar_make() only retries failed/new
+  # claims (plus targets' own branch caching skips already-succeeded ones
+  # whose inputs haven't changed).
+  tar_target(
+    nli_scores_by_claim,
+    score_one_claim(nli_claim_units_flat, nli_config, nli_active, nli_pool_health),
+    pattern = map(nli_claim_units_flat),
+    format = "file",
+    error = "continue"
+  ),
+
+  # ── SECOND approach (evidence-segmented) scoring chain ────────────────────
+  # Reuses build_nli_claim_units() / score_one_claim() unchanged — only the
+  # source path (nli_ready_evidence_parquet) and the scoring output_root
+  # (output/nli_scores_evidence) differ. Shares the same nli_pool_health and,
+  # via score_one_claim()'s default lock_dir, the same per-host locks, so the
+  # two approaches never hit one host concurrently if run together.
+  tar_target(
+    nli_claim_units_evidence,
+    build_nli_claim_units(assessment, nli_ready_evidence_parquet, nli_config),
+    pattern = map(assessment, nli_ready_evidence_parquet),
+    iteration = "list"
+  ),
+  tar_target(
+    nli_claim_units_evidence_flat,
+    unlist(nli_claim_units_evidence, recursive = FALSE),
+    iteration = "list"
+  ),
+  tar_target(
+    nli_scores_by_claim_evidence,
+    score_one_claim(
+      nli_claim_units_evidence_flat,
+      nli_config,
+      nli_active,
+      nli_pool_health,
+      output_root = "output/nli_scores_evidence"
+    ),
+    pattern = map(nli_claim_units_evidence_flat),
+    format = "file",
+    error = "continue"
+  ),
+
+  # Target 2h4: NLI overview data — per-assessment label/confidence/alignment
+  # summary tables. Reads directly from the on-disk output path (same layout
+  # regardless of which system scored it) rather than the individual
+  # per-claim file paths; nli_scores_by_claim is still listed as an argument
+  # purely to establish the DAG dependency (so this target correctly waits
+  # for scoring and gets invalidated when scoring output changes).
   tar_target(
     nli_overview_data,
     build_nli_overview_data(
@@ -408,7 +504,8 @@ list(
         paste0("assessment=", assessment$id)
       ),
       nli_active,
-      "output/tables"
+      "output/tables",
+      nli_scores_by_claim
     ),
     pattern = map(assessment),
     format = "file"

@@ -1,14 +1,15 @@
 # Derived summary tables for one assessment's NLI scores (label distribution,
 # confidence, alignment), consumed by build_nli_overview_figures() and by
 # IPBES_Fact_Checker.qmd's "NLI Alignment Scores" section. Reads the whole
-# per-assessment nli_scores_parquet branch once and caches every summary
-# table needed downstream in a single rds, so neither the figures target nor
-# the report re-collect() the (potentially large) raw dataset repeatedly.
+# per-assessment scored-output directory once and caches every summary table
+# needed downstream in a single rds, so neither the figures target nor the
+# report re-collect() the (potentially large) raw dataset repeatedly.
 build_nli_overview_data <- function(
   assessment,
   nli_scores_path,
   nli_active,
-  output_root = "output/tables"
+  output_root = "output/tables",
+  nli_scores_by_claim = NULL # unused — establishes the DAG dependency on scoring
 ) {
   assessment_id <- assessment$id
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)

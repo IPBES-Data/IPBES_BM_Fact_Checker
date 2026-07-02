@@ -40,26 +40,89 @@ Aggregation strategy across per-sentence scores:
 Evaluate on KM D (where the current approach already works) to validate that the new pipeline
 does not regress before applying to KMs A–C.
 
+### Alternative claim segmentation — split on evidence references, not sentences
+
+The `bm_label` and `bm_description` text carries inline **evidence references** to the
+sub-chapters backing each sub-claim, in the form `{x.y, a.b.c, ...}` (a brace-delimited list
+of section numbers). These braces mark the *boundaries* of what the assessment authors treat as
+one discrete, evidenced claim — a more meaningful unit than an arbitrary sentence break.
+
+Coverage was checked against all 88 distinct BMs (39 GA1 + 49 IAS):
+
+- `bm_description`: 100% of BMs contain `{...}`; mean 4.67 (GA1) / 8.82 (IAS) references per
+  description — genuinely multi-claim. This is where the strategy does its work.
+- `bm_label`: 77% (GA1) / 100% (IAS) contain `{...}`, but almost always exactly **one** trailing
+  reference. The same rule below therefore collapses a label to a single claim (= the whole
+  label) — no special-casing; labels just happen to have one segment.
+- Of the description braces, ~86% sit at a sentence end; ~10–12% are mid-sentence inline
+  citations attached to a clause (e.g. `…distorting subsidies {2.3.5.2, …}, and – at landscape
+  scales – …`). Splitting on those would produce non-standalone fragments, hence the
+  **sentence-end-only** rule below.
+
+Segmentation rule:
+
+1. **Split only at a `{...}` that ends a sentence** — i.e. the brace is followed by `.` (optionally
+   through a closing `)` and/or a confidence qualifier like `(established but incomplete)`) or by
+   end-of-string. A **mid-sentence brace is an inline citation and does NOT trigger a split**.
+   Everything from the previous boundary up to and including the sentence-ending brace is one
+   claim unit. **Multiple sentences before a brace stay together as one claim** (this is expected
+   and fine).
+2. **No `{...}` at all → the complete label / description is one claim.** This also covers a
+   trailing brace-less final sentence (e.g. a synthesising statement) at the end of an otherwise
+   evidenced description — it becomes its own claim rather than being dropped or folded into the
+   preceding one.
+3. Strip the `{...}` markers from the `claim` text used as the NLI hypothesis (provenance
+   metadata, not part of the assertion), but consider **retaining them separately** — the section
+   numbers could later be joined against `sections_parquet` to fetch the actual backing text,
+   grounding a premise = citing-work-abstract vs. hypothesis = assessment-claim comparison in the
+   specific evidence the authors cited. Note the reference content is heterogeneous (`{box 2.6;
+   4.6}`, `{table 4.33}`, `{Figure …}`, mixing `,` and `;` separators), so that later join must
+   parse `box`/`table`/`Figure` tokens and both separators; the segmentation itself treats `{...}`
+   as an opaque marker and is unaffected.
+
+**Status: implemented** as a parallel *second* approach (not a replacement), so the two
+segmentations can be scored and compared side by side. `R/build_nli_ready_evidence_parquet.R`
+(`segment_bm_by_evidence()` + `build_nli_ready_evidence_parquet()`) mirrors the per-sentence
+`build_nli_ready_parquet.R` with identical output schema, writing to
+`output/nli_ready_evidence/`. Targets: `nli_ready_evidence_parquet` →
+`nli_claim_units_evidence` → `nli_claim_units_evidence_flat` →
+`nli_scores_by_claim_evidence` (scores to `output/nli_scores_evidence/`). The claim-unit and
+scoring functions are reused unchanged — `claim_id` is assigned per evidence-delimited segment
+because that is simply what `sentence_number`/`sentence_source` now index.
+
+Still open: the overview/report targets (`nli_overview_data`, the QMD "NLI Alignment Scores"
+section) currently read only the per-sentence `output/nli_scores/` tree; comparing the two
+approaches in the report needs those to also (optionally) read `output/nli_scores_evidence/`.
+
 ## Incremental (resumable) NLI scoring
 
-`build_nli_scores_parquet` no longer wipes its output at the start of a run. On
-re-run it reads the existing scores for the current `(nli_config, assessment)`,
-builds a key per scored pair, and skips pairs already present — only new pairs
-are POSTed and appended (with a unique per-run `basename_template`, so old files
-are preserved). This makes growth cheap: adding works, sentences, or BMs to
-`nli_ready_parquet` only scores the additions.
+Scoring is dispatched at claim granularity: `nli_scores_by_claim` is a
+`targets` dynamic branch per `(km, bm, sentence_source, sentence_number)`
+claim (`R/score_one_claim.R`), fanned out across the active nli pool's hosts
+via `crew` (`crew_controller_local`) with dynamic dispatch — each claim's
+function tries every host's file lock (`output/nli_scores/.locks/`) and
+whichever host is free next gets it, rather than a static upfront
+assignment. `error = "continue"` means a failing claim is reported live and
+marked failed while every other claim proceeds independently.
 
-The dedup key is `(km, bm, sentence_number, sentence_source, work_id, claim)`.
+Resumability is now mostly `targets`' own branch caching: an unchanged,
+already-succeeded claim is skipped automatically on the next `tar_make()`.
+`score_one_claim()` additionally checks whether output already exists for a
+claim's `claim_id=` directory before doing any work — this bridges claims
+scored by an earlier run/system that `targets` itself has no cache entry
+for (e.g. the pre-claim-level `mclapply` design this replaced).
 
 **Known limitations** (acceptable for the append-only growth case, revisit if needed):
 
-- **Abstract change undetected**: if a work's abstract (premise) changes but its
-  `work_id` and the claim stay the same, the cached score is kept — the premise
-  is not part of the key (it is not stored in the output). Fix if needed: store a
-  hash of the premise and include it in the key.
+- **Abstract change undetected**: if a work's abstract (premise) changes but
+  its `work_id` and the claim stay the same, the cached score is kept — the
+  premise is not part of the on-disk output, so there's nothing to compare
+  against without a hash.
 - **Removed rows leave stale scores**: if a pair disappears from
-  `nli_ready_parquet` (e.g. a work is dropped upstream), its old score remains in
-  the output. A full recompute requires deleting `output/nli_scores/nli_config=<x>/`.
+  `nli_ready_parquet` (e.g. a work is dropped upstream), its old score
+  remains in the output. A full recompute requires deleting the relevant
+  `output/nli_scores/nli_config=<x>/assessment=<y>/km=.../bm=.../claim_id=.../`
+  directory (or the whole `nli_config=<x>/` tree).
 
 ## Handling long (premise, claim) pairs
 
@@ -81,7 +144,7 @@ Split long abstracts into overlapping windows (e.g. 400-token chunks, 50-token o
 each `(chunk, claim)` pair separately, then aggregate across chunks — e.g. `max(p_supports)`
 or `max(p_supports - p_refutes)`. No information is dropped.
 
-Implementation sketch (in `build_nli_scores_parquet`):
+Implementation sketch (in `score_one_claim`, `R/score_one_claim.R`):
 
 ```r
 chunk_premise <- function(premise, max_tokens, overlap = 50L) {
