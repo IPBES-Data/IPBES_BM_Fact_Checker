@@ -331,11 +331,13 @@ for (data_path in nli_overview_data_paths) {
   cat("#### Interactive BM Explorer\n\n")
   cat(
     "Select a background message from the dropdown and a minimum confidence ",
-    "from the slider to see the label distribution, confidence distribution ",
-    "(dashed line marks the threshold; mean/median reported above the ",
-    "panel), and alignment-score distribution for works scored at or above ",
-    "that confidence — or leave **All BMs** / confidence 0 selected for the ",
-    "unfiltered, assessment-wide picture.\n\n"
+    "from the slider. All works are always shown; the slider instead splits ",
+    "each bar into a **solid** segment (confidence at or above the ",
+    "threshold) and a **hollow/outlined** segment on top (below the ",
+    "threshold, stacked) — in the label-distribution panel, the confidence ",
+    "panel (with a dashed line marking the threshold), and the alignment ",
+    "panel. Mean/median confidence and the % meeting the threshold are ",
+    "reported above the panels.\n\n"
   )
   explorer_this <- nli_bm_explorer_paths[
     grepl(paste0("_", x$assessment, "\\.html$"), nli_bm_explorer_paths)

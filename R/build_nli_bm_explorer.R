@@ -2,25 +2,32 @@
 #
 # Builds a single plotly figure with two linked controls:
 #   - a "select BM" dropdown (defaulting to "All BMs")
-#   - a "minimum confidence" slider (0 = no filtering)
-# that jointly pick one precomputed (bm, threshold) cell and swap in its
-# three panels:
-#   1. label distribution (SUPPORTS / NOT_ENOUGH_INFO / REFUTES, % of works)
-#   2. confidence distribution (of works with confidence >= threshold), with
-#      a dashed line marking the threshold and mean/median in the annotation
-#   3. alignment (p_supports - p_refutes) distribution, same filtered subset
+#   - a "minimum confidence" slider (default 0.5)
+# that jointly pick one precomputed (bm, threshold) cell. ALL works are
+# always shown (no filtering) — the threshold instead splits every bar into
+# two STACKED segments: "confidence >= threshold" (solid fill, on the
+# bottom) and "confidence < threshold" (hollow/outline-only, on top), so
+# moving the slider re-partitions the same totals rather than hiding data:
+#   1. label distribution (SUPPORTS / NOT_ENOUGH_INFO / REFUTES, % of works),
+#      each label split into its above/below-threshold share
+#   2. confidence distribution: a histogram over confidence itself, so the
+#      split is just "bin mid >= threshold" vs "< threshold" — plus a dashed
+#      line marking the threshold
+#   3. alignment (p_supports - p_refutes) distribution, each alignment bin
+#      split by how many of its works meet the confidence threshold
 #
-# Every (bm, threshold) cell's three panels are precomputed once in R (not
-# recomputed client-side) — this is the standard, reliable plotly.js
-# updatemenu/slider pattern and works offline in a static Quarto HTML render
-# (no Shiny/server needed). The two controls are combined with a small JS
-# handler (see combine_js below): plotly's declarative button/step `args`
-# can only set a fixed payload and can't reference the OTHER control's
-# current position, so both are set to method="skip" (native dropdown/slider
-# UI and active-index tracking still work, but no automatic restyle) and a
-# tiny onRender() callback reads BOTH current indices from the rendered
-# widget's own layout and applies the one combined visibility+annotation
-# update. This avoids the two controls fighting over/resetting each other.
+# Every (bm, threshold) cell's six traces (2 per panel) are precomputed once
+# in R (not recomputed client-side) — this is the standard, reliable
+# plotly.js updatemenu/slider pattern and works offline in a static Quarto
+# HTML render (no Shiny/server needed). The two controls are combined with a
+# small JS handler (see combine_js below): plotly's declarative button/step
+# `args` can only set a fixed payload and can't reference the OTHER
+# control's current position, so both are set to method="skip" (native
+# dropdown/slider UI and active-index tracking still work, but no automatic
+# restyle) and a tiny onRender() callback reads BOTH current indices from
+# the rendered widget's own layout and applies the one combined
+# visibility+annotation update. This avoids the two controls fighting
+# over/resetting each other.
 #
 # `raw` is the per-row (km, bm, label, confidence, alignment) data.frame
 # already produced by build_nli_overview_data() (its $raw element) — no new
@@ -32,6 +39,9 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   )
   conf_breaks <- seq(0, 1, by = 0.05)
   aln_breaks  <- seq(-1, 1, by = 0.1)
+  hollow <- function(border_color) {
+    list(color = "rgba(0,0,0,0)", line = list(color = border_color, width = 1.5))
+  }
 
   bm_choices <- sort(unique(raw$bm))
   bm_options <- c("All BMs", bm_choices)
@@ -39,6 +49,9 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
 
   thr_values <- seq(0, 0.9, by = 0.1)
   n_thr <- length(thr_values)
+  # Default: All BMs, min. confidence 0.5.
+  default_bm_idx  <- 1L
+  default_thr_idx <- which.min(abs(thr_values - 0.5))
 
   safe_hist <- function(v, breaks) {
     if (!length(v)) {
@@ -50,26 +63,46 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
 
   stat_for <- function(bm, thr) {
     d <- if (identical(bm, "All BMs")) raw else raw[raw$bm == bm, , drop = FALSE]
-    d <- d[!is.na(d$confidence) & d$confidence >= thr, , drop = FALSE]
-    lab_pct <- vapply(
-      label_levels,
-      function(l) if (nrow(d)) 100 * mean(d$label == l, na.rm = TRUE) else 0,
-      numeric(1L)
-    )
+    above <- !is.na(d$confidence) & d$confidence >= thr
+    below <- !is.na(d$confidence) & d$confidence < thr
+    n <- nrow(d)
+
+    lab_above <- vapply(label_levels, function(l) if (n) 100 * mean(d$label == l & above) else 0, numeric(1L))
+    lab_below <- vapply(label_levels, function(l) if (n) 100 * mean(d$label == l & below) else 0, numeric(1L))
+
+    # Confidence panel: one full (unfiltered) histogram over confidence, then
+    # split each bin by whether its OWN mid is above/below the threshold —
+    # the x-axis variable here IS confidence, so the bin position already
+    # determines the split; no cross-tabulation needed.
     conf_h <- safe_hist(d$confidence, conf_breaks)
-    aln_h  <- safe_hist(d$alignment, aln_breaks)
+    conf_above <- ifelse(conf_h$mids >= thr, conf_h$counts, 0L)
+    conf_below <- ifelse(conf_h$mids < thr, conf_h$counts, 0L)
+
+    # Alignment panel: x-axis variable is alignment, a DIFFERENT variable
+    # from confidence, so each bin's above/below split has to be computed by
+    # histogramming the above- and below-threshold subsets separately (same
+    # breaks, so their mids line up for stacking).
+    aln_h_above <- safe_hist(d$alignment[above], aln_breaks)
+    aln_h_below <- safe_hist(d$alignment[below], aln_breaks)
+
     list(
       bm = bm,
       thr = thr,
-      n = nrow(d),
-      lab_pct = lab_pct,
-      conf_mean = if (nrow(d)) mean(d$confidence, na.rm = TRUE) else NA_real_,
-      conf_median = if (nrow(d)) stats::median(d$confidence, na.rm = TRUE) else NA_real_,
+      n = n,
+      n_above = sum(above),
+      lab_above = lab_above,
+      lab_below = lab_below,
       conf_mids = conf_h$mids,
-      conf_counts = conf_h$counts,
-      aln_mean = if (nrow(d)) mean(d$alignment, na.rm = TRUE) else NA_real_,
-      aln_mids = aln_h$mids,
-      aln_counts = aln_h$counts
+      conf_above = conf_above,
+      conf_below = conf_below,
+      aln_mids = aln_h_above$mids,
+      aln_above = aln_h_above$counts,
+      aln_below = aln_h_below$counts,
+      # Baseline stats over the FULL (unfiltered) bm subset — constant
+      # across thresholds for a given bm; only pct_above (below) varies.
+      conf_mean = if (n) mean(d$confidence, na.rm = TRUE) else NA_real_,
+      conf_median = if (n) stats::median(d$confidence, na.rm = TRUE) else NA_real_,
+      aln_mean = if (n) mean(d$alignment, na.rm = TRUE) else NA_real_
     )
   }
 
@@ -81,16 +114,26 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   })
   stats_flat <- unlist(stats_grid, recursive = FALSE)
   n_cell <- length(stats_flat)
+  default_cell <- (default_bm_idx - 1L) * n_thr + default_thr_idx
 
-  # ── Panel 1: label distribution (%) ─────────────────────────────────────
+  # ── Panel 1: label distribution (%), stacked above/below threshold ──────
   p_label <- plotly::plot_ly()
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_label <- plotly::add_trace(
       p_label,
-      x = label_levels, y = unname(s$lab_pct), type = "bar",
+      x = label_levels, y = unname(s$lab_above), type = "bar",
       marker = list(color = unname(label_colors[label_levels])),
-      visible = (i == 1), showlegend = FALSE
+      visible = (i == default_cell), showlegend = FALSE
+    )
+  }
+  for (i in seq_len(n_cell)) {
+    s <- stats_flat[[i]]
+    p_label <- plotly::add_trace(
+      p_label,
+      x = label_levels, y = unname(s$lab_below), type = "bar",
+      marker = hollow(unname(label_colors[label_levels])),
+      visible = (i == default_cell), showlegend = FALSE
     )
   }
   p_label <- plotly::layout(
@@ -98,28 +141,44 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
     xaxis = list(title = ""), yaxis = list(title = "% of works", range = c(0, 100))
   )
 
-  # ── Panel 2: confidence distribution ────────────────────────────────────
+  # ── Panel 2: confidence distribution, stacked above/below threshold ─────
   p_conf <- plotly::plot_ly()
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_conf <- plotly::add_trace(
       p_conf,
-      x = s$conf_mids, y = s$conf_counts, type = "bar",
-      marker = list(color = "#3a6ea5"), visible = (i == 1), showlegend = FALSE
+      x = s$conf_mids, y = s$conf_above, type = "bar",
+      marker = list(color = "#3a6ea5"), visible = (i == default_cell), showlegend = FALSE
+    )
+  }
+  for (i in seq_len(n_cell)) {
+    s <- stats_flat[[i]]
+    p_conf <- plotly::add_trace(
+      p_conf,
+      x = s$conf_mids, y = s$conf_below, type = "bar",
+      marker = hollow("#3a6ea5"), visible = (i == default_cell), showlegend = FALSE
     )
   }
   p_conf <- plotly::layout(
     p_conf, xaxis = list(title = "Confidence"), yaxis = list(title = "Works")
   )
 
-  # ── Panel 3: alignment distribution ─────────────────────────────────────
+  # ── Panel 3: alignment distribution, stacked above/below threshold ──────
   p_aln <- plotly::plot_ly()
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_aln <- plotly::add_trace(
       p_aln,
-      x = s$aln_mids, y = s$aln_counts, type = "bar",
-      marker = list(color = "#e08e45"), visible = (i == 1), showlegend = FALSE
+      x = s$aln_mids, y = s$aln_above, type = "bar",
+      marker = list(color = "#e08e45"), visible = (i == default_cell), showlegend = FALSE
+    )
+  }
+  for (i in seq_len(n_cell)) {
+    s <- stats_flat[[i]]
+    p_aln <- plotly::add_trace(
+      p_aln,
+      x = s$aln_mids, y = s$aln_below, type = "bar",
+      marker = hollow("#e08e45"), visible = (i == default_cell), showlegend = FALSE
     )
   }
   p_aln <- plotly::layout(
@@ -132,6 +191,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
     p_label, p_conf, p_aln,
     nrows = 1, titleX = TRUE, titleY = TRUE, margin = 0.06
   )
+  fig <- plotly::layout(fig, barmode = "stack")
 
   # Static per-panel titles — plotly::subplot() drops each sub-plot's own
   # layout(title=), so panel titles have to be explicit paper-relative
@@ -149,10 +209,11 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
     panel_title("Alignment distribution", "x3")
   )
   dynamic_annotation <- function(s) {
+    pct_above <- if (s$n) 100 * s$n_above / s$n else 0
     list(
       text = sprintf(
-        "n = %s · mean conf %.2f · median conf %.2f · mean align %.2f",
-        format(s$n, big.mark = ","), s$conf_mean, s$conf_median, s$aln_mean
+        "n = %s · %.0f%% ≥ %.1f confidence (solid) · mean conf %.2f · median conf %.2f · mean align %.2f",
+        format(s$n, big.mark = ","), pct_above, s$thr, s$conf_mean, s$conf_median, s$aln_mean
       ),
       showarrow = FALSE, xref = "paper", yref = "paper",
       x = 0.5, y = 1.22, xanchor = "center", font = list(size = 12, color = "#555")
@@ -183,13 +244,13 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
 
   fig <- plotly::layout(
     fig,
-    annotations = c(static_annotations, list(cell_annotations[[1L]])),
+    annotations = c(static_annotations, list(cell_annotations[[default_cell]])),
     updatemenus = list(list(
-      type = "dropdown", active = 0L, x = 0, y = 1.32, xanchor = "left",
+      type = "dropdown", active = default_bm_idx - 1L, x = 0, y = 1.32, xanchor = "left",
       buttons = bm_buttons
     )),
     sliders = list(list(
-      active = 0L, x = 0.30, y = 1.30, len = 0.68, xanchor = "left",
+      active = default_thr_idx - 1L, x = 0.30, y = 1.30, len = 0.68, xanchor = "left",
       currentvalue = list(prefix = "Min. confidence: ", font = list(size = 12)),
       pad = list(t = 10),
       steps = thr_steps
@@ -210,7 +271,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   # initial threshold line on the page at all.
   combine_js <- "
     function(el, x, data) {
-      var nBm = data.nBm, nThr = data.nThr, total = data.nCell;
+      var nThr = data.nThr, total = data.nCell;
       var staticAnn = data.staticAnnotations;
       var cellAnn = data.cellAnnotations;
       var cellShapes = data.cellShapes;
@@ -218,10 +279,11 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
         var iBm = el.layout.updatemenus[0].active;
         var iThr = el.layout.sliders[0].active;
         var g = iBm * nThr + iThr;
-        var vis = new Array(total * 3).fill(false);
-        vis[g] = true;
-        vis[total + g] = true;
-        vis[2 * total + g] = true;
+        // 6 trace blocks of `total` traces each, in the order the R code
+        // built them: label-above, label-below, conf-above, conf-below,
+        // aln-above, aln-below.
+        var vis = new Array(total * 6).fill(false);
+        for (var k = 0; k < 6; k++) vis[k * total + g] = true;
         Plotly.restyle(el, {visible: vis});
         Plotly.relayout(el, {
           annotations: staticAnn.concat([cellAnn[g]]),
