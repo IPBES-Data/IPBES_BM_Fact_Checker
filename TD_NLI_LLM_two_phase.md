@@ -1,5 +1,11 @@
 # Two-Phase Alignment Scoring: NLI → LLM
 
+**Status: planned — not yet implemented.** No Phase-2 LLM re-scoring target
+exists in `_targets.R` today; only the Phase-1 NLI scoring chain
+(`nli_scores_by_claim` / `nli_scores_by_claim_evidence`, see
+[TD_BM_NLI_approach](TD_BM_NLI_approach.qmd)) is live. This document is a
+design proposal for the LLM refinement layer described below.
+
 ## Overview
 
 A two-phase pipeline that combines the speed and scale of NLI with the nuance and
@@ -13,7 +19,7 @@ classifier and explainer on top of the NLI output.
 
 ## Phase 1 — NLI (all pairs)
 
-Run the existing `nli_scores_parquet` pipeline across all citing works × BMs.
+Run the existing `nli_scores_by_claim` / `nli_scores_by_claim_evidence` pipeline across all citing works × BMs.
 The NLI model returns `label` + `p_supports` / `p_refutes` / `p_nei` /
 `confidence` / `uncertain` for every pair.
 
@@ -139,9 +145,9 @@ Assuming ~50k pairs sent to LLM, average prompt ~400 tokens, completion ~150 tok
 
 ## Recommended Workflow
 
-1. Run `nli_scores_parquet` (Phase 1) — existing pipeline
+1. Run `nli_scores_by_claim` / `nli_scores_by_claim_evidence` (Phase 1) — existing pipeline
 2. Filter output to LLM candidates (routing table above)
-3. Run Phase 2 LLM scoring — new `llm_scores_parquet` target
+3. Run Phase 2 LLM scoring — new `llm_scores_parquet` target (not yet built)
 4. Merge: use `llm_label` where available, fall back to `nli_label` elsewhere
 5. Human expert review of all `REFUTES` calls regardless of source
 6. Optionally: use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
@@ -150,8 +156,8 @@ Assuming ~50k pairs sent to LLM, average prompt ~400 tokens, completion ~150 tok
 
 ## See Also
 
-- [TD_BM NLI approach.md](TD_BM%20NLI%20approach.md) — Phase 1 design and compute
+- [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md) — Phase 1 design and compute
 - [TD_NLI_training.md](TD_NLI_training.md) — fine-tuning the NLI model
-- [R/build_nli_scores_parquet.R](R/build_nli_scores_parquet.R) — Phase 1 implementation
+- [R/score_one_claim.R](R/score_one_claim.R) — Phase 1 implementation
 - [R/build_alignement_scores_parquet.R](R/build_alignement_scores_parquet.R) — parked
   LLM-comparison chain (reference implementation for Phase 2)

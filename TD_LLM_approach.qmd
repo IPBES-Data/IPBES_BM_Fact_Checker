@@ -1,0 +1,16 @@
+---
+title: "LLM Alignment Scoring Approach"
+subtitle: Technical Design Document
+date: today
+format:
+    html:
+        toc: true
+        toc-depth: 6
+        toc_expand: true
+        embed-resources: true
+        code-fold: true
+        code-summary: 'Show the code'
+        keep-md: false
+---
+
+{{< include TD_LLM_approach.md >}}

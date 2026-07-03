@@ -550,14 +550,75 @@ list(
   ),
 
   tar_target(
+    qmd_fact_checker,
+    "IPBES_Fact_Checker.qmd",
+    format = "file"
+  ),
+
+  # Technical Design (TD_*.md) documents — each gets a thin TD_<name>.qmd
+  # wrapper (just the report's same format/layout block plus
+  # `{{< include TD_<name>.md >}}`) so they render with consistent styling
+  # and are openable as standalone HTML pages linked from the report. The
+  # actual prose stays in the single-source-of-truth .md file — editors
+  # edit that; the .qmd wrapper never needs touching. Branched over
+  # td_doc_names rather than six hand-written targets so adding a new TD
+  # doc is a one-line change.
+  tar_target(
+    td_doc_names,
+    c(
+      "TD_targets",
+      "TD_BM_NLI_approach",
+      "TD_LLM_approach",
+      "TD_NLI_LLM_two_phase",
+      "TD_NLI_training",
+      "TD_formatting"
+    )
+  ),
+
+  tar_target(
+    td_doc_qmd,
+    paste0(td_doc_names, ".qmd"),
+    pattern = map(td_doc_names),
+    format = "file"
+  ),
+
+  tar_target(
+    td_doc_md,
+    paste0(td_doc_names, ".md"),
+    pattern = map(td_doc_names),
+    format = "file"
+  ),
+
+  tar_target(
+    td_doc_html,
+    {
+      # td_doc_md is file-hash tracked so editing the underlying .md
+      # invalidates the render — targets can't see inside a
+      # `{{< include >}}` directive on its own to detect that dependency.
+      td_doc_md
+      quarto::quarto_render(td_doc_qmd)
+      sub("\\.qmd$", ".html", td_doc_qmd)
+    },
+    pattern = map(td_doc_qmd, td_doc_md),
+    format = "file"
+  ),
+
+  tar_target(
     report_fact_checker,
     {
-      # Referenced only to establish the DAG dependency (targets detects
+      # All referenced only to establish DAG dependencies (targets detects
       # deps by static-scanning this expression) — the qmd itself re-reads
-      # this target's actual value via tar_read(). Without this, tar_make()
-      # would happily render the report against a stale/missing
-      # nli_bm_explorer_html rather than building it first.
+      # nli_bm_explorer_html's and td_doc_html's actual values via
+      # tar_read(), and quarto_render() re-reads the qmd from disk by path.
+      # Without nli_bm_explorer_html/td_doc_html, tar_make() would happily
+      # render the report against stale/missing dependents rather than
+      # building them first. Without qmd_fact_checker (file-hash tracked),
+      # targets has no visibility into the qmd's own content — editing the
+      # qmd (prose, code chunks, or YAML header, e.g. embed-resources) would
+      # silently NOT invalidate this target.
       nli_bm_explorer_html
+      qmd_fact_checker
+      td_doc_html
       quarto::quarto_render("IPBES_Fact_Checker.qmd")
       "IPBES_Fact_Checker.html"
     },

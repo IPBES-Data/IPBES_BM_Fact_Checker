@@ -2,11 +2,19 @@
 
 This document describes the `targets` pipeline for the IPBES BM Fact Checker project.
 
+**Note: this document predates the reporting/explorer layer and is stale in
+that respect** — it does not describe the `nli_ready_evidence_parquet` →
+`nli_claim_units_evidence` → `nli_scores_by_claim_evidence` chain, or the
+downstream `nli_overview_data`, `nli_overview_figures`, `nli_bm_explorer_html`,
+`td_doc_html`, and `report_fact_checker` targets, all of which exist and run
+today. See `_targets.R` and [CLAUDE.md](CLAUDE.md)'s R-files table for the
+current, authoritative target list.
+
 ## Overview
 
 The pipeline fetches IPBES assessment data from the [IPBES Linked Open Data (LOD)](https://github.com/IPBES-Data/IPBES_LOD) repository in RDF/Turtle format, queries the assessments via SPARQL, and produces per-assessment Parquet datasets for refs, sections, key-messages, Zotero items, OpenAlex works, snowball results, and NLI alignment scores.
 
-The **active scoring approach** is NLI (`nli_scores_parquet`): each citing work is classified as SUPPORTS / REFUTES / NOT_ENOUGH_INFO against its partition's Background Message using a zero-shot DeBERTa NLI model served on RunPod (see [docker/nli-runpod/](docker/nli-runpod/) and [TD_BM NLI approach.md](TD_BM%20NLI%20approach.md)).
+The **active scoring approach** is NLI (`nli_scores_by_claim` / `nli_scores_by_claim_evidence`): each citing work is classified as SUPPORTS / REFUTES / NOT_ENOUGH_INFO against its partition's Background Message using a zero-shot DeBERTa NLI model served on RunPod (see [docker/nli-runpod/](docker/nli-runpod/) and [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md)).
 
 The **parked LLM-comparison approach** (`prompts_truth_parquet` → `prompts_citing_parquet` → `alignement_scores_parquet`) is not wired into `_targets.R` but its source files remain on disk.
 
@@ -331,7 +339,7 @@ For each `(assessment, km, bm)` partition in `works_citing_parquet`:
 
 Output is written to `output/nli_scores/nli_config=<cfg>/assessment=<id>/km=<km>/bm=<bm>/`, partitioned by `nli_config` so scores from different model profiles are stored separately and comparable.
 
-See [TD_BM NLI approach.md](TD_BM%20NLI%20approach.md) for full design rationale.
+See [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md) for full design rationale.
 
 ### Reading
 

@@ -26,8 +26,13 @@
 # threshold + selected label — a clickable DOI (or OpenAlex link, if no DOI)
 # / confidence / alignment, sorted by confidence descending, capped to
 # `table_row_cap` rows (flagged in its caption rather than silently
-# truncated) — plus a "Download table (CSV)" button that exports whatever
-# is currently on screen.
+# truncated) — plus a "Download table (CSV)" button. The download is NOT
+# limited to the rows on screen: it exports its own higher-capped row set
+# (`download_row_cap`, independently precomputed from the same sorted data),
+# with Assessment and BM added as explicit columns (BM per-row, since under
+# "All BMs" each row belongs to a different actual BM) — and, like the
+# table, flags in a trailing comment line if even that higher cap truncated
+# the true match count.
 #
 # The table is a plain HTML <div>/<table> swapped into the DOM below the
 # chart, NOT a plotly `type = "table"` trace: plotly table cells render any
@@ -78,6 +83,15 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   n_label <- length(label_sel_options)
   default_label_idx <- 1L
   table_row_cap <- 50L
+  # The CSV download intentionally allows far more rows than the on-screen
+  # table (which stays capped at table_row_cap for readability) — but not
+  # truly unlimited: the full raw dataset is ~1-2M rows, and some (bm,
+  # threshold, label) combinations (e.g. "All BMs" at a low threshold) match
+  # hundreds of thousands of them. Embedding all of those in the
+  # self-contained widget would balloon file size by 5-10x. 5000 is a
+  # practical ceiling — comfortably more than a human will inspect — with
+  # the true match count always reported so truncation is never silent.
+  download_row_cap <- 5000L
 
   safe_hist <- function(v, breaks) {
     if (!length(v)) {
@@ -182,14 +196,21 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
       sprintf('<a href="%s" target="_blank" rel="noopener">%s (OpenAlex)</a>', work_id, id_short)
     }
   }
+  # Plain-text counterpart of work_link() for the CSV download (no HTML
+  # markup — an identifier, not a link).
+  work_text <- function(work_id, doi) {
+    id_short <- sub("^https://openalex\\.org/", "", work_id)
+    if (!is.na(doi) && nzchar(doi)) sub("^https://doi\\.org/", "", doi) else id_short
+  }
   table_stat_for <- function(bm, thr, label) {
     d <- if (identical(bm, "All BMs")) raw else raw[raw$bm == bm, , drop = FALSE]
     d <- d[!is.na(d$confidence) & d$confidence >= thr & d$label == label, , drop = FALSE]
     n_match <- nrow(d)
     d <- d[order(-d$confidence), , drop = FALSE]
-    d <- utils::head(d, table_row_cap)
-    capped_note <- if (n_match > nrow(d)) {
-      sprintf(" (showing top %d of %s by confidence)", nrow(d), format(n_match, big.mark = ",", trim = TRUE))
+
+    d_display <- utils::head(d, table_row_cap)
+    capped_note <- if (n_match > nrow(d_display)) {
+      sprintf(" (showing top %d of %s by confidence)", nrow(d_display), format(n_match, big.mark = ",", trim = TRUE))
     } else {
       ""
     }
@@ -201,25 +222,32 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
     # than inline `style=` on every cell — at up to 50 rows x ~900 cells,
     # repeating a style string per <td> roughly doubled the saved file size
     # in an earlier version of this function; classes cut that back down.
-    if (!nrow(d)) {
+    if (!nrow(d_display)) {
       html <- sprintf('<p class="nli-cap">%s</p><p class="nli-empty">No matching works.</p>', caption)
-      return(list(bm = bm, thr = thr, label = label, html = html))
+    } else {
+      rows <- sprintf(
+        '<tr><td>%s</td><td class="num">%.3f</td><td class="num">%.3f</td></tr>',
+        mapply(work_link, d_display$work_id, d_display$doi), d_display$confidence, d_display$alignment
+      )
+      html <- sprintf(
+        paste0(
+          '<p class="nli-cap">%s</p>',
+          '<div class="nli-tbl-wrap"><table class="nli-tbl">',
+          '<thead><tr><th>Work</th><th class="num">Confidence</th><th class="num">Alignment</th></tr></thead>',
+          "<tbody>%s</tbody></table></div>"
+        ),
+        caption, paste(rows, collapse = "")
+      )
     }
-    rows <- sprintf(
-      '<tr><td>%s</td><td class="num">%.3f</td><td class="num">%.3f</td></tr>',
-      mapply(work_link, d$work_id, d$doi), d$confidence, d$alignment
-    )
-    html <- sprintf(
-      paste0(
-        '<p class="nli-cap">%s</p>',
-        '<div class="nli-tbl-wrap"><table class="nli-tbl">',
-        '<thead><tr><th>Work</th><th class="num">Confidence</th><th class="num">Alignment</th></tr></thead>',
-        "<tbody>%s</tbody></table></div>"
-      ),
-      caption, paste(rows, collapse = "")
-    )
     list(bm = bm, thr = thr, label = label, html = html)
   }
+  # Download data lives in a SEPARATE, much coarser grid — see
+  # download_data_for() below — rather than one array per (bm, threshold,
+  # label) cell here: a threshold is just a `confidence >=` cutoff on an
+  # already-confidence-sorted list, so storing it once per (bm, label) and
+  # filtering client-side avoids re-embedding the same rows once per
+  # threshold step (10x blowup — confirmed the naive per-cell version
+  # produced a 166MB file for GA1 alone).
   # Row-major bm-outer / threshold-middle / label-inner grid (one level
   # deeper than stats_grid, hence unlist() twice to fully flatten).
   table_grid <- lapply(seq_len(n_bm), function(i_bm) {
@@ -234,6 +262,39 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   default_table_cell <- (default_bm_idx - 1L) * n_thr * n_label +
     (default_thr_idx - 1L) * n_label + default_label_idx
   table_htmls <- lapply(table_flat, `[[`, "html")
+
+  # Exact match counts per (bm, threshold, label) — cheap (just integers),
+  # reused so the download button can report/flag truncation accurately
+  # without needing the full row data at every threshold. lab_above_n is
+  # already in label_levels order (SUPPORTS, NOT_ENOUGH_INFO, REFUTES); this
+  # re-indexes to label_sel_options order (REFUTES, SUPPORTS,
+  # NOT_ENOUGH_INFO) so a JS dropdown index lines up directly.
+  match_counts_flat <- lapply(stats_flat, function(s) unname(s$lab_above_n[label_sel_options]))
+
+  # Download data — one array per (bm, label), NOT per threshold (see note
+  # above table_stat_for). Capped at download_row_cap and pre-sorted by
+  # confidence descending, so a given threshold's matches are always a
+  # PREFIX of the stored array — JS just filters the leading run.
+  download_data_for <- function(bm, label) {
+    d <- if (identical(bm, "All BMs")) raw else raw[raw$bm == bm, , drop = FALSE]
+    d <- d[!is.na(d$confidence) & d$label == label, , drop = FALSE]
+    d <- d[order(-d$confidence), , drop = FALSE]
+    d <- utils::head(d, download_row_cap)
+    list(
+      bm = d$bm,
+      work = mapply(work_text, d$work_id, d$doi),
+      confidence = round(d$confidence, 3),
+      alignment = round(d$alignment, 3)
+    )
+  }
+  # Row-major bm-outer / label-inner grid — matches iBm * n_label + iLabel
+  # indexing on the JS side.
+  download_grid <- lapply(seq_len(n_bm), function(i_bm) {
+    lapply(seq_len(n_label), function(i_lab) {
+      download_data_for(bm_options[[i_bm]], label_sel_options[[i_lab]])
+    })
+  })
+  download_flat <- unlist(download_grid, recursive = FALSE)
 
   # ── Panel 1: label distribution (%), stacked above/below threshold ──────
   p_label <- plotly::plot_ly(height = 650)
@@ -428,6 +489,10 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
       var cellAnn = data.cellAnnotations;
       var cellShapes = data.cellShapes;
       var tableHtmls = data.tableHtmls;
+      var matchCounts = data.matchCounts;
+      var downloadData = data.downloadData;
+      var thrValues = data.thrValues;
+      var assessmentId = data.assessmentId;
 
       if (!document.getElementById('nli-tbl-style')) {
         var styleEl = document.createElement('style');
@@ -473,30 +538,58 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
         tableDiv.innerHTML = tableHtmls[currentTableIndex()];
       }
 
-      // CSV built from tableDiv's OWN rendered rows at click time (not from
-      // separate R-side data), so it always matches exactly what's on
-      // screen, links included as their visible text.
+      // CSV built from the precomputed download data — one array per (bm,
+      // label), NOT per threshold (storing it per threshold too would
+      // re-embed the same rows ~10x, which is what produced a 166MB file
+      // in an earlier version of this widget). Each array is pre-sorted by
+      // confidence descending and capped at download_row_cap, so the
+      // current threshold's matches are always a leading prefix — sliced
+      // off here rather than re-filtered from scratch. This is NOT limited
+      // to what's visible on screen (the table stays capped at
+      // table_row_cap for readability). Includes Assessment and BM as
+      // explicit columns (BM per-row, since under \"All BMs\" each row
+      // belongs to a different actual BM).
+      function downloadRowsFor(iBm, iThr, iLabel) {
+        var arr = downloadData[iBm * nLabel + iLabel];
+        var thr = thrValues[iThr];
+        var cut = arr.confidence.length;
+        for (var i = 0; i < arr.confidence.length; i++) {
+          if (arr.confidence[i] < thr) { cut = i; break; }
+        }
+        return {
+          bm: arr.bm.slice(0, cut),
+          work: arr.work.slice(0, cut),
+          confidence: arr.confidence.slice(0, cut),
+          alignment: arr.alignment.slice(0, cut)
+        };
+      }
+
       dlBtn.onclick = function() {
-        var rows = tableDiv.querySelectorAll('table tr');
-        if (!rows.length) return;
+        var iBm = el.layout.updatemenus[0].active;
+        var iThr = el.layout.sliders[0].active;
+        var iLabel = el.layout.updatemenus[1].active;
+        var nMatch = matchCounts[iBm * nThr + iThr][iLabel];
+        var d = downloadRowsFor(iBm, iThr, iLabel);
+        if (!d.work.length) return;
         var esc = function(v) {
-          v = v.replace(/\\s+/g, ' ').trim();
+          v = String(v).replace(/\\s+/g, ' ').trim();
           return (v.indexOf(',') !== -1 || v.indexOf('\"') !== -1)
             ? '\"' + v.replace(/\"/g, '\"\"') + '\"' : v;
         };
-        var lines = [];
-        rows.forEach(function(tr) {
-          var cells = tr.querySelectorAll('th,td');
-          lines.push(Array.from(cells).map(function(c) { return esc(c.textContent); }).join(','));
-        });
+        var lines = ['Assessment,BM,Work,Confidence,Alignment'];
+        for (var i = 0; i < d.work.length; i++) {
+          lines.push([esc(assessmentId), esc(d.bm[i]), esc(d.work[i]), d.confidence[i], d.alignment[i]].join(','));
+        }
+        if (nMatch > d.work.length) {
+          lines.push('# truncated: showing ' + d.work.length + ' of ' + nMatch + ' matching works, sorted by confidence descending');
+        }
         var blob = new Blob([lines.join('\\n')], {type: 'text/csv;charset=utf-8;'});
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
-        var iBm = el.layout.updatemenus[0].active, iLabel = el.layout.updatemenus[1].active;
         var bmLabel = el.layout.updatemenus[0].buttons[iBm].label.replace(/[^A-Za-z0-9]+/g, '_');
         var labelLabel = el.layout.updatemenus[1].buttons[iLabel].label.replace(/[^A-Za-z0-9]+/g, '_');
         a.href = url;
-        a.download = 'nli_table_' + bmLabel + '_' + labelLabel + '.csv';
+        a.download = 'nli_table_' + assessmentId + '_' + bmLabel + '_' + labelLabel + '.csv';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -515,7 +608,11 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
       staticAnnotations = static_annotations,
       cellAnnotations = cell_annotations,
       cellShapes = cell_shapes,
-      tableHtmls = table_htmls
+      tableHtmls = table_htmls,
+      matchCounts = match_counts_flat,
+      downloadData = download_flat,
+      thrValues = thr_values,
+      assessmentId = assessment_id
     )
   )
 

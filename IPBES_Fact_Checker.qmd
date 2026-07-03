@@ -15,7 +15,7 @@ author:
     roles: [author, editor]
 abstract: > 
   The assessments Linked Open Data is used to conduct analysis and searches 
-  to discover new knowledge related to the assessmwents.
+  to discover new knowledge related to the assessments.
 # keywords:
 #   - aaaaa
 #   - bbbbb
@@ -56,6 +56,21 @@ library(htmlwidgets)
 library(htmltools)
 
 library(tictoc)
+
+# Self-contained-report helper: copy heavy standalone HTML artifacts (DT
+# tables, plotly explorers, rendered TD_*.qmd design docs) into the report's
+# own _files/ sidecar directory so distributing the report only requires
+# IPBES_Fact_Checker.html + IPBES_Fact_Checker_files/ — not a separate
+# output/tables/ directory (or the TD_*.html files) alongside it. Returns
+# the report-relative link/iframe-src path(s).
+report_files_dir <- paste0(
+  tools::file_path_sans_ext(knitr::current_input()), "_files"
+)
+dir.create(report_files_dir, recursive = TRUE, showWarnings = FALSE)
+copy_into_report_files <- function(paths) {
+  file.copy(paths, report_files_dir, overwrite = TRUE)
+  file.path(basename(report_files_dir), basename(paths))
+}
 ```
 
 # Introduction
@@ -69,16 +84,31 @@ Three assessments available in ttl format are currently:
 
 # Methods
 
-Methodology is documented separately in the `TD_*.md` design documents at the
-repository root. **Note: these are currently stale relative to the
-implementation** — treat them as a record of the design rationale rather than
-an up-to-date specification of the pipeline as it stands today.
+```{r}
+#| label: td_doc_paths
+#| include: false
 
-- [TD_targets.md](TD_targets.md) — the `targets` pipeline architecture
-- [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md) — the active NLI scoring approach
-- [TD_LLM_approach.md](TD_LLM_approach.md) — the parked LLM-comparison approach
-- [TD_NLI_LLM_two_phase.md](TD_NLI_LLM_two_phase.md) — the two-phase NLI → LLM design
-- [TD_NLI_training.md](TD_NLI_training.md) — NLI fine-tuning plan
+# Rendered by the td_doc_html target (see _targets.R) from the TD_<name>.qmd
+# wrappers (each just this report's format/layout plus
+# `{{< include TD_<name>.md >}}`) and copied into the report's own _files/
+# sidecar so the links below work in a distributed copy of the report too.
+td_doc_html_paths <- copy_into_report_files(targets::tar_read(td_doc_html))
+td_doc_link <- function(name) {
+  td_doc_html_paths[grepl(paste0("/", name, "\\.html$"), td_doc_html_paths)]
+}
+```
+
+Methodology is documented separately in the `TD_*` design documents. **Note:
+these are currently stale relative to the implementation** — treat them as a
+record of the design rationale rather than an up-to-date specification of the
+pipeline as it stands today.
+
+- [TD_targets](`r td_doc_link("TD_targets")`) — the `targets` pipeline architecture
+- [TD_BM_NLI_approach](`r td_doc_link("TD_BM_NLI_approach")`) — the active NLI scoring approach
+- [TD_LLM_approach](`r td_doc_link("TD_LLM_approach")`) — the parked LLM-comparison approach
+- [TD_NLI_LLM_two_phase](`r td_doc_link("TD_NLI_LLM_two_phase")`) — the two-phase NLI → LLM design (**planned, not yet implemented**)
+- [TD_NLI_training](`r td_doc_link("TD_NLI_training")`) — NLI fine-tuning plan (**planned, not yet implemented**)
+- [TD_formatting](`r td_doc_link("TD_formatting")`) — archived report design system
 
 The figures and tables in the Results section below are all produced by
 `targets` pipeline targets — see `_targets.R` and the corresponding
@@ -136,6 +166,7 @@ overlap_key_paper_html <- overlap_key_paper_html[grepl(
   "\\.html$",
   overlap_key_paper_html
 )]
+overlap_key_paper_html <- copy_into_report_files(overlap_key_paper_html)
 
 overlap_after_2018_sub_messages_html <- targets::tar_read(
   overlap_after_2018_sub_messages_table
@@ -144,6 +175,9 @@ overlap_after_2018_sub_messages_html <- overlap_after_2018_sub_messages_html[gre
   "\\.html$",
   overlap_after_2018_sub_messages_html
 )]
+overlap_after_2018_sub_messages_html <- copy_into_report_files(
+  overlap_after_2018_sub_messages_html
+)
 
 overlap_after_2018_background_messages_html <- targets::tar_read(
   overlap_after_2018_background_messages_table
@@ -152,6 +186,9 @@ overlap_after_2018_background_messages_html <- overlap_after_2018_background_mes
   "\\.html$",
   overlap_after_2018_background_messages_html
 )]
+overlap_after_2018_background_messages_html <- copy_into_report_files(
+  overlap_after_2018_background_messages_html
+)
 ```
 
 The dataset contains **`r refs |> dplyr::distinct(doi) |> nrow()`** papers
@@ -267,7 +304,7 @@ Only papers with in more then 5 Background Messages are shown.
 
 ## NLI Alignment Scores
 
-Each citing work is scored against its partition's Background Message (BM) as `SUPPORTS`, `REFUTES`, or `NOT_ENOUGH_INFO` using a zero-shot NLI model. See [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md) for methodology.
+Each citing work is scored against its partition's Background Message (BM) as `SUPPORTS`, `REFUTES`, or `NOT_ENOUGH_INFO` using a zero-shot NLI model. See [TD_BM_NLI_approach](`r td_doc_link("TD_BM_NLI_approach")`) for methodology.
 
 ```{r}
 #| label: nli_overview_paths
@@ -275,7 +312,12 @@ Each citing work is scored against its partition's Background Message (BM) as `S
 
 nli_overview_data_paths <- targets::tar_read(nli_overview_data)
 nli_overview_figures_paths <- targets::tar_read(nli_overview_figures)
-nli_bm_explorer_paths <- targets::tar_read(nli_bm_explorer_html)
+# copy_into_report_files() (defined in the results_data chunk above) copies
+# the self-contained widgets into IPBES_Fact_Checker_files/ and returns the
+# report-relative iframe src paths directly.
+nli_bm_explorer_paths <- copy_into_report_files(targets::tar_read(
+  nli_bm_explorer_html
+))
 ```
 
 ```{r}
@@ -343,8 +385,12 @@ for (data_path in nli_overview_data_paths) {
     "drill-down table lists — the actual works for the current BM + ",
     "threshold + label, sorted by confidence descending and capped at 50 ",
     "rows (the caption reports the true total when capped). Each work links ",
-    "to its DOI where one exists (OpenAlex otherwise), and **Download ",
-    "table (CSV)** exports exactly what's currently shown.\n\n"
+    "to its DOI where one exists (OpenAlex otherwise). **Download table ",
+    "(CSV)** is not limited to the 50 rows shown — it exports up to 5,000 ",
+    "matching works for the current BM + threshold + label (sorted by ",
+    "confidence descending, flagged with a trailing comment line if even ",
+    "that limit truncates the true match count), including the assessment ",
+    "and BM as explicit columns.\n\n"
   )
   explorer_this <- nli_bm_explorer_paths[
     grepl(paste0("_", x$assessment, "\\.html$"), nli_bm_explorer_paths)
@@ -415,59 +461,113 @@ for (data_path in nli_overview_data_paths) {
   )
   cat("\n\n")
   if (length(plot_aln)) cat(sprintf("![](%s)\n\n", plot_aln))
-}
-```
 
-### GA1 — Detailed Interpretation (static, 2026-07-01)
-
+  # AI Based Interpretation — last subsection of each assessment. Hand-
+  # written commentary, deliberately scoped to the two signals of interest
+  # (SUPPORTS and REFUTES) rather than the dominant NOT_ENOUGH_INFO label.
+  # Recomputed against the current scored data (below) — will go stale as
+  # scoring continues or the NLI config changes, so re-derive the numbers
+  # from x$table_bm / x$label_km before trusting this after a rerun.
+  cat("#### AI Based Interpretation\n\n")
+  if (identical(x$assessment, "GA1")) {
+    cat(r"----(
 ::: {.callout-note}
 ## About this section
-Written against an earlier sample of GA1 scores and does **not** auto-update from the live data above — treat as illustrative commentary pending a refreshed pass once scoring is more complete.
+Focused specifically on the SUPPORTS/REFUTES signals — NOT_ENOUGH_INFO (~71% of GA1 pairs) is set aside here as the least informative label. Written against the current scored data (2026-07-06); re-derive the numbers below from the tables above before trusting this after a rerun.
 :::
 
-**Key finding.** **KM D is in a different class from A, B, C.** With 48.8 % SUPPORTS and only 14.6 % REFUTES overall, and individual BMs D1 (79.8 % SUPPORTS), D3 (78.6 %), and D12 (60.1 %) showing clear, consistent signals at comparatively lower uncertainty (65–84 %), KM D is the only part of GA1 where zero-shot NLI produces credible output. D3 and D1 have the best-calibrated scores in the entire dataset.
+**Key finding — KM D is the only reliable signal.** GA1 overall SUPPORTS (16.1%) edges out REFUTES (13.0%), but that gap is almost entirely driven by KM D (34.7% SUPPORTS vs 10.9% REFUTES). KMs A–C sit close to parity or worse — A: 15.0% vs 12.5%, B: 10.0% vs 14.2% (REFUTES-inflated), C: 14.5% vs 20.9% (REFUTES-inflated) — so the argmax label there carries little information on its own.
+
+Within KM D, four BMs are unambiguous: **D3** (62.6% SUPPORTS vs 4.4% REFUTES), **D2** (44.0% vs 6.5%), **D1** (40.8% vs 10.3%), and **D12** (40.7% vs 11.1%) — all over 40% SUPPORTS at single-digit-to-low-teens REFUTES. The one exception inside KM D is **D10**, where REFUTES (15.2%) exceeds SUPPORTS (11.6%) — an outlier against its own KM's pattern, worth treating differently from its D-series siblings.
 
 Likely reason: D-series BMs are probably more concrete and empirically testable — biodiversity metrics, species trends, ecosystem services — the kind of claims abstracts engage with directly.
 
 ::: {.callout-warning}
 ## REFUTES inflation — KMs A, B, C
 
-Several BMs have REFUTES > SUPPORTS by a wide margin that is not scientifically credible:
+The BMs with the widest REFUTES-over-SUPPORTS gap:
 
-| BM | SUPPORTS | REFUTES | Interpretation |
-|----|---------|---------|----------------|
-| B11 | 13 % | 56 % | Likely false positives |
-| B5  | 27 % | 55 % | Likely false positives |
-| C6  |  8 % | 55 % | Likely false positives |
-| A3  |  4 % | 45 % | Likely false positives |
-| A7  |  5 % | 43 % | Likely false positives |
-| A8  | 15 % | 47 % | Likely false positives |
+| BM | SUPPORTS | REFUTES | Gap (REFUTES − SUPPORTS) |
+|----|---------|---------|---------|
+| C6  |  5.2 % | 28.6 % | +23.4 |
+| A9  | 13.8 % | 30.7 % | +16.9 |
+| C8  |  8.3 % | 24.8 % | +16.5 |
+| B11 | 15.4 % | 28.4 % | +13.0 |
+| C7  |  7.1 % | 16.1 % |  +9.0 |
+| B3  |  3.3 % | 12.0 % |  +8.7 |
 
-These are not credible. Citing papers of an assessment should not be 55 % refuting it. This is the well-documented zero-shot NLI failure mode: the hypothesis *"This paper refutes the following claim: …"* draws spurious entailment when the BM contains complex, multi-part, or politically nuanced language. The model fires on surface-level topical tension rather than genuine contradiction.
+Citing papers of an assessment being scored as majority-REFUTES at these margins is not credible. This is the well-documented zero-shot NLI failure mode: the hypothesis *"This paper refutes the following claim: …"* draws spurious entailment when the BM contains complex, multi-part, or politically nuanced language. The model fires on surface-level topical tension rather than genuine contradiction.
 :::
 
 ::: {.callout-note}
-## Noise BMs — effectively random
+## Closest to parity — weakest signal
 
-Three BMs show SUPPORTS ≈ REFUTES — the argmax label is meaningless here:
+A handful of BMs have SUPPORTS and REFUTES within a couple of points of each other — the argmax label there is close to a coin flip:
 
-- **A2** 29.5 % vs 29.9 % — coin flip
-- **C2** 24.7 % vs 25.4 % — coin flip
-- **B4** 29.0 % vs 35.4 % — near coin flip
+- **A1** 12.9 % vs 11.0 %
+- **B10** 12.7 % vs 14.7 %
+- **A4** 9.7 % vs 11.8 %
 
-For these, only the continuous alignment score and the raw probability triplet carry any information.
+For these, only the continuous alignment score (`p_supports − p_refutes`) carries any real information.
 :::
 
-#### Notable exception in KM A
+##### Notable exception in KM A
 
-**A5** (39.8 % SUPPORTS, 5.7 % REFUTES, mean alignment +0.095) is the only BM in KMs A–C with a clearly positive signal. Its claim is likely more concrete or empirically specific than its neighbours — worth inspecting manually as a calibration reference.
+**A2** (20.5% SUPPORTS, 11.0% REFUTES) is the clearest positive signal in KMs A–C outside of KM D — a nearly 10-point SUPPORTS lead, well ahead of its KM-A neighbours. Its claim is likely more concrete or empirically specific than the rest of KM A — worth inspecting manually as a calibration reference.
 
-#### Operational implications
+##### Operational implications
 
 1. **Do not act on raw REFUTES labels for KMs A–C** without Phase-2 LLM review. NLI here is a coarse NEI filter, not a judgment.
-2. **KM D SUPPORTS at high confidence (> 0.70) can be treated as real** — D1, D3, D12 in particular.
-3. **Use `p_supports − p_refutes` for ranking** rather than argmax labels. Papers with very high `p_nei` can be deprioritised for expert review.
+2. **KM D SUPPORTS can be treated as the most reliable signal in the assessment** — D3, D2, D1, D12 in particular (all >40% SUPPORTS, single-digit-to-low-teens REFUTES). D10 is the one KM D BM that does NOT fit this pattern.
+3. **Use `p_supports − p_refutes` for ranking** rather than argmax labels, especially for the near-parity BMs above.
 4. **`max_length: 256` is probably hurting KMs A–C.** Truncating abstract tails removes findings — the part that matters most for support/refute judgements on conceptual BMs. The base-model-at-512 comparison (`deberta_zeroshot_v3`) is the highest-priority next experiment.
-5. **Fine-tuning on BM citations** ([TD_NLI_training.md](TD_NLI_training.md)) would most help KMs A–C — the support/refute axis that zero-shot is fumbling. D-series BMs are already working.
+)----")
+    cat(sprintf(
+      "5. **Fine-tuning on BM citations** ([TD_NLI_training](%s)) would most help KMs A–C — the support/refute axis that zero-shot is fumbling. D-series BMs are already working.\n\n",
+      td_doc_link("TD_NLI_training")
+    ))
+  } else if (identical(x$assessment, "IAS")) {
+    cat(r"----(
+::: {.callout-note}
+## About this section
+Focused specifically on the SUPPORTS/REFUTES signals — NOT_ENOUGH_INFO (~81% of IAS pairs) is set aside here as the least informative label. Written against the current scored data (2026-07-06); re-derive the numbers below from the tables above before trusting this after a rerun.
+:::
 
+**Key finding — IAS is weaker and more REFUTES-skewed than GA1.** Overall, IAS REFUTES (11.1%) actually *exceeds* SUPPORTS (8.4%) — the opposite of GA1's overall SUPPORTS lean (16.1% vs 13.0%). Unlike GA1, no IAS BM reaches D-series levels of confidence; the strongest SUPPORTS signal is markedly weaker.
+
+::: {.callout-tip}
+## Strongest SUPPORTS signal
+
+**D33** (25.9% SUPPORTS vs 9.5% REFUTES, a 16-point lead) is the clearest positive signal in IAS, appearing under both KM-D4 and KM-D7. A handful of others lean the same way but at much lower absolute rates: **B13** (19.4% vs 10.8%), **D30** (8.7% vs 3.0%), **D27** (7.5% vs 1.8%), and **D25** (12.5% vs 7.2%). None of these approach GA1's D3/D2/D1/D12 margins.
+:::
+
+::: {.callout-warning}
+## REFUTES inflation
+
+The BMs with the widest REFUTES-over-SUPPORTS gap — the same zero-shot failure mode documented for GA1's KMs A–C:
+
+| BM | SUPPORTS | REFUTES | Gap (REFUTES − SUPPORTS) |
+|----|---------|---------|---------|
+| A1  |  7.5 % | 22.6 % | +15.1 |
+| A8  |  3.6 % | 16.7 % | +13.1 |
+| D32 | 22.5 % | 33.5 % | +11.0 |
+| A4  |  7.6 % | 17.6 % | +10.0 |
+| C19 |  5.0 % | 14.3 % |  +9.3 |
+| D28 |  8.1 % | 14.7 % |  +6.6 |
+
+**D32** is a special case: both SUPPORTS and REFUTES are elevated (22.5% and 33.5%) rather than REFUTES alone — it appears under three different KMs (KM-D5, KM-D6, KM-D7), which may mean it's a genuinely contested or multi-faceted claim rather than a pure model artifact, and is worth a manual look before writing it off as noise.
+:::
+
+##### Operational implications
+
+1. **Do not act on raw REFUTES labels anywhere in IAS** without Phase-2 LLM review — the overall REFUTES-over-SUPPORTS skew makes this an even higher priority here than for GA1's KMs A–C.
+2. **D33 is the one IAS BM currently worth treating as a real signal** — everything else is either near parity or REFUTES-leaning.
+3. **Use `p_supports − p_refutes` for ranking** rather than argmax labels; IAS's overall skew means a plain SUPPORTS-label count will systematically undercount real support.
+4. **D32 deserves manual review before either accepting or discarding it** — high confidence in both directions, across multiple KMs, is a different failure mode from the single-direction REFUTES inflation seen elsewhere.
+)----")
+  } else {
+    cat("No AI-based interpretation has been written yet for this assessment.\n\n")
+  }
+}
+```
 
