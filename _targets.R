@@ -493,23 +493,33 @@ list(
   ),
 
   # Target 2h4: NLI overview data — per-assessment label/confidence/alignment
-  # summary tables. Reads directly from the on-disk output path (same layout
-  # regardless of which system scored it) rather than the individual
-  # per-claim file paths; nli_scores_by_claim is still listed as an argument
-  # purely to establish the DAG dependency (so this target correctly waits
-  # for scoring and gets invalidated when scoring output changes).
+  # summary tables, for the report and its BM explorer. Deliberately wired to
+  # the EVIDENCE-segmentation scoring chain (nli_scores_by_claim_evidence /
+  # output/nli_scores_evidence), not the original per-sentence one
+  # (nli_scores_by_claim / output/nli_scores): the two scoring targets share
+  # score_one_claim(), so any change to that file marks BOTH outdated
+  # regardless of which approach is actually being run, and the per-sentence
+  # chain is far less complete (14/725 claims scored at time of writing).
+  # Wiring the report to it meant tar_make(report_fact_checker) could
+  # transitively try to dispatch ~700 unscored per-sentence claims through
+  # the same host pool as a live evidence scoring run — see git history for
+  # the incident this comment is warning about. Reads directly from the
+  # on-disk output path rather than individual per-claim file paths;
+  # nli_scores_by_claim_evidence is listed as an argument purely to
+  # establish the DAG dependency (so this target waits for evidence scoring
+  # and invalidates when its output changes).
   tar_target(
     nli_overview_data,
     build_nli_overview_data(
       assessment,
       file.path(
-        "output/nli_scores",
+        "output/nli_scores_evidence",
         paste0("nli_config=", nli_active),
         paste0("assessment=", assessment$id)
       ),
       nli_active,
       "output/tables",
-      nli_scores_by_claim
+      nli_scores_by_claim_evidence
     ),
     pattern = map(assessment),
     format = "file"
@@ -541,6 +551,12 @@ list(
   tar_target(
     report_fact_checker,
     {
+      # Referenced only to establish the DAG dependency (targets detects
+      # deps by static-scanning this expression) — the qmd itself re-reads
+      # this target's actual value via tar_read(). Without this, tar_make()
+      # would happily render the report against a stale/missing
+      # nli_bm_explorer_html rather than building it first.
+      nli_bm_explorer_html
       quarto::quarto_render("IPBES_Fact_Checker.qmd")
       "IPBES_Fact_Checker.html"
     },
