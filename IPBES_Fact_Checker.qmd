@@ -342,14 +342,16 @@ for (data_path in nli_overview_data_paths) {
     "a second dropdown (default **REFUTES**) selects which label the ",
     "drill-down table lists — the actual works for the current BM + ",
     "threshold + label, sorted by confidence descending and capped at 50 ",
-    "rows (the caption reports the true total when capped).\n\n"
+    "rows (the caption reports the true total when capped). Each work links ",
+    "to its DOI where one exists (OpenAlex otherwise), and **Download ",
+    "table (CSV)** exports exactly what's currently shown.\n\n"
   )
   explorer_this <- nli_bm_explorer_paths[
     grepl(paste0("_", x$assessment, "\\.html$"), nli_bm_explorer_paths)
   ]
   if (length(explorer_this)) {
     cat(sprintf(
-      '<iframe src="%s" width="100%%" height="1050px" style="border:none;"></iframe>\n\n',
+      '<iframe src="%s" width="100%%" height="1020px" style="border:none;"></iframe>\n\n',
       explorer_this
     ))
   }

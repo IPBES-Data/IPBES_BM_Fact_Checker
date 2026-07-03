@@ -23,13 +23,21 @@
 #
 # All three controls together additionally drive a 4th element below the
 # three panels: a drill-down TABLE of the actual works for the current BM +
-# threshold + selected label (work_id / confidence / alignment, sorted by
-# confidence descending, capped to `table_row_cap` rows — flag the cap in
-# its caption rather than silently truncating).
+# threshold + selected label — a clickable DOI (or OpenAlex link, if no DOI)
+# / confidence / alignment, sorted by confidence descending, capped to
+# `table_row_cap` rows (flagged in its caption rather than silently
+# truncated) — plus a "Download table (CSV)" button that exports whatever
+# is currently on screen.
+#
+# The table is a plain HTML <div>/<table> swapped into the DOM below the
+# chart, NOT a plotly `type = "table"` trace: plotly table cells render any
+# HTML they're given as escaped plain text (confirmed by isolated repro —
+# an `<a href=...>` shows up as literal angle-bracket text, not a clickable
+# link), so DOI links would not have been clickable there.
 #
 # Every (bm, threshold) cell's six bar/histogram traces (2 per panel), and
-# every (bm, threshold, label) cell's one table trace, are precomputed once
-# in R (not recomputed client-side) — this is the standard, reliable
+# every (bm, threshold, label) cell's one table HTML string, are precomputed
+# once in R (not recomputed client-side) — this is the standard, reliable
 # plotly.js updatemenu/slider pattern and works offline in a static Quarto
 # HTML render (no Shiny/server needed). The three controls are combined with
 # a small JS handler (see combine_js below): plotly's declarative
@@ -38,12 +46,12 @@
 # (native dropdown/slider UI and active-index tracking still work, but no
 # automatic restyle) and a tiny onRender() callback reads all three current
 # indices from the rendered widget's own layout and applies the one
-# combined visibility+annotation update. This avoids the controls fighting
-# over/resetting each other.
+# combined visibility+annotation+table update. This avoids the controls
+# fighting over/resetting each other.
 #
-# `raw` is the per-row (km, bm, work_id, label, confidence, alignment) data
-# frame already produced by build_nli_overview_data() (its $raw element) —
-# no new target/data source required.
+# `raw` is the per-row (km, bm, work_id, doi, label, confidence, alignment)
+# data frame already produced by build_nli_overview_data() (its $raw
+# element) — no new target/data source required.
 build_nli_bm_explorer <- function(raw, assessment_id) {
   label_levels <- c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
   label_colors <- c(
@@ -145,24 +153,72 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   # Sorted by confidence descending (most-confidently-labeled first) and
   # capped at table_row_cap rows — a full unfiltered listing is not the
   # point of a drill-down/inspection table, and every (bm, threshold, label)
-  # combination gets its own precomputed trace (like the bar panels above),
-  # so uncapped rows would multiply the file size by however many rows the
-  # single largest cell has. n_match (pre-cap) is always shown in the
-  # caption so the cap is never silent.
+  # combination gets its own precomputed HTML snippet (like the bar panels
+  # above), so uncapped rows would multiply the file size by however many
+  # rows the single largest cell has. n_match (pre-cap) is always shown in
+  # the caption so the cap is never silent.
+  #
+  # Rendered as a plain HTML <table> (built here as one big string per
+  # cell, swapped into a DOM element below the chart — see combine_js)
+  # rather than a plotly `type = "table"` trace: plotly table cells render
+  # any HTML they're given as ESCAPED PLAIN TEXT (confirmed by isolated
+  # repro — an <a href=...> shows up as literal angle-bracket text, not a
+  # clickable link), so DOI/OpenAlex links would not be clickable there. A
+  # real DOM table also sidesteps two plotly/htmlwidgets quirks found while
+  # building the first version of this feature: add_trace() called
+  # repeatedly on an already-subplot()-merged figure leaves each new
+  # trace's internal "attrs" bookkeeping unnamed, which crashes
+  # htmlwidgets::saveWidget()'s shouldEval() validation once mixed with the
+  # properly-named bar-trace attrs at realistic scale; and a plotly table
+  # trace needs its own `domain`, which meant compressing the bar panels
+  # and fighting their axis-label spacing. A plain DOM table needs none of
+  # that — it just flows in the page below the chart.
+  work_link <- function(work_id, doi) {
+    id_short <- sub("^https://openalex\\.org/", "", work_id)
+    if (!is.na(doi) && nzchar(doi)) {
+      doi_short <- sub("^https://doi\\.org/", "", doi)
+      sprintf('<a href="%s" target="_blank" rel="noopener">%s</a>', doi, doi_short)
+    } else {
+      sprintf('<a href="%s" target="_blank" rel="noopener">%s (OpenAlex)</a>', work_id, id_short)
+    }
+  }
   table_stat_for <- function(bm, thr, label) {
     d <- if (identical(bm, "All BMs")) raw else raw[raw$bm == bm, , drop = FALSE]
     d <- d[!is.na(d$confidence) & d$confidence >= thr & d$label == label, , drop = FALSE]
     n_match <- nrow(d)
     d <- d[order(-d$confidence), , drop = FALSE]
     d <- utils::head(d, table_row_cap)
-    list(
-      bm = bm, thr = thr, label = label,
-      n_match = n_match,
-      n_shown = nrow(d),
-      work_id = d$work_id,
-      confidence = round(d$confidence, 3),
-      alignment = round(d$alignment, 3)
+    capped_note <- if (n_match > nrow(d)) {
+      sprintf(" (showing top %d of %s by confidence)", nrow(d), format(n_match, big.mark = ",", trim = TRUE))
+    } else {
+      ""
+    }
+    caption <- sprintf(
+      "%s works labeled %s at confidence ≥ %.1f for %s%s",
+      format(n_match, big.mark = ",", trim = TRUE), label, thr, bm, capped_note
     )
+    # CSS classes (defined once, injected into <head> by combine_js) rather
+    # than inline `style=` on every cell — at up to 50 rows x ~900 cells,
+    # repeating a style string per <td> roughly doubled the saved file size
+    # in an earlier version of this function; classes cut that back down.
+    if (!nrow(d)) {
+      html <- sprintf('<p class="nli-cap">%s</p><p class="nli-empty">No matching works.</p>', caption)
+      return(list(bm = bm, thr = thr, label = label, html = html))
+    }
+    rows <- sprintf(
+      '<tr><td>%s</td><td class="num">%.3f</td><td class="num">%.3f</td></tr>',
+      mapply(work_link, d$work_id, d$doi), d$confidence, d$alignment
+    )
+    html <- sprintf(
+      paste0(
+        '<p class="nli-cap">%s</p>',
+        '<div class="nli-tbl-wrap"><table class="nli-tbl">',
+        '<thead><tr><th>Work</th><th class="num">Confidence</th><th class="num">Alignment</th></tr></thead>',
+        "<tbody>%s</tbody></table></div>"
+      ),
+      caption, paste(rows, collapse = "")
+    )
+    list(bm = bm, thr = thr, label = label, html = html)
   }
   # Row-major bm-outer / threshold-middle / label-inner grid (one level
   # deeper than stats_grid, hence unlist() twice to fully flatten).
@@ -177,15 +233,20 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   n_table_cell <- length(table_flat)
   default_table_cell <- (default_bm_idx - 1L) * n_thr * n_label +
     (default_thr_idx - 1L) * n_label + default_label_idx
+  table_htmls <- lapply(table_flat, `[[`, "html")
 
   # ── Panel 1: label distribution (%), stacked above/below threshold ──────
-  p_label <- plotly::plot_ly(height = 1000)
+  p_label <- plotly::plot_ly(height = 650)
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_label <- plotly::add_trace(
       p_label,
       x = label_levels, y = unname(s$lab_above), type = "bar",
       marker = list(color = unname(label_colors[label_levels])),
+      # y is already a percentage (0-100); default plotly hover would show
+      # the raw number ("REFUTES, 12.97044") with no unit — spell out what
+      # it is and append "%".
+      hovertemplate = "%{x}<br>≥ threshold: %{y:.2f}%<extra></extra>",
       visible = (i == default_cell), showlegend = FALSE
     )
   }
@@ -199,9 +260,18 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
       # confidence >= threshold, N = all works with that label. Set on the
       # topmost ("below") trace so textposition="outside" places it above
       # the FULL stack (this trace's own bar ends exactly at the stack top).
-      text = sprintf("%s/%s", format(s$lab_above_n, big.mark = ","), format(s$lab_total_n, big.mark = ",")),
+      # trim = TRUE: format() right-pads elements of a vector to a common
+      # width by default (so a 4-digit and a 6-digit count in the same call
+      # get aligned with leading spaces) — without it, the shorter numbers
+      # in lab_above_n/lab_total_n grow stray leading/trailing spaces here.
+      text = sprintf(
+        "%s/%s",
+        format(s$lab_above_n, big.mark = ",", trim = TRUE),
+        format(s$lab_total_n, big.mark = ",", trim = TRUE)
+      ),
       textposition = "outside", cliponaxis = FALSE,
       textfont = list(size = 10, color = "#333"),
+      hovertemplate = "%{x}<br>< threshold: %{y:.2f}%<extra></extra>",
       visible = (i == default_cell), showlegend = FALSE
     )
   }
@@ -211,7 +281,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   )
 
   # ── Panel 2: confidence distribution, stacked above/below threshold ─────
-  p_conf <- plotly::plot_ly(height = 1000)
+  p_conf <- plotly::plot_ly(height = 650)
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_conf <- plotly::add_trace(
@@ -233,7 +303,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   )
 
   # ── Panel 3: alignment distribution, stacked above/below threshold ──────
-  p_aln <- plotly::plot_ly(height = 1000)
+  p_aln <- plotly::plot_ly(height = 650)
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_aln <- plotly::add_trace(
@@ -261,65 +331,6 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
     nrows = 1, titleX = TRUE, titleY = TRUE, margin = 0.06
   )
   fig <- plotly::layout(fig, barmode = "stack")
-
-  # Compress the three bar/histogram panels into the TOP ~48% of the plot
-  # area, leaving the bottom for the drill-down table below. Confirmed by
-  # isolated repro that overriding just `domain` here preserves each axis's
-  # already-set title/range (plotly::layout() merges per-axis, unlike its
-  # `shapes` key which plotly::subplot() drops entirely — see the shapes
-  # comment further down).
-  fig <- plotly::layout(
-    fig,
-    yaxis = list(domain = c(0.68, 1)),
-    yaxis2 = list(domain = c(0.68, 1)),
-    yaxis3 = list(domain = c(0.68, 1))
-  )
-
-  # ── Drill-down table trace, one per (bm, threshold, label) cell ─────────
-  # Occupies the bottom of the plot area (domain, not an x/y axis pair —
-  # plotly table traces are laid out independently of the bar panels above).
-  #
-  # Built on its OWN fresh plot_ly() object, then spliced into `fig`'s
-  # trace/attrs lists directly (rather than repeated add_trace(fig, ...)
-  # calls on the already-subplot()-merged figure). Confirmed by isolated
-  # repro: add_trace() called many times on a subplot()-merged object leaves
-  # each new trace's internal plotly "attrs" bookkeeping entry UNNAMED
-  # (independent of `inherit`), and once that unnamed-attrs list is mixed
-  # with the ~1800 properly-named bar-trace attrs entries, htmlwidgets' own
-  # shouldEval() validation ("must be a fully named list, or have no names")
-  # fails at save time. A fresh plot_ly() object with the same repeated
-  # add_trace() calls names every attrs entry correctly — splicing its
-  # already-correct data/attrs into `fig` avoids the bug entirely, since
-  # table traces don't need subplot()'s x/y-axis remapping anyway (their
-  # position comes from the absolute `domain` set on each trace below).
-  table_header <- list(
-    values = c("Work ID", "Confidence", "Alignment"),
-    align = "left", fill = list(color = "#eee"), font = list(size = 11)
-  )
-  p_table <- plotly::plot_ly()
-  for (i in seq_len(n_table_cell)) {
-    t <- table_flat[[i]]
-    p_table <- plotly::add_trace(
-      p_table,
-      type = "table",
-      domain = list(x = c(0, 1), y = c(0, 0.40)),
-      header = table_header,
-      cells = list(
-        values = list(t$work_id, sprintf("%.3f", t$confidence), sprintf("%.3f", t$alignment)),
-        align = "left", font = list(size = 10)
-      ),
-      visible = (i == default_table_cell)
-    )
-  }
-  # p_table$x$attrs[[1]] is a phantom placeholder from the bare plot_ly()
-  # base call itself (no type/x/y — resolves to a spurious default scatter
-  # trace at build time, confirmed by inspecting it directly). Dropping it
-  # is required for correctness, not just tidiness: left in, it silently
-  # shifts every table trace's built index by one, which would make the JS
-  # visibility math in combine_js below select the WRONG table for every
-  # (bm, threshold, label) selection.
-  fig$x$data <- c(fig$x$data, p_table$x$data)
-  fig$x$attrs <- c(fig$x$attrs, p_table$x$attrs[-1])
 
   # Static per-panel titles — plotly::subplot() drops each sub-plot's own
   # layout(title=), so panel titles have to be explicit paper-relative
@@ -351,29 +362,6 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   # stats_flat (an R list serializes to a JSON array in that same order).
   cell_annotations <- lapply(stats_flat, dynamic_annotation)
 
-  # Table caption — sits in the small gap between the compressed bar panels
-  # (domain bottom 0.55) and the table (domain top 0.40), using ordinary
-  # "paper" coordinates (these still span the whole plot area regardless of
-  # how far down individual trace domains reach).
-  table_caption <- function(t) {
-    capped_note <- if (t$n_match > t$n_shown) {
-      sprintf(" (showing top %d of %s by confidence)", t$n_shown, format(t$n_match, big.mark = ","))
-    } else {
-      ""
-    }
-    list(
-      text = sprintf(
-        "%s works labeled %s at confidence ≥ %.1f for %s%s",
-        format(t$n_match, big.mark = ","), t$label, t$thr, t$bm, capped_note
-      ),
-      showarrow = FALSE, xref = "paper", yref = "paper",
-      x = 0.5, y = 0.47, xanchor = "center", font = list(size = 12, color = "#555")
-    )
-  }
-  # One per (bm, threshold, label) cell, same bm-outer/thr-middle/label-inner
-  # order as table_flat.
-  table_annotations <- lapply(table_flat, table_caption)
-
   # Threshold marker line on the confidence panel (x2/y2 axes) — one per
   # cell, so it moves with the slider even though the underlying histogram
   # x-range doesn't change.
@@ -398,11 +386,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
 
   fig <- plotly::layout(
     fig,
-    annotations = c(
-      static_annotations,
-      list(cell_annotations[[default_cell]]),
-      list(table_annotations[[default_table_cell]])
-    ),
+    annotations = c(static_annotations, list(cell_annotations[[default_cell]])),
     updatemenus = list(
       list(
         type = "dropdown", active = default_bm_idx - 1L, x = 0, y = 1.85, xanchor = "left",
@@ -425,46 +409,100 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   # Combine the three controls: read all three current indices from the
   # widget's own layout (the authoritative source, regardless of event
   # payload shape) and apply one restyle + relayout covering the bar
-  # panels' traces, the table trace, the threshold marker, and both
-  # annotations (bar-panel stats + table caption).
+  # panels' traces, the threshold marker, and the stats annotation — plus
+  # swap the drill-down table's HTML into a plain <div> appended right after
+  # the chart (not a plotly trace — see the drill-down table comment above)
+  # and wire a "Download CSV" button that reads whatever table is currently
+  # showing at click time (so it always matches the on-screen selection).
   #
   # The threshold-marker `shapes` are set ONLY here (via Plotly.relayout),
   # never via R's plotly::layout(shapes = ...) — confirmed by isolated repro
   # that plotly::subplot() silently drops a `shapes` layout key set that way
   # (annotations survive the same call; shapes don't). Calling apply() once
   # immediately on render (not just on future events) is what puts the
-  # initial threshold line on the page at all.
-  #
-  # Table traces were add_trace()-d onto `fig` AFTER the 6 bar-panel trace
-  # blocks, so their global trace indices start at `total * 6`.
+  # initial threshold line — and the initial table content — on the page.
   combine_js <- "
     function(el, x, data) {
-      var nThr = data.nThr, nLabel = data.nLabel;
-      var total = data.nCell, totalTable = data.nTableCell;
+      var nThr = data.nThr, nLabel = data.nLabel, total = data.nCell;
       var staticAnn = data.staticAnnotations;
       var cellAnn = data.cellAnnotations;
-      var tableAnn = data.tableAnnotations;
       var cellShapes = data.cellShapes;
+      var tableHtmls = data.tableHtmls;
+
+      if (!document.getElementById('nli-tbl-style')) {
+        var styleEl = document.createElement('style');
+        styleEl.id = 'nli-tbl-style';
+        styleEl.textContent =
+          '.nli-cap{color:#555;font-size:12px;margin:4px 0 8px;}' +
+          '.nli-empty{color:#888;font-style:italic;font-size:13px;}' +
+          '.nli-tbl-wrap{max-height:280px;overflow-y:auto;border:1px solid #ddd;}' +
+          '.nli-tbl{width:100%;border-collapse:collapse;font-size:13px;}' +
+          '.nli-tbl th{text-align:left;padding:4px 8px;background:#f2f2f2;position:sticky;top:0;}' +
+          '.nli-tbl td{padding:4px 8px;border-bottom:1px solid #eee;}' +
+          '.nli-tbl .num{text-align:right;}';
+        document.head.appendChild(styleEl);
+      }
+
+      var tableDiv = document.createElement('div');
+      tableDiv.style.marginTop = '8px';
+      el.parentNode.insertBefore(tableDiv, el.nextSibling);
+
+      var dlBtn = document.createElement('button');
+      dlBtn.textContent = 'Download table (CSV)';
+      dlBtn.style.cssText = 'margin:4px 0 8px;padding:4px 12px;cursor:pointer;font-size:12px;';
+      el.parentNode.insertBefore(dlBtn, tableDiv);
+
+      function currentTableIndex() {
+        var iBm = el.layout.updatemenus[0].active;
+        var iThr = el.layout.sliders[0].active;
+        var iLabel = el.layout.updatemenus[1].active;
+        return iBm * nThr * nLabel + iThr * nLabel + iLabel;
+      }
+
       function apply() {
         var iBm = el.layout.updatemenus[0].active;
-        var iLabel = el.layout.updatemenus[1].active;
         var iThr = el.layout.sliders[0].active;
         var g = iBm * nThr + iThr;
-        var gt = iBm * nThr * nLabel + iThr * nLabel + iLabel;
-
-        // 6 bar-panel trace blocks of `total` traces each (label-above,
-        // label-below, conf-above, conf-below, aln-above, aln-below),
-        // followed by `totalTable` table traces (one per bm/thr/label cell).
-        var vis = new Array(total * 6 + totalTable).fill(false);
+        var vis = new Array(total * 6).fill(false);
         for (var k = 0; k < 6; k++) vis[k * total + g] = true;
-        vis[total * 6 + gt] = true;
-
         Plotly.restyle(el, {visible: vis});
         Plotly.relayout(el, {
-          annotations: staticAnn.concat([cellAnn[g], tableAnn[gt]]),
+          annotations: staticAnn.concat([cellAnn[g]]),
           shapes: cellShapes[g]
         });
+        tableDiv.innerHTML = tableHtmls[currentTableIndex()];
       }
+
+      // CSV built from tableDiv's OWN rendered rows at click time (not from
+      // separate R-side data), so it always matches exactly what's on
+      // screen, links included as their visible text.
+      dlBtn.onclick = function() {
+        var rows = tableDiv.querySelectorAll('table tr');
+        if (!rows.length) return;
+        var esc = function(v) {
+          v = v.replace(/\\s+/g, ' ').trim();
+          return (v.indexOf(',') !== -1 || v.indexOf('\"') !== -1)
+            ? '\"' + v.replace(/\"/g, '\"\"') + '\"' : v;
+        };
+        var lines = [];
+        rows.forEach(function(tr) {
+          var cells = tr.querySelectorAll('th,td');
+          lines.push(Array.from(cells).map(function(c) { return esc(c.textContent); }).join(','));
+        });
+        var blob = new Blob([lines.join('\\n')], {type: 'text/csv;charset=utf-8;'});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        var iBm = el.layout.updatemenus[0].active, iLabel = el.layout.updatemenus[1].active;
+        var bmLabel = el.layout.updatemenus[0].buttons[iBm].label.replace(/[^A-Za-z0-9]+/g, '_');
+        var labelLabel = el.layout.updatemenus[1].buttons[iLabel].label.replace(/[^A-Za-z0-9]+/g, '_');
+        a.href = url;
+        a.download = 'nli_table_' + bmLabel + '_' + labelLabel + '.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
       el.on('plotly_buttonclicked', apply);
       el.on('plotly_sliderchange', apply);
       apply();
@@ -473,12 +511,11 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   fig <- htmlwidgets::onRender(
     fig, combine_js,
     data = list(
-      nBm = n_bm, nThr = n_thr, nLabel = n_label,
-      nCell = n_cell, nTableCell = n_table_cell,
+      nBm = n_bm, nThr = n_thr, nLabel = n_label, nCell = n_cell,
       staticAnnotations = static_annotations,
       cellAnnotations = cell_annotations,
-      tableAnnotations = table_annotations,
-      cellShapes = cell_shapes
+      cellShapes = cell_shapes,
+      tableHtmls = table_htmls
     )
   )
 

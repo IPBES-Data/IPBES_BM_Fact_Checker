@@ -518,10 +518,11 @@ list(
         paste0("assessment=", assessment$id)
       ),
       nli_active,
+      works_citing_parquet,
       "output/tables",
       nli_scores_by_claim_evidence
     ),
-    pattern = map(assessment),
+    pattern = map(assessment, works_citing_parquet),
     format = "file"
   ),
 

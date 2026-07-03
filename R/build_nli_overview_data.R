@@ -8,6 +8,7 @@ build_nli_overview_data <- function(
   assessment,
   nli_scores_path,
   nli_active,
+  works_citing_path,
   output_root = "output/tables",
   nli_scores_by_claim = NULL # unused — establishes the DAG dependency on scoring
 ) {
@@ -30,6 +31,19 @@ build_nli_overview_data <- function(
     dplyr::select(km, bm, work_id, label, p_supports, p_refutes, confidence, uncertain) |>
     dplyr::mutate(alignment = p_supports - p_refutes) |>
     dplyr::collect()
+
+  # DOI lookup for the BM explorer's drill-down table (prefer a clickable DOI
+  # link over the bare OpenAlex work_id where one exists). works_citing's id
+  # is the same "https://openalex.org/W..." string as nli_scores' work_id.
+  # A work can appear once per km/bm partition it's cited from, so collapse
+  # to exactly one row per work_id (picking any non-NA doi) before joining —
+  # otherwise a left_join could fan out and duplicate scored rows.
+  doi_lookup <- arrow::open_dataset(works_citing_path) |>
+    dplyr::select(work_id = id, doi) |>
+    dplyr::collect() |>
+    dplyr::group_by(work_id) |>
+    dplyr::summarise(doi = dplyr::first(doi[!is.na(doi)], default = NA_character_), .groups = "drop")
+  d <- dplyr::left_join(d, doi_lookup, by = "work_id")
 
   if (!nrow(d)) {
     saveRDS(
@@ -106,8 +120,8 @@ build_nli_overview_data <- function(
       conf_table    = conf_table,
       align_table   = align_table,
       # Trimmed raw rows — what plot-conf/plot-aln's density plots need, plus
-      # work_id for the BM explorer's per-work drill-down table.
-      raw           = d |> dplyr::select(km, bm, work_id, label, confidence, alignment)
+      # work_id/doi for the BM explorer's per-work drill-down table.
+      raw           = d |> dplyr::select(km, bm, work_id, doi, label, confidence, alignment)
     ),
     file = fn
   )
