@@ -275,6 +275,7 @@ Each citing work is scored against its partition's Background Message (BM) as `S
 
 nli_overview_data_paths <- targets::tar_read(nli_overview_data)
 nli_overview_figures_paths <- targets::tar_read(nli_overview_figures)
+nli_bm_explorer_paths <- targets::tar_read(nli_bm_explorer_html)
 ```
 
 ```{r}
@@ -325,6 +326,23 @@ for (data_path in nli_overview_data_paths) {
   cat("\n\n")
   if (length(plot_overall)) {
     cat(sprintf("![](%s)\n\n", plot_overall))
+  }
+
+  cat("#### Interactive BM Explorer\n\n")
+  cat(
+    "Select a background message from the dropdown to see its label ",
+    "distribution, confidence distribution (mean/median reported above the ",
+    "panel), and alignment-score distribution — or leave **All BMs** ",
+    "selected for the assessment-wide picture.\n\n"
+  )
+  explorer_this <- nli_bm_explorer_paths[
+    grepl(paste0("_", x$assessment, "\\.html$"), nli_bm_explorer_paths)
+  ]
+  if (length(explorer_this)) {
+    cat(sprintf(
+      '<iframe src="%s" width="100%%" height="560px" style="border:none;"></iframe>\n\n',
+      explorer_this
+    ))
   }
 
   cat("#### Per Key Message\n\n")

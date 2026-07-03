@@ -524,6 +524,20 @@ list(
     format = "file"
   ),
 
+  # Target 2h5: NLI BM explorer — one interactive plotly widget per
+  # assessment with a BM-selector dropdown (label distribution, confidence
+  # distribution with mean/median, alignment distribution). Written as a
+  # self-contained standalone HTML file (embedded via <iframe> in the report)
+  # rather than printed in-place, since Quarto's HTML format does not
+  # propagate htmlwidget JS dependencies out of a manually cat()-ed
+  # knit_print() call inside a results:asis loop — see R/build_nli_bm_explorer.R.
+  tar_target(
+    nli_bm_explorer_html,
+    save_nli_bm_explorer(nli_overview_data, "output/tables"),
+    pattern = map(nli_overview_data),
+    format = "file"
+  ),
+
   tar_target(
     report_fact_checker,
     {
