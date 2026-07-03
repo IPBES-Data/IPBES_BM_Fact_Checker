@@ -117,7 +117,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   default_cell <- (default_bm_idx - 1L) * n_thr + default_thr_idx
 
   # ── Panel 1: label distribution (%), stacked above/below threshold ──────
-  p_label <- plotly::plot_ly()
+  p_label <- plotly::plot_ly(height = 560)
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_label <- plotly::add_trace(
@@ -142,7 +142,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   )
 
   # ── Panel 2: confidence distribution, stacked above/below threshold ─────
-  p_conf <- plotly::plot_ly()
+  p_conf <- plotly::plot_ly(height = 560)
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_conf <- plotly::add_trace(
@@ -164,7 +164,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
   )
 
   # ── Panel 3: alignment distribution, stacked above/below threshold ──────
-  p_aln <- plotly::plot_ly()
+  p_aln <- plotly::plot_ly(height = 560)
   for (i in seq_len(n_cell)) {
     s <- stats_flat[[i]]
     p_aln <- plotly::add_trace(
@@ -200,7 +200,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
     list(
       text = text, showarrow = FALSE, xref = "paper", yref = "paper",
       x = switch(xref, x = 0.10, x2 = 0.50, x3 = 0.90),
-      y = 1.12, xanchor = "center", font = list(size = 13)
+      y = 1.10, xanchor = "center", font = list(size = 13)
     )
   }
   static_annotations <- list(
@@ -216,7 +216,7 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
         format(s$n, big.mark = ","), pct_above, s$thr, s$conf_mean, s$conf_median, s$aln_mean
       ),
       showarrow = FALSE, xref = "paper", yref = "paper",
-      x = 0.5, y = 1.22, xanchor = "center", font = list(size = 12, color = "#555")
+      x = 0.5, y = 1.20, xanchor = "center", font = list(size = 12, color = "#555")
     )
   }
   # One per cell, JS-indexed 0-based in the same bm-outer/thr-inner order as
@@ -246,16 +246,16 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
     fig,
     annotations = c(static_annotations, list(cell_annotations[[default_cell]])),
     updatemenus = list(list(
-      type = "dropdown", active = default_bm_idx - 1L, x = 0, y = 1.32, xanchor = "left",
+      type = "dropdown", active = default_bm_idx - 1L, x = 0, y = 1.70, xanchor = "left",
       buttons = bm_buttons
     )),
     sliders = list(list(
-      active = default_thr_idx - 1L, x = 0.30, y = 1.30, len = 0.68, xanchor = "left",
+      active = default_thr_idx - 1L, x = 0.30, y = 1.65, len = 0.68, xanchor = "left",
       currentvalue = list(prefix = "Min. confidence: ", font = list(size = 12)),
       pad = list(t = 10),
       steps = thr_steps
     )),
-    margin = list(t = 110)
+    margin = list(t = 220)
   )
 
   # Combine the two controls: read both current indices from the widget's
