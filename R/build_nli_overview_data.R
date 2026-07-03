@@ -27,7 +27,7 @@ build_nli_overview_data <- function(
   }
 
   d <- arrow::open_dataset(nli_scores_path) |>
-    dplyr::select(km, bm, label, p_supports, p_refutes, confidence, uncertain) |>
+    dplyr::select(km, bm, work_id, label, p_supports, p_refutes, confidence, uncertain) |>
     dplyr::mutate(alignment = p_supports - p_refutes) |>
     dplyr::collect()
 
@@ -105,8 +105,9 @@ build_nli_overview_data <- function(
       table_bm      = table_bm,
       conf_table    = conf_table,
       align_table   = align_table,
-      # Trimmed raw rows — only what plot-conf/plot-aln's density plots need.
-      raw           = d |> dplyr::select(km, bm, label, confidence, alignment)
+      # Trimmed raw rows — what plot-conf/plot-aln's density plots need, plus
+      # work_id for the BM explorer's per-work drill-down table.
+      raw           = d |> dplyr::select(km, bm, work_id, label, confidence, alignment)
     ),
     file = fn
   )

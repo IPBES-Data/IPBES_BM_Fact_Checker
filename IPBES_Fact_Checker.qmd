@@ -334,17 +334,22 @@ for (data_path in nli_overview_data_paths) {
     "from the slider. All works are always shown; the slider instead splits ",
     "each bar into a **solid** segment (confidence at or above the ",
     "threshold) and a **hollow/outlined** segment on top (below the ",
-    "threshold, stacked) — in the label-distribution panel, the confidence ",
-    "panel (with a dashed line marking the threshold), and the alignment ",
-    "panel. Mean/median confidence and the % meeting the threshold are ",
-    "reported above the panels.\n\n"
+    "threshold, stacked) — in the label-distribution panel (each bar also ",
+    "labelled `n / N`: works at/above the threshold vs. all works with that ",
+    "label), the confidence panel (with a dashed line marking the ",
+    "threshold), and the alignment panel. Mean/median confidence and the % ",
+    "meeting the threshold are reported above the panels. Below the panels, ",
+    "a second dropdown (default **REFUTES**) selects which label the ",
+    "drill-down table lists — the actual works for the current BM + ",
+    "threshold + label, sorted by confidence descending and capped at 50 ",
+    "rows (the caption reports the true total when capped).\n\n"
   )
   explorer_this <- nli_bm_explorer_paths[
     grepl(paste0("_", x$assessment, "\\.html$"), nli_bm_explorer_paths)
   ]
   if (length(explorer_this)) {
     cat(sprintf(
-      '<iframe src="%s" width="100%%" height="600px" style="border:none;"></iframe>\n\n',
+      '<iframe src="%s" width="100%%" height="1050px" style="border:none;"></iframe>\n\n',
       explorer_this
     ))
   }
