@@ -1,0 +1,62 @@
+name: Deploy report to GitHub Pages
+
+# output/reports/ (built by the report_output_dir target) is committed
+# straight to main - tar_make() always runs locally, since it needs
+# RunPod API keys, GPU-backed NLI scoring, and OpenAlex/Zotero network
+# access no runner here has, but its *output* is plain static HTML with
+# nothing sensitive in it, so committing it is fine.
+#
+# This workflow's only job is to copy output/reports/ from main into the
+# gh-pages branch, which GitHub Pages is configured to serve from
+# directly (Settings > Pages > "Deploy from a branch": gh-pages, /).
+#
+# A plain git push into gh-pages, not actions/deploy-pages: that action
+# deploys through the repo's "github-pages" protected Environment, and
+# isn't needed anyway since Pages is in branch-source mode, not
+# Actions-source mode.
+#
+# Checking out main here is safe despite main having a git submodule
+# (external/runpod, a private repo): actions/checkout@v4 defaults to
+# submodules: false, so it never attempts to clone it. That default is
+# what GitHub's own auto-generated "pages build and deployment" workflow
+# does NOT use (it hardcodes submodules: recursive) - the actual reason
+# Pages deploys failed before this workflow existed.
+on:
+  push:
+    branches: [main]
+    paths: ["output/reports/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (source content)
+        uses: actions/checkout@v4
+        with:
+          path: main
+
+      - name: Checkout gh-pages (publish target)
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Sync output/reports/ into gh-pages/
+        run: rsync -a --delete --exclude='.git' main/output/reports/ gh-pages/
+
+      - name: Commit and push if changed
+        working-directory: gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+          git commit -m "Deploy ${GITHUB_SHA}"
+          git push origin gh-pages
