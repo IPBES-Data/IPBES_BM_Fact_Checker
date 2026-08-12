@@ -10,8 +10,9 @@
 # Image registry namespace. Override with REGISTRY=ghcr.io/<other-user> if you fork.
 REGISTRY ?= ghcr.io/rkrug
 
-# Default image version. Bump for each new build (see docker/nli-runpod/README.md).
-VERSION  ?= v0.2.3
+# Default image version. Bump for each new build (see
+# external/runpod/docker/nli-runpod/README.md).
+VERSION  ?= v0.1.0
 
 # Docker buildx platform — RunPod nodes are amd64 even from Apple Silicon.
 PLATFORM ?= linux/amd64
@@ -65,17 +66,18 @@ tar-clean: ## Remove all target outputs
 	Rscript -e "targets::tar_destroy()"
 
 # --- docker images ----------------------------------------------------------
+# The NLI image's Dockerfile and build logic now live in the external/runpod
+# submodule (see runpod_migration_IPBES_BM_Fact_Checker/TODO_migration_runpod.md);
+# these targets just forward REGISTRY/VERSION/NLI_MODEL to it.
 
 docker-nli-build: ## Build the NLI RunPod image (NLI_MODEL=... to override the baked model)
-	docker buildx build --platform $(PLATFORM) \
-	    $(if $(NLI_MODEL),--build-arg NLI_MODEL=$(NLI_MODEL),) \
-	    -t $(REGISTRY)/nli-runpod:$(VERSION) \
-	    -f docker/nli-runpod/Dockerfile .
+	$(MAKE) -C external/runpod docker-nli-build REGISTRY=$(REGISTRY) VERSION=$(VERSION) NLI_MODEL=$(NLI_MODEL)
 
 docker-nli-push: ## Push the NLI RunPod image to the registry
-	docker push $(REGISTRY)/nli-runpod:$(VERSION)
+	$(MAKE) -C external/runpod docker-nli-push REGISTRY=$(REGISTRY) VERSION=$(VERSION)
 
-docker-nli: docker-nli-build docker-nli-push ## Build + push the NLI RunPod image
+docker-nli: ## Build + push the NLI RunPod image
+	$(MAKE) -C external/runpod docker-nli REGISTRY=$(REGISTRY) VERSION=$(VERSION) NLI_MODEL=$(NLI_MODEL)
 
 # --- mermaid diagrams -------------------------------------------------------
 # Renders every .mmd under input/mmd/ to SVG (vector) and PNG (raster) in

@@ -32,7 +32,7 @@ vignettes/*.pdf
 *_cache/
 /cache/
 
-# Python bytecode cache (e.g. from docker/nli-runpod/server.py imports)
+# Python bytecode cache (e.g. from external/runpod/docker/nli-runpod/server.py imports)
 __pycache__/
 *.pyc
 
@@ -83,9 +83,8 @@ IPBES_Fact_Checker_files/
 TD_*.html
 output/overlap_key_paper_files/
 
-# Generated pod inventory from scripts/runpod/create_pods.sh — specific pod
-# ids/hostnames, stale the moment a pod is torn down. pods.conf* files (the
-# actual launch recipe: image, GPU type, disk size) ARE committed, for
-# reproducibility of short-lived pods.
-scripts/runpod/hosts.generated.csv
-scripts/runpod/hosts.generated.yaml
+IPBES_Fact_Checker.zip
+runpod_migration_IPBES_BM_Fact_Checker/pods.conf.nli
+runpod_migration_IPBES_BM_Fact_Checker/TODO_migration_runpod.md
+runpod_migration_IPBES_BM_Fact_Checker - done/pods.conf.nli
+runpod_migration_IPBES_BM_Fact_Checker - done/TODO_migration_runpod.md

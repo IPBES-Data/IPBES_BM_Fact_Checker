@@ -73,7 +73,7 @@ flowchart TD
     direction TB
 
     %% Nodes
-    nli_server@{ shape: cloud, label: "Zero-shot NLI server<br/>DeBERTa-v3-large-zeroshot<br/><tt>docker/nli-runpod/</tt>" }
+    nli_server@{ shape: cloud, label: "Zero-shot NLI server<br/>DeBERTa-v3-large-zeroshot<br/><tt>external/runpod/docker/nli-runpod/</tt>" }
     nli_scoring@{ shape: rect, label: "Classify each citing work vs its BM<br/>premise = clean(title + abstract)<br/>hypothesis = BM description<br/>→ SUPPORTS / REFUTES / NEI" }
     nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 

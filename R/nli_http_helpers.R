@@ -1,5 +1,5 @@
 # Low-level HTTP helpers shared by check_nli_pool_health.R and
-# score_one_claim.R. Talks to the zero-shot NLI server (docker/nli-runpod/).
+# score_one_claim.R. Talks to the zero-shot NLI server (external/runpod/docker/nli-runpod/).
 # `host:` in an nli config entry may be a single hostname or a list (pool) —
 # nli_hosts() is the only place that field should be read directly.
 

@@ -1,5 +1,0 @@
-*
-!docker/nli-runpod/server.py
-!docker/nli-runpod/download_model.py
-!docker/nli-runpod/entrypoint.sh
-!docker/nli-runpod/nli_idle_watchdog.sh

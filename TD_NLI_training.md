@@ -237,10 +237,10 @@ running a full pipeline rebuild.
 ## Deployment
 
 The fine-tuned model is a drop-in replacement for the original. Update the model path
-in the Docker container ([docker/nli-runpod/](docker/nli-runpod/)) and redeploy:
+in the Docker container ([external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/)) and redeploy:
 
 ```dockerfile
-# In docker/nli-runpod/Dockerfile (or equivalent entrypoint)
+# In external/runpod/docker/nli-runpod/Dockerfile (or equivalent entrypoint)
 # Replace:
 MODEL_ID = "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
 # With:
@@ -312,6 +312,6 @@ per-assessment subset for evaluation or top-up training without regenerating the
   compute estimates
 - [R/build_nli_scores_parquet.R](R/build_nli_scores_parquet.R) — current inference
   implementation
-- [docker/nli-runpod/](docker/nli-runpod/) — inference server Docker setup
+- [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/) — inference server Docker setup
 - SciFact dataset: https://github.com/allenai/scifact
 - HuggingFace fine-tuning docs: https://huggingface.co/docs/transformers/training

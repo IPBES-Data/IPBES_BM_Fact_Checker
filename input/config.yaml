@@ -21,7 +21,7 @@ assessments:
   #   full_text: false
 
 # NLI alignment backend. The pipeline POSTs (premise, hypothesis) pairs to a
-# zero-shot NLI server (see docker/nli-runpod/). Switch models by changing
+# zero-shot NLI server (see external/runpod/docker/nli-runpod/). Switch models by changing
 # `active` to a key under `configs`. Use `~` to disable.
 nli:
   active: deberta_zeroshot   # which entry under configs: is active
@@ -29,7 +29,7 @@ nli:
   configs:
     deberta_zeroshot:
       scheme: https
-      host: ["7wsykql3o5nrbe-8080.proxy.runpod.net", "sv941duqs35s69-8080.proxy.runpod.net"]   # fill in after the pod boots 
+      host: ["tlv4z3u7ahgb0n-8080.proxy.runpod.net", "3gim3k42xceftd-8080.proxy.runpod.net", "9i0jcc7gafre28-8080.proxy.runpod.net", "pvuovaa9ocdfm7-8080.proxy.runpod.net", "xv5ccg37c1m06y-8080.proxy.runpod.net", "iivdnlg03ueqvj-8080.proxy.runpod.net", "12ri77rzg0msyp-8080.proxy.runpod.net"]
       port: null                              # null → scheme://host (RunPod proxy)
       auth_token_keyring: null                # optional keyring entry for a bearer token
       model: MoritzLaurer/deberta-v3-large-zeroshot-v2.0   # label only; actual model is read from /health and recorded as nli_model. Warns on mismatch.

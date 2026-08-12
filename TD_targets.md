@@ -14,7 +14,7 @@ current, authoritative target list.
 
 The pipeline fetches IPBES assessment data from the [IPBES Linked Open Data (LOD)](https://github.com/IPBES-Data/IPBES_LOD) repository in RDF/Turtle format, queries the assessments via SPARQL, and produces per-assessment Parquet datasets for refs, sections, key-messages, Zotero items, OpenAlex works, snowball results, and NLI alignment scores.
 
-The **active scoring approach** is NLI (`nli_scores_by_claim` / `nli_scores_by_claim_evidence`): each citing work is classified as SUPPORTS / REFUTES / NOT_ENOUGH_INFO against its partition's Background Message using a zero-shot DeBERTa NLI model served on RunPod (see [docker/nli-runpod/](docker/nli-runpod/) and [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md)).
+The **active scoring approach** is NLI (`nli_scores_by_claim` / `nli_scores_by_claim_evidence`): each citing work is classified as SUPPORTS / REFUTES / NOT_ENOUGH_INFO against its partition's Background Message using a zero-shot DeBERTa NLI model served on RunPod (see [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/) and [TD_BM_NLI_approach.md](TD_BM_NLI_approach.md)).
 
 The **parked LLM-comparison approach** (`prompts_truth_parquet` → `prompts_citing_parquet` → `alignement_scores_parquet`) is not wired into `_targets.R` but its source files remain on disk.
 
@@ -334,7 +334,7 @@ For each `(assessment, km, bm)` partition in `works_citing_parquet`:
 
 1. Reads the BM description from `key_messages_parquet` as the NLI hypothesis.
 2. Cleans each citing work's `title + abstract` as the premise.
-3. POSTs batches to the zero-shot NLI server (see [docker/nli-runpod/](docker/nli-runpod/)).
+3. POSTs batches to the zero-shot NLI server (see [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/)).
 4. Stores the full probability distribution (`p_supports`, `p_refutes`, `p_nei`) plus predicted label and confidence.
 
 Output is written to `output/nli_scores/nli_config=<cfg>/assessment=<id>/km=<km>/bm=<bm>/`, partitioned by `nli_config` so scores from different model profiles are stored separately and comparable.

@@ -69,7 +69,9 @@ input/config.yaml
 classifies each citing work against its partition's Background Message as
 SUPPORTS / REFUTES / NOT_ENOUGH_INFO using a zero-shot NLI model
 (`MoritzLaurer/deberta-v3-large-zeroshot-v2.0`) served on a pool of RunPod
-hosts (see [docker/nli-runpod/](docker/nli-runpod/)). Premise = cleaned `title`+`abstract`;
+hosts (see [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/), a git
+submodule — see `runpod_migration_IPBES_BM_Fact_Checker/TODO_migration_runpod.md`
+for the migration off this repo's own former copy). Premise = cleaned `title`+`abstract`;
 hypothesis = `bm_description`. The full probability distribution is stored; all
 thresholding is done downstream in `dplyr`. The previous LLM-comparison chain
 (`prompts_truth_parquet` → `prompts_citing_parquet` → `alignement_scores_*`) is
