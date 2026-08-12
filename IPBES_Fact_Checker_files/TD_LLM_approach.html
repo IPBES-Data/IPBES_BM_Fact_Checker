@@ -2267,7 +2267,7 @@ vertical-align: -.125em;
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">Overview</h2>
 <p>This document describes the LLM-based alignment scoring approach: feeding structured representations of an IPBES Background Message (the <em>truth</em>) and a citing paper (the <em>candidate</em>) to an LLM via OpenRouter/ellmer, and receiving a structured judgement of whether the paper supports, contradicts, or is neutral toward the BM.</p>
-<p>This approach was the original pipeline (now parked — see CLAUDE.md) and is the intended <strong>Phase 2</strong> of the two-phase NLI → LLM pipeline described in <a href="TD_NLI_LLM_two_phase.md">TD_NLI_LLM_two_phase.md</a>. In Phase 2, only the subset of papers that NLI flagged as uncertain or contradicting are sent here.</p>
+<p>This approach was the original pipeline (now parked — see CLAUDE.md) and is the intended <strong>Phase 2</strong> of the two-phase NLI → LLM pipeline described in <a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a>. In Phase 2, only the subset of papers that NLI flagged as uncertain or contradicting are sent here.</p>
 <hr>
 </section>
 <section id="prompt-architecture" class="level2">
@@ -2476,21 +2476,21 @@ vertical-align: -.125em;
 </section>
 <section id="relation-to-the-two-phase-pipeline" class="level2">
 <h2 class="anchored" data-anchor-id="relation-to-the-two-phase-pipeline">Relation to the Two-Phase Pipeline</h2>
-<p>In <a href="TD_NLI_LLM_two_phase.md">TD_NLI_LLM_two_phase.md</a>, this LLM approach becomes <strong>Phase 2</strong> applied only to the NLI remainder:</p>
+<p>In <a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a>, this LLM approach becomes <strong>Phase 2</strong> applied only to the NLI remainder:</p>
 <ul>
 <li>NLI <code>uncertain</code> cases → LLM for refinement + explanation</li>
 <li>NLI <code>REFUTES</code> cases → LLM for confirmation + explanation (high stakes)</li>
 <li>NLI high-confidence <code>SUPPORTS</code> → accepted without LLM review</li>
 </ul>
-<p>The <code>work_alignement</code> −5 to +5 scale remains the target output format. The NLI label and confidence scores are added to the prompt as a prior (see <a href="TD_NLI_LLM_two_phase.md">TD_NLI_LLM_two_phase.md</a> for the adapted prompt template).</p>
+<p>The <code>work_alignement</code> −5 to +5 scale remains the target output format. The NLI label and confidence scores are added to the prompt as a prior (see <a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a> for the adapted prompt template).</p>
 <hr>
 </section>
 <section id="see-also" class="level2">
 <h2 class="anchored" data-anchor-id="see-also">See Also</h2>
 <ul>
-<li><a href="TD_BM%20NLI%20approach.md">TD_BM NLI approach.md</a> — Phase 1 design</li>
-<li><a href="TD_NLI_LLM_two_phase.md">TD_NLI_LLM_two_phase.md</a> — two-phase pipeline design</li>
-<li><a href="TD_NLI_training.md">TD_NLI_training.md</a> — fine-tuning the NLI model</li>
+<li><a href="TD_BM_NLI_approach.html">TD_BM_NLI_approach.qmd</a> — Phase 1 design</li>
+<li><a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a> — two-phase pipeline design</li>
+<li><a href="TD_NLI_training.html">TD_NLI_training.qmd</a> — fine-tuning the NLI model</li>
 <li><a href="R/build_alignement_scores_parquet.R">R/build_alignement_scores_parquet.R</a> — implementation</li>
 <li><a href="R/alignement_schema.R">R/alignement_schema.R</a> — ellmer structured output schema</li>
 <li><a href="input/prompts/">input/prompts/</a> — system prompt and wrapper files</li>

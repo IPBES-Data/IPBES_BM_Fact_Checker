@@ -2260,7 +2260,7 @@ vertical-align: -.125em;
 
 <section id="two-phase-alignment-scoring-nli-llm" class="level1">
 <h1>Two-Phase Alignment Scoring: NLI → LLM</h1>
-<p><strong>Status: planned — not yet implemented.</strong> No Phase-2 LLM re-scoring target exists in <code>_targets.R</code> today; only the Phase-1 NLI scoring chain (<code>nli_scores_by_claim</code> / <code>nli_scores_by_claim_evidence</code>, see <a href="TD_BM_NLI_approach.qmd">TD_BM_NLI_approach</a>) is live. This document is a design proposal for the LLM refinement layer described below.</p>
+<p><strong>Status: planned — not yet implemented.</strong> No Phase-2 LLM re-scoring target exists in <code>_targets.R</code> today; only the Phase-1 NLI scoring chain (<code>nli_scores_by_claim</code> / <code>nli_scores_by_claim_evidence</code>, see <a href="TD_BM_NLI_approach.html">TD_BM_NLI_approach</a>) is live. This document is a design proposal for the LLM refinement layer described below.</p>
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">Overview</h2>
 <p>A two-phase pipeline that combines the speed and scale of NLI with the nuance and explanatory power of an LLM. NLI handles all pairs cheaply; the LLM only processes the remainder where a richer judgement is needed.</p>
@@ -2394,7 +2394,7 @@ Tasks:
 </section>
 <section id="using-llm-output-as-training-data" class="level2">
 <h2 class="anchored" data-anchor-id="using-llm-output-as-training-data">Using LLM Output as Training Data</h2>
-<p>The LLM explanations are high-quality labeled examples for fine-tuning the NLI model (see <a href="TD_NLI_training.md">TD_NLI_training.md</a>):</p>
+<p>The LLM explanations are high-quality labeled examples for fine-tuning the NLI model (see <a href="TD_NLI_training.html">TD_NLI_training.qmd</a>):</p>
 <ul>
 <li><code>llm_agrees = TRUE</code> → confirms the NLI label; strong training signal</li>
 <li><code>llm_agrees = FALSE</code> → NLI error with explanation; gold-standard correction</li>
@@ -2454,8 +2454,8 @@ Tasks:
 <section id="see-also" class="level2">
 <h2 class="anchored" data-anchor-id="see-also">See Also</h2>
 <ul>
-<li><a href="TD_BM_NLI_approach.md">TD_BM_NLI_approach.md</a> — Phase 1 design and compute</li>
-<li><a href="TD_NLI_training.md">TD_NLI_training.md</a> — fine-tuning the NLI model</li>
+<li><a href="TD_BM_NLI_approach.html">TD_BM_NLI_approach.qmd</a> — Phase 1 design and compute</li>
+<li><a href="TD_NLI_training.html">TD_NLI_training.qmd</a> — fine-tuning the NLI model</li>
 <li><a href="R/score_one_claim.R">R/score_one_claim.R</a> — Phase 1 implementation</li>
 <li><a href="R/build_alignement_scores_parquet.R">R/build_alignement_scores_parquet.R</a> — parked LLM-comparison chain (reference implementation for Phase 2)</li>
 </ul>
