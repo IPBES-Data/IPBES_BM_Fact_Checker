@@ -595,7 +595,16 @@ list(
       # td_doc_md is file-hash tracked so editing the underlying .md
       # invalidates the render — targets can't see inside a
       # `{{< include >}}` directive on its own to detect that dependency.
+      # diagram_workflow_nli/diagram_pipeline_nli are referenced only to
+      # establish the same kind of DAG dependency: TD_targets.md embeds
+      # these rendered figures via a plain markdown image link, which
+      # targets can't see into either — without this, regenerating a
+      # diagram would silently NOT invalidate the HTML that embeds it.
+      # Broadcast to every branch (not mapped), since only one of the
+      # several TD docs actually uses these two figures.
       td_doc_md
+      diagram_workflow_nli
+      diagram_pipeline_nli
       quarto::quarto_render(td_doc_qmd)
       sub("\\.qmd$", ".html", td_doc_qmd)
     },

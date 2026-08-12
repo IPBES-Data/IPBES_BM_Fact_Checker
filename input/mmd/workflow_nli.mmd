@@ -73,17 +73,20 @@ flowchart TD
     direction TB
 
     %% Nodes
+    nli_segment@{ shape: rect, label: "Segment each BM into evidence-delimited claims<br/>one claim per sentence-group ending in a {ref}<br/>(+ a separate bm_label claim) — 2-17 claims per BM" }
     nli_server@{ shape: cloud, label: "Zero-shot NLI server<br/>DeBERTa-v3-large-zeroshot<br/><tt>external/runpod/docker/nli-runpod/</tt>" }
-    nli_scoring@{ shape: rect, label: "Classify each citing work vs its BM<br/>premise = clean(title + abstract)<br/>hypothesis = BM description<br/>→ SUPPORTS / REFUTES / NEI" }
-    nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    nli_scoring@{ shape: rect, label: "Classify each citing work vs one BM claim<br/>premise = clean(title + abstract)<br/>hypothesis = one evidence-segmented BM claim<br/>→ SUPPORTS / REFUTES / NEI" }
+    nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores_evidence/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
     %% Edges
+    nli_segment --> nli_scoring
     nli_server <--> nli_scoring
     nli_scoring --> nli_scores_db
   end
 
-  %% Inputs to the NLI scoring step: BM text (hypothesis) + citing works (premise)
-  key_messages_db --> nli_scoring
+  %% Inputs to the NLI scoring step: BM text, segmented into claims first, +
+  %% citing works (premise) joined against every claim independently
+  key_messages_db --> nli_segment
   citing_db --> nli_scoring
 
   %% Active NLI profile feeds scoring (determines model config + output partition)
@@ -102,12 +105,12 @@ flowchart TD
   classDef helper      fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
   classDef disabled    fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px,stroke-dasharray:4 3;
 
-  %% Hide the data → nli_assessment subgraph-level constraint edge (last edge, index 25).
+  %% Hide the data → nli_assessment subgraph-level constraint edge (last edge, index 26).
   %% If you add or remove edges above, bump this index.
-  linkStyle 25 stroke:transparent,fill:none;
+  linkStyle 26 stroke:transparent,fill:none;
 
   class config_file input_file;
   class assessment_list,assessment_id,nli_active config;
   class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db,nli_scores_db database;
-  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,nli_scoring processing;
+  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,nli_scoring,nli_segment processing;
   class sparql,zotero_api,openalex,nli_server helper;
