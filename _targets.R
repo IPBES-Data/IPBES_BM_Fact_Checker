@@ -453,13 +453,19 @@ list(
   # proceeds independently. Re-running tar_make() only retries failed/new
   # claims (plus targets' own branch caching skips already-succeeded ones
   # whose inputs haven't changed).
-  tar_target(
-    nli_scores_by_claim,
-    score_one_claim(nli_claim_units_flat, nli_config, nli_active, nli_pool_health),
-    pattern = map(nli_claim_units_flat),
-    format = "file",
-    error = "continue"
-  ),
+  # Commented out: this per-sentence chain isn't consumed by the report
+  # (nli_overview_data reads nli_scores_by_claim_evidence only — see that
+  # target's comment) and shares nli_config/nli_pool_health/score_one_claim
+  # with the evidence chain, so a bare tar_make() would dispatch both against
+  # the same live RunPod pool. Uncomment only if you deliberately want the
+  # per-sentence approach scored too.
+  # tar_target(
+  #   nli_scores_by_claim,
+  #   score_one_claim(nli_claim_units_flat, nli_config, nli_active, nli_pool_health),
+  #   pattern = map(nli_claim_units_flat),
+  #   format = "file",
+  #   error = "continue"
+  # ),
 
   # ── SECOND approach (evidence-segmented) scoring chain ────────────────────
   # Reuses build_nli_claim_units() / score_one_claim() unchanged — only the
