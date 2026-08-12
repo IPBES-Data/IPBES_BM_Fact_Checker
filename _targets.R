@@ -640,5 +640,16 @@ list(
     format = "file"
   ),
 
+  # Deployable copy: the report + every TD doc, each with its _files/
+  # sidecar if it has one, collected into one self-contained directory.
+  # scripts/deploy_gh_pages.sh publishes this directory's contents verbatim
+  # to the gh-pages branch root — it doesn't need its own logic to find
+  # which htmls exist or pair them with a _files/ folder.
+  tar_target(
+    report_output_dir,
+    build_report_output_dir(report_fact_checker, td_doc_html, "output/reports"),
+    format = "file"
+  ),
+
   NULL
 )

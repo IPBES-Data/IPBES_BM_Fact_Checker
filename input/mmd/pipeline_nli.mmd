@@ -12,62 +12,64 @@ graph TD
     x9909b451a6a56060(["config_file"]) --> xdaa9eaf14bf7d9fb(["nli_active"])
     xd29fb8bace3b75b5["nli_overview_data"] --> xebf9664bd97f0406["nli_bm_explorer_html"]
     x2a70a19ca5bda07e["nli_ready_parquet"] --> x2c6c2bd1b14aa53d["nli_claim_units"]
-    xc1390bdb2b35a1c0(["nli_config"]) --> x2c6c2bd1b14aa53d["nli_claim_units"]
     x7096e63b1af7fc2e(["assessment"]) --> x2c6c2bd1b14aa53d["nli_claim_units"]
+    xc1390bdb2b35a1c0(["nli_config"]) --> x2c6c2bd1b14aa53d["nli_claim_units"]
+    x7096e63b1af7fc2e(["assessment"]) --> x9be7a889ec11d50c["nli_claim_units_evidence"]
     xbe4dac68e009ada6["nli_ready_evidence_parquet"] --> x9be7a889ec11d50c["nli_claim_units_evidence"]
     xc1390bdb2b35a1c0(["nli_config"]) --> x9be7a889ec11d50c["nli_claim_units_evidence"]
-    x7096e63b1af7fc2e(["assessment"]) --> x9be7a889ec11d50c["nli_claim_units_evidence"]
     x9be7a889ec11d50c["nli_claim_units_evidence"] --> xb35639b28214b947(["nli_claim_units_evidence_flat"])
     x2c6c2bd1b14aa53d["nli_claim_units"] --> x51165e9dec51c0e2(["nli_claim_units_flat"])
     x9909b451a6a56060(["config_file"]) --> xc1390bdb2b35a1c0(["nli_config"])
-    x7096e63b1af7fc2e(["assessment"]) --> xd29fb8bace3b75b5["nli_overview_data"]
-    x848f6ce08c0f5882["nli_scores_by_claim_evidence"] --> xd29fb8bace3b75b5["nli_overview_data"]
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> xd29fb8bace3b75b5["nli_overview_data"]
     x6bd40d1623e4b2a6["works_citing_parquet"] --> xd29fb8bace3b75b5["nli_overview_data"]
+    x848f6ce08c0f5882["nli_scores_by_claim_evidence"] --> xd29fb8bace3b75b5["nli_overview_data"]
+    x7096e63b1af7fc2e(["assessment"]) --> xd29fb8bace3b75b5["nli_overview_data"]
+    xdaa9eaf14bf7d9fb(["nli_active"]) --> xd29fb8bace3b75b5["nli_overview_data"]
     xd29fb8bace3b75b5["nli_overview_data"] --> xed3bc7ddd0e8563b["nli_overview_figures"]
-    xc1390bdb2b35a1c0(["nli_config"]) --> xa97d1735ba09b196(["nli_pool_health"])
     xdaa9eaf14bf7d9fb(["nli_active"]) --> xa97d1735ba09b196(["nli_pool_health"])
+    xc1390bdb2b35a1c0(["nli_config"]) --> xa97d1735ba09b196(["nli_pool_health"])
+    x6bd40d1623e4b2a6["works_citing_parquet"] --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
     x1b5c1cdf9ba064e4["key_messages_parquet"] --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
-    x6bd40d1623e4b2a6["works_citing_parquet"] --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
     x359cd01ce3cd9deb(["workers"]) --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
-    x6bd40d1623e4b2a6["works_citing_parquet"] --> x2a70a19ca5bda07e["nli_ready_parquet"]
-    x7096e63b1af7fc2e(["assessment"]) --> x2a70a19ca5bda07e["nli_ready_parquet"]
     x359cd01ce3cd9deb(["workers"]) --> x2a70a19ca5bda07e["nli_ready_parquet"]
+    x6bd40d1623e4b2a6["works_citing_parquet"] --> x2a70a19ca5bda07e["nli_ready_parquet"]
     x1b5c1cdf9ba064e4["key_messages_parquet"] --> x2a70a19ca5bda07e["nli_ready_parquet"]
-    xb35639b28214b947(["nli_claim_units_evidence_flat"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
-    xa97d1735ba09b196(["nli_pool_health"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
-    xc1390bdb2b35a1c0(["nli_config"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
+    x7096e63b1af7fc2e(["assessment"]) --> x2a70a19ca5bda07e["nli_ready_parquet"]
     xdaa9eaf14bf7d9fb(["nli_active"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
+    xa97d1735ba09b196(["nli_pool_health"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
+    xb35639b28214b947(["nli_claim_units_evidence_flat"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
+    xc1390bdb2b35a1c0(["nli_config"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
     x6bd40d1623e4b2a6["works_citing_parquet"] --> xe910459612d64a0c(["overlap_after_2018_background_messages_table"])
     x6bd40d1623e4b2a6["works_citing_parquet"] --> x68cd312fe317382a(["overlap_after_2018_sub_messages_table"])
     x31e4fc98a3c6921c["works_parquet"] --> x07a3292760da36c7(["overlap_key_paper_table"])
-    xf258716a437e6a24(["refs_sparql"]) --> x4c5608b5b57c599b["refs_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> x4c5608b5b57c599b["refs_parquet"]
-    xcae032f895dcdbee(["sparql_url"]) --> x4c5608b5b57c599b["refs_parquet"]
     xda2ef7d9d7074388["ttl_path"] --> x4c5608b5b57c599b["refs_parquet"]
-    x127c757a45df2fd7(["qmd_fact_checker"]) --> x786d38e5bf1fa345(["report_fact_checker"])
+    xf258716a437e6a24(["refs_sparql"]) --> x4c5608b5b57c599b["refs_parquet"]
+    xcae032f895dcdbee(["sparql_url"]) --> x4c5608b5b57c599b["refs_parquet"]
     xebf9664bd97f0406["nli_bm_explorer_html"] --> x786d38e5bf1fa345(["report_fact_checker"])
+    x127c757a45df2fd7(["qmd_fact_checker"]) --> x786d38e5bf1fa345(["report_fact_checker"])
     xf1a513c8605a3b8d["td_doc_html"] --> x786d38e5bf1fa345(["report_fact_checker"])
-    xcae032f895dcdbee(["sparql_url"]) --> xc27197d40d6acf57["sections_parquet"]
+    x786d38e5bf1fa345(["report_fact_checker"]) --> xecae55c84c4d2070(["report_output_dir"])
+    xf1a513c8605a3b8d["td_doc_html"] --> xecae55c84c4d2070(["report_output_dir"])
     x7096e63b1af7fc2e(["assessment"]) --> xc27197d40d6acf57["sections_parquet"]
     xda2ef7d9d7074388["ttl_path"] --> xc27197d40d6acf57["sections_parquet"]
+    xcae032f895dcdbee(["sparql_url"]) --> xc27197d40d6acf57["sections_parquet"]
     xbaf7d5ee2a70bea4(["sections_sparql"]) --> xc27197d40d6acf57["sections_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> xdb22778f9ff9b079["snowball_parquet"]
     x31e4fc98a3c6921c["works_parquet"] --> xdb22778f9ff9b079["snowball_parquet"]
     x9909b451a6a56060(["config_file"]) --> xcae032f895dcdbee(["sparql_url"])
-    x97d8bb3d3f8fc71c["td_doc_qmd"] --> xf1a513c8605a3b8d["td_doc_html"]
     x7efdca860ccfcea1["td_doc_md"] --> xf1a513c8605a3b8d["td_doc_html"]
+    x97d8bb3d3f8fc71c["td_doc_qmd"] --> xf1a513c8605a3b8d["td_doc_html"]
     x3d4965d2b74e01ef(["td_doc_names"]) --> x7efdca860ccfcea1["td_doc_md"]
     x3d4965d2b74e01ef(["td_doc_names"]) --> x97d8bb3d3f8fc71c["td_doc_qmd"]
     x7096e63b1af7fc2e(["assessment"]) --> xda2ef7d9d7074388["ttl_path"]
     x9909b451a6a56060(["config_file"]) --> x359cd01ce3cd9deb(["workers"])
-    x7096e63b1af7fc2e(["assessment"]) --> x6bd40d1623e4b2a6["works_citing_parquet"]
     xdb22778f9ff9b079["snowball_parquet"] --> x6bd40d1623e4b2a6["works_citing_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x6bd40d1623e4b2a6["works_citing_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x31e4fc98a3c6921c["works_parquet"]
     x4c5608b5b57c599b["refs_parquet"] --> x31e4fc98a3c6921c["works_parquet"]
     xe6d26d705b0e239b["zotero_parquet"] --> x31e4fc98a3c6921c["works_parquet"]
-    x7096e63b1af7fc2e(["assessment"]) --> x31e4fc98a3c6921c["works_parquet"]
-    x4c5608b5b57c599b["refs_parquet"] --> xe6d26d705b0e239b["zotero_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> xe6d26d705b0e239b["zotero_parquet"]
+    x4c5608b5b57c599b["refs_parquet"] --> xe6d26d705b0e239b["zotero_parquet"]
     
   end
