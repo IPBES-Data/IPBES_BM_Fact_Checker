@@ -7,11 +7,11 @@
 - [ ] Fix `read_csv()` deprecation warning in SPARQL response parsing (`refs_parquet`, `key_messages_parquet`): wrap literal CSV strings in `I()` — readr 2.2.0+ deprecation, will become an error in a future version
 
 - [ ] Gaps: Same pipeline, in CONF DATA (the one we have)
-- [ ] Fine-tune NLI model using BM citations as training data — see [TD_NLI_training.md](TD_NLI_training.md)
+- [ ] Fine-tune NLI model using BM citations as training data — see [TD_NLI_training.qmd](TD_NLI_training.qmd)
 
 ## Two-phase NLI → LLM pipeline
 
-See [TD_NLI_LLM_two_phase.md](TD_NLI_LLM_two_phase.md) for full design.
+See [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.qmd) for full design.
 
 - [ ] Implement `llm_scores_parquet` target (Phase 2)
   - Route `REFUTES`, `uncertain`, and low-confidence `SUPPORTS` from `nli_scores_by_claim`/`nli_scores_by_claim_evidence` to LLM
@@ -34,3 +34,4 @@ See [TD_NLI_LLM_two_phase.md](TD_NLI_LLM_two_phase.md) for full design.
 - [x] Interactive per-BM NLI explorer widget in the report (`nli_bm_explorer_html`) — linked BM/confidence-threshold/label controls, stacked solid/hollow bars, drill-down table with clickable DOI links, and a CSV download button (up to 5,000 rows, tagged with Assessment + BM columns)
 - [x] Wire the report (`IPBES_Fact_Checker.qmd`) and its rendered artifacts (BM explorer, overlap tables, TD design docs) into `_targets.R` (`report_fact_checker`, `qmd_fact_checker`, `td_doc_html`) so `tar_make()` builds and renders everything, and copy heavy standalone HTML into `IPBES_Fact_Checker_files/` so the report distributes as just that one file + one directory
 - [x] Render the `TD_*.md` design documents as standalone styled HTML pages (`TD_<name>.qmd` wrappers + `td_doc_html` target), linked from the report's Methods section
+- [x] Combine each `TD_<name>.qmd` wrapper and its `TD_<name>.md` prose back into one self-contained `.qmd` file per doc; drop the `td_doc_md` target and the `{{< include >}}` indirection accordingly

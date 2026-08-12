@@ -561,14 +561,18 @@ list(
     format = "file"
   ),
 
-  # Technical Design (TD_*.md) documents — each gets a thin TD_<name>.qmd
-  # wrapper (just the report's same format/layout block plus
-  # `{{< include TD_<name>.md >}}`) so they render with consistent styling
-  # and are openable as standalone HTML pages linked from the report. The
-  # actual prose stays in the single-source-of-truth .md file — editors
-  # edit that; the .qmd wrapper never needs touching. Branched over
-  # td_doc_names rather than six hand-written targets so adding a new TD
-  # doc is a one-line change.
+  tar_target(
+    claude_md,
+    "CLAUDE.md",
+    format = "file"
+  ),
+
+  # Technical Design (TD_<name>.qmd) documents — each is a single
+  # self-contained file (Quarto YAML header + prose in the same file) so
+  # they render with consistent styling and are openable as standalone
+  # HTML pages linked from the report. Branched over td_doc_names rather
+  # than six hand-written targets so adding a new TD doc is a one-line
+  # change (plus the new .qmd file itself).
   tar_target(
     td_doc_names,
     c(
@@ -589,32 +593,20 @@ list(
   ),
 
   tar_target(
-    td_doc_md,
-    paste0(td_doc_names, ".md"),
-    pattern = map(td_doc_names),
-    format = "file"
-  ),
-
-  tar_target(
     td_doc_html,
     {
-      # td_doc_md is file-hash tracked so editing the underlying .md
-      # invalidates the render — targets can't see inside a
-      # `{{< include >}}` directive on its own to detect that dependency.
       # diagram_workflow_nli/diagram_pipeline_nli are referenced only to
-      # establish the same kind of DAG dependency: TD_targets.md embeds
-      # these rendered figures via a plain markdown image link, which
-      # targets can't see into either — without this, regenerating a
-      # diagram would silently NOT invalidate the HTML that embeds it.
-      # Broadcast to every branch (not mapped), since only one of the
-      # several TD docs actually uses these two figures.
-      td_doc_md
+      # establish a DAG dependency: TD_targets.qmd embeds these rendered
+      # figures via a plain markdown image link, which targets can't see
+      # into — without this, regenerating a diagram would silently NOT
+      # invalidate the HTML that embeds it. Broadcast to every branch (not
+      # mapped), since only one of the several TD docs actually uses them.
       diagram_workflow_nli
       diagram_pipeline_nli
       quarto::quarto_render(td_doc_qmd)
       sub("\\.qmd$", ".html", td_doc_qmd)
     },
-    pattern = map(td_doc_qmd, td_doc_md),
+    pattern = map(td_doc_qmd),
     format = "file"
   ),
 
@@ -641,13 +633,14 @@ list(
   ),
 
   # Deployable copy: the report + every TD doc, each with its _files/
-  # sidecar if it has one, collected into one self-contained directory.
-  # scripts/deploy_gh_pages.sh publishes this directory's contents verbatim
-  # to the gh-pages branch root — it doesn't need its own logic to find
-  # which htmls exist or pair them with a _files/ folder.
+  # sidecar if it has one, plus CLAUDE.md (TD_targets.qmd links to it by a
+  # plain relative path), collected into one self-contained directory.
+  # deploy-pages.yml publishes this directory's contents verbatim to the
+  # gh-pages branch — it doesn't need its own logic to find which htmls
+  # exist or pair them with a _files/ folder.
   tar_target(
     report_output_dir,
-    build_report_output_dir(report_fact_checker, td_doc_html, "output/reports"),
+    build_report_output_dir(report_fact_checker, td_doc_html, claude_md, "output/reports"),
     format = "file"
   ),
 

@@ -13,4 +13,253 @@ format:
         keep-md: false
 ---
 
-{{< include TD_formatting.md >}}
+# Report Formatting — Archived Design System
+
+This document archives a custom HTML/CSS design system originally built for
+`Fact_Checker_nli_report_basic.qmd`. It was removed from that report in favour
+of Quarto's built-in defaults (native callouts, plain tables, no custom CSS) —
+the custom version added visual polish but also maintenance overhead (a
+separate `.css` file, bespoke HTML markup mixed into report prose, and a
+class of Pandoc/Quarto bugs around embedding — see the `embed-resources`
+incident this design ran into). Kept here in case a future report wants a
+custom look without re-deriving the palette/type choices from scratch.
+
+## Palette
+
+| Token | Hex | Role |
+|---|---|---|
+| `--c-forest` | `#1C3A2E` | Headings, primary accent |
+| `--c-moss` | `#2E6B4F` | Secondary accent, SUPPORTS color |
+| `--c-sienna` | `#8B2E2E` | REFUTES color, warning callouts |
+| `--c-sand` | `#A8896A` | NOT_ENOUGH_INFO color, neutral callouts |
+| `--c-parch` | `#F5F3EE` | Page background |
+| `--c-body` | `#3A4A41` | Body text |
+| `--c-muted` | `#6B7B71` | Secondary text, labels |
+| `--c-rule` | `#D4CFC6` | Borders, hairlines |
+| `--c-sup-bg` / `--c-ref-bg` / `--c-nei-bg` | `#EBF3EE` / `#F5EBEB` / `#F5F1EB` | Tinted backgrounds matching each label color |
+| `--c-card` | `#FFFFFF` | Card/panel background |
+
+## Typography
+
+- `--font-serif`: Georgia / Times New Roman — body text
+- `--font-ui`: system-ui / -apple-system — headings, labels, UI chrome
+- `--font-mono`: SF Mono / Fira Code — code
+
+## Components
+
+- **`.metrics` / `.metric`** — a flex row of stat cards (`.metric-value` large
+  number + `.metric-label` uppercase caption), used for a top-of-report
+  summary strip (e.g. "22,758 works scored", "6 background messages").
+- **`.callout` / `.callout.warning` / `.callout.neutral`** — left-bordered
+  panels for caveats/findings, color-coded (moss default, sienna warning,
+  sand neutral). Superseded by Quarto's native `::: {.callout-warning}` /
+  `::: {.callout-note}` syntax, which needs no custom CSS.
+- **`.chip` / `.chip-sup` / `.chip-ref` / `.chip-nei`** — small inline pill
+  labels for SUPPORTS/REFUTES/NOT_ENOUGH_INFO, tinted to match the palette.
+  Superseded by plain `` `SUPPORTS` `` inline code spans.
+- **`.assessment-block`** — a card-style wrapper (white background, shadow,
+  rounded corners) for a titled finding/section. Superseded by a plain
+  heading + paragraph.
+
+## Full CSS
+
+```css
+/* ── tokens ── */
+:root {
+  --c-forest:   #1C3A2E;
+  --c-moss:     #2E6B4F;
+  --c-sienna:   #8B2E2E;
+  --c-sand:     #A8896A;
+  --c-parch:    #F5F3EE;
+  --c-body:     #3A4A41;
+  --c-muted:    #6B7B71;
+  --c-rule:     #D4CFC6;
+  --c-sup-bg:   #EBF3EE;
+  --c-ref-bg:   #F5EBEB;
+  --c-nei-bg:   #F5F1EB;
+  --c-card:     #FFFFFF;
+  --r-card:     6px;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-ui:    system-ui, -apple-system, sans-serif;
+  --font-mono:  "SF Mono", "Fira Code", monospace;
+}
+
+/* ── base ── */
+body {
+  font-family:  var(--font-serif);
+  font-size:    16px;
+  line-height:  1.7;
+  color:        var(--c-body);
+  background:   var(--c-parch);
+  margin: 0;
+  padding: 0;
+}
+
+/* ── layout ── */
+#quarto-content, .page-layout-article {
+  background: var(--c-parch);
+}
+.content-container, #quarto-margin-sidebar, main {
+  max-width: 860px;
+}
+
+/* ── headings ── */
+h1, h2, h3, h4 {
+  font-family: var(--font-ui);
+  color:       var(--c-forest);
+  font-weight: 700;
+  text-wrap:   balance;
+  line-height: 1.25;
+}
+h1 { font-size: 2rem;   border-bottom: 3px solid var(--c-moss);
+     padding-bottom: .5rem; margin-top: 2rem; }
+h2 { font-size: 1.35rem; border-bottom: 1px solid var(--c-rule);
+     padding-bottom: .3rem; margin-top: 2.5rem; }
+h3 { font-size: 1.1rem; color: var(--c-moss); margin-top: 2rem; }
+
+/* ── subtitle block ── */
+.quarto-title-meta { font-family: var(--font-ui); font-size: .85rem;
+                      color: var(--c-muted); }
+.quarto-title-meta-heading { color: var(--c-forest); font-weight: 600; }
+
+/* ── tables ── */
+.table-wrap { overflow-x: auto; margin: 1.5rem 0; }
+table {
+  font-family:  var(--font-ui);
+  font-size:    .82rem;
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 480px;
+  font-variant-numeric: tabular-nums;
+}
+thead tr { background: var(--c-forest); color: #fff; }
+thead th { padding: .5rem .75rem; text-align: left; font-weight: 600;
+            letter-spacing: .03em; }
+tbody tr:nth-child(odd)  { background: var(--c-card); }
+tbody tr:nth-child(even) { background: #EFEDE8; }
+tbody td { padding: .4rem .75rem; border-bottom: 1px solid var(--c-rule); }
+tbody tr:last-child td   { border-bottom: none; }
+
+/* ── callout boxes ── */
+.callout {
+  border-left: 4px solid var(--c-moss);
+  background:  var(--c-card);
+  padding: 1rem 1.25rem;
+  margin: 1.75rem 0;
+  border-radius: 0 var(--r-card) var(--r-card) 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.07);
+}
+.callout.warning { border-color: var(--c-sienna); background: var(--c-ref-bg); }
+.callout.neutral { border-color: var(--c-sand);   background: var(--c-nei-bg); }
+.callout-title {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: .85rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--c-forest);
+  margin-bottom: .4rem;
+}
+.callout.warning .callout-title { color: var(--c-sienna); }
+.callout.neutral  .callout-title { color: var(--c-sand); }
+
+/* ── label chips ── */
+.chip {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  padding: .15em .6em;
+  border-radius: 3px;
+}
+.chip-sup  { background: var(--c-sup-bg); color: var(--c-moss);   }
+.chip-ref  { background: var(--c-ref-bg); color: var(--c-sienna); }
+.chip-nei  { background: var(--c-nei-bg); color: var(--c-sand);   }
+
+/* ── figures ── */
+figure { margin: 2rem 0; }
+figcaption { font-family: var(--font-ui); font-size: .8rem;
+              color: var(--c-muted); margin-top: .5rem; }
+img { max-width: 100%; border-radius: var(--r-card);
+       box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+
+/* ── code ── */
+pre, code {
+  font-family: var(--font-mono);
+  font-size: .8rem;
+  background: #EAE8E3;
+  border-radius: 4px;
+}
+pre { padding: 1rem; overflow-x: auto; }
+
+/* ── TOC ── */
+#quarto-sidebar, nav[role=doc-toc] {
+  font-family: var(--font-ui);
+  font-size: .82rem;
+}
+nav[role=doc-toc] a { color: var(--c-muted); text-decoration: none; }
+nav[role=doc-toc] a:hover { color: var(--c-moss); }
+nav[role=doc-toc] .active { color: var(--c-forest); font-weight: 600; }
+
+/* ── metric strip ── */
+.metrics {
+  display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0;
+}
+.metric {
+  flex: 1 1 140px;
+  background: var(--c-card);
+  border-radius: var(--r-card);
+  padding: .9rem 1rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,.07);
+  font-family: var(--font-ui);
+}
+.metric-value {
+  font-size: 1.8rem; font-weight: 800; line-height: 1;
+  color: var(--c-forest);
+  font-variant-numeric: tabular-nums;
+}
+.metric-label {
+  font-size: .75rem; color: var(--c-muted);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin-top: .3rem;
+}
+
+/* ── assessment section ── */
+.assessment-block {
+  background: var(--c-card);
+  border-radius: var(--r-card);
+  padding: 1.5rem;
+  margin: 2rem 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.07);
+}
+.assessment-block h4 {
+  font-family: var(--font-ui);
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--c-muted);
+  margin: 0 0 .5rem 0;
+}
+
+/* ── print ── */
+@media print {
+  body { background: white; }
+  .callout, .metric, .assessment-block { box-shadow: none; }
+}
+```
+
+## Reusing this
+
+To bring it back for a future report:
+1. Copy the CSS block above into a new `.css` file next to the `.qmd`.
+2. Reference it via `format.html.css: <filename>.css` in the YAML — **not**
+   `css: |` with inline content (Pandoc treats that string as a file path and
+   fails with `withBinaryFile: does not exist`).
+3. Set `theme: none` so Quarto's default Bootstrap theme doesn't fight the
+   custom rules.
+4. Watch out for `embed-resources: true` combined with large external HTML
+   iframes elsewhere in the same report — Quarto tries to inline them as
+   `data:` URIs, which breaks silently past a few MB (see the incident in
+   `IPBES_Fact_Checker.qmd`'s `overlap_*` tables). This CSS file itself is
+   small and embeds fine.

@@ -40,7 +40,7 @@ planned future stage, and which are dead leftovers safe to delete.
 
 | Folder | Belongs to | Why it's not stale |
 |---|---|---|
-| `prompts/` | `prompts_truth_parquet` / `prompts_citing_parquet` (commented out in `_targets.R`) | Inputs for the **planned two-stage NLI → LLM verification pipeline** (see `TD_NLI_LLM_two_phase.md`, `TODO.md`): NLI runs first, then an LLM re-checks `REFUTES`/uncertain/low-confidence `SUPPORTS` cases using the NLI label+confidence as a prior. `llm_scores_parquet` (Phase 2) hasn't been implemented yet — this is why the target is commented out, not because the approach was abandoned. Keep until Phase 2 is built or explicitly dropped. |
+| `prompts/` | `prompts_truth_parquet` / `prompts_citing_parquet` (commented out in `_targets.R`) | Inputs for the **planned two-stage NLI → LLM verification pipeline** (see `TD_NLI_LLM_two_phase.qmd`, `TODO.md`): NLI runs first, then an LLM re-checks `REFUTES`/uncertain/low-confidence `SUPPORTS` cases using the NLI label+confidence as a prior. `llm_scores_parquet` (Phase 2) hasn't been implemented yet — this is why the target is commented out, not because the approach was abandoned. Keep until Phase 2 is built or explicitly dropped. |
 
 ## Orphaned — no active target, safe to delete
 

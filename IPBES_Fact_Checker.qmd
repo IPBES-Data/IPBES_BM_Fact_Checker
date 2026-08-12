@@ -89,9 +89,9 @@ Three assessments available in ttl format are currently:
 #| include: false
 
 # Rendered by the td_doc_html target (see _targets.R) from the TD_<name>.qmd
-# wrappers (each just this report's format/layout plus
-# `{{< include TD_<name>.md >}}`) and copied into the report's own _files/
-# sidecar so the links below work in a distributed copy of the report too.
+# design docs (each this report's format/layout block followed by its own
+# prose) and copied into the report's own _files/ sidecar so the links
+# below work in a distributed copy of the report too.
 td_doc_html_paths <- copy_into_report_files(targets::tar_read(td_doc_html))
 td_doc_link <- function(name) {
   td_doc_html_paths[grepl(paste0("/", name, "\\.html$"), td_doc_html_paths)]
@@ -147,7 +147,7 @@ all_papers <- dplyr::bind_rows(key_papers, citing_papers)
 # Figure and table artifact paths — resolved via tar_read() so the report
 # always shows what the pipeline actually last built, never a stale/hardcoded
 # path.
-fig_pub_per_year_paths <- targets::tar_read(fig_pub_per_year)
+fig_pub_per_year_paths <- copy_into_report_files(targets::tar_read(fig_pub_per_year))
 fig_pub_per_year_png <- fig_pub_per_year_paths[grepl(
   "\\.png$",
   fig_pub_per_year_paths
@@ -311,7 +311,7 @@ Each citing work is scored against its partition's Background Message (BM) as `S
 #| include: false
 
 nli_overview_data_paths <- targets::tar_read(nli_overview_data)
-nli_overview_figures_paths <- targets::tar_read(nli_overview_figures)
+nli_overview_figures_paths <- copy_into_report_files(targets::tar_read(nli_overview_figures))
 # copy_into_report_files() (defined in the results_data chunk above) copies
 # the self-contained widgets into IPBES_Fact_Checker_files/ and returns the
 # report-relative iframe src paths directly.

@@ -24,4 +24,4 @@ dependencies) and the full pipeline architecture.
 ## Reports
 
 - [`IPBES_Fact_Checker.html`](IPBES_Fact_Checker.html) — the main fact-checker report (built by `report_fact_checker`; render with `targets::tar_make(names = "report_fact_checker")`)
-- [`TD_targets.html`](TD_targets.html) — the `targets` pipeline architecture design doc (rendered from [TD_targets.md](TD_targets.md))
+- [`TD_targets.html`](TD_targets.html) — the `targets` pipeline architecture design doc (rendered from [TD_targets.qmd](TD_targets.qmd))

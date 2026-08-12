@@ -1,10 +1,10 @@
 # Collect the rendered report and TD design docs — each with its sibling
 # <name>_files/ sidecar directory, if one exists — into a single,
 # self-contained output/reports/ directory. This is the exact tree
-# scripts/deploy_gh_pages.sh publishes to the gh-pages branch root, so the
-# deploy script itself never needs to know which htmls exist or have a
-# _files/ sidecar.
-build_report_output_dir <- function(report_html, td_html, output_dir = "output/reports") {
+# committed to main and published to gh-pages by
+# .github/workflows/deploy-pages.yml, which just syncs it verbatim — it
+# never needs to know which htmls exist or have a _files/ sidecar.
+build_report_output_dir <- function(report_html, td_html, claude_md, output_dir = "output/reports") {
   if (dir.exists(output_dir)) {
     unlink(output_dir, recursive = TRUE, force = TRUE)
   }
@@ -18,6 +18,10 @@ build_report_output_dir <- function(report_html, td_html, output_dir = "output/r
       file.copy(files_dir, output_dir, recursive = TRUE, overwrite = TRUE)
     }
   }
+
+  # TD_targets.qmd links to CLAUDE.md by a plain relative path; copy it
+  # alongside so that link resolves once the doc is relocated here too.
+  file.copy(claude_md, output_dir, overwrite = TRUE)
 
   # GitHub Pages needs an index page at the root; the main report is it. A
   # byte-identical copy, not a redirect — its relative links to
