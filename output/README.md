@@ -21,20 +21,23 @@ produced by the live pipeline, and which are dead leftovers safe to delete.
 | `nli_scores_evidence/` | `nli_scores_by_claim_evidence` (`R/score_one_claim.R`) | SUPPORTS/REFUTES/NEI scores per citing work per claim — the **active** scoring output, feeds the report |
 | `llm_candidate_scope/` | `llm_candidate_scope_parquet` (`R/build_llm_candidate_scope_parquet.R`) | Per-claim citing-work allow-list for `subset: "sm"` configs — derived from IPBES's own sub-chapter evidence references, not from download/snowball/NLI directly. Partitioned by assessment/km/bm. Always computed; `subset: "all"` configs never read it |
 | `llm_verification/raw/` | `llm_verification_parquet` (`R/build_llm_verification_parquet.R`) | Phase 2's resumable per-pair JSON cache, one file per `(claim_id, work_id)`, partitioned by `model=<model>/prompt=<hash>` |
-| `llm_verification/scores/` | `llm_verification_parquet` (`R/build_llm_verification_parquet.R`) | Phase 2 LLM review of whichever NLI slice the active config's `nli_labels`/`nli_certainty` select (currently `REFUTES`+`certain` on every shipped config), optionally narrowed by `llm_candidate_scope/` — see [TD_NLI_LLM_two_phase.qmd](../TD_NLI_LLM_two_phase.qmd). Partitioned by `llm_config` (the selected `input/config.yaml` `llm_verification.configs` entry name)/`subset` (`all` or `sm`)/assessment/`nli_route` (that row's own outcome, e.g. `REFUTES-certain` — one subdirectory per distinct outcome actually present, even within a single config call)/km/bm. Not yet consumed by the report |
+| `llm_verification/scores/` | `llm_verification_parquet` (`R/build_llm_verification_parquet.R`) | Phase 2 LLM review of whichever NLI slice the active config's `nli_labels`/`nli_certainty` select (currently `REFUTES`+`certain` on every shipped config), optionally narrowed by `llm_candidate_scope/` — see [TD_NLI_LLM_two_phase.qmd](../TD_NLI_LLM_two_phase.qmd). Partitioned by `llm_config` (the selected `input/config.yaml` `llm_verification.configs` entry name)/`subset` (`all` or `sm`)/assessment/`nli_route` (that row's own outcome, e.g. `REFUTES-certain` — one subdirectory per distinct outcome actually present, even within a single config call)/km/bm. Not yet merged into `nli_overview_data`/the main report's own tables, but consumed by the REFUTES funnel report below |
 | `tables/` | Several targets (see below) | Rendered DT/plotly HTML tables + their rds caches |
 | `figures/` | Several targets (see below) | Rendered PNG/SVG figures and Mermaid diagrams |
-| `reports/` | `report_output_dir` (`R/build_report_output_dir.R`) | The deployable site: `IPBES_Fact_Checker.html` + every `TD_*.html`, each with its `_files/` sidecar, plus `index.html`/`.nojekyll`. Published to `gh-pages` by `.github/workflows/deploy-pages.yml` |
+| `reports/` | `report_output_dir` (`R/build_report_output_dir.R`) | The deployable site: `IPBES_Fact_Checker.html` + every `TD_*.html` + every `IPBES_REFUTES_Report_<id>.html`, each with its `_files/` sidecar, plus `index.html`/`.nojekyll`. Published to `gh-pages` by `.github/workflows/deploy-pages.yml` |
 
 `tables/` breakdown:
 - `nli_bm_explorer_<id>.html` (+ `_files/`) — interactive per-BM explorer (`build_nli_bm_explorer`)
 - `nli_overview_data_<id>.rds` — cached summary tables (`build_nli_overview_data`)
 - `overlap_key_paper.html`/`.rds` (+ `_files/`) — key-paper overlap table (`build_overlap_key_paper_table`)
 - `overlap_after_2018_sub_messages.html`/`.rds` (+ `_files/`) and `overlap_after_2018_background_messages.html`/`.rds` (+ `_files/`) — post-2018 citing-paper overlap tables
+- `refutes_funnel_data_<id>.rds` — cached REFUTES-funnel counts (`build_refutes_funnel_data`)
+- `refutes_funnel_table_l3_<id>.html`/`.rds` (+ `_files/`) — the funnel's level-3 BM-filterable DT table (`build_refutes_funnel_tables`)
 
 `figures/` breakdown:
 - `fig_pub_per_year.{png,svg,pdf}` — publications-per-year by BM (`build_fig_pub_per_year`)
 - `nli_overview_plot_*_<id>.png` — per-assessment label/confidence/alignment plots (`build_nli_overview_figures`)
+- `fig_refutes_funnel_overall_<id>.png` / `fig_refutes_funnel_by_bm_<id>.png` — the REFUTES funnel's overall and per-BM charts (`build_refutes_funnel_figures`)
 - `workflow_nli.{png,svg}` / `pipeline_nli.{png,svg}` — active-approach diagrams (rendered from `input/mmd/workflow_nli.mmd` and the auto-generated `input/mmd/pipeline_nli.mmd`)
 
 ## Orphaned — no active target, safe to delete
@@ -251,3 +254,36 @@ directory (not partitioned the same way — see the Active table above) holds
 one resumable JSON cache file per `(claim_id, work_id)` pair, keyed by a
 sanitized version of `paste(claim_id, work_id, sep = "__")`; it is not a
 queryable parquet dataset.
+
+### `refutes_funnel_data_<id>.rds`
+
+Built by `R/build_refutes_funnel_data.R`: the 3-level REFUTES sieve for one
+assessment (see [IPBES_REFUTES_Report.qmd](../IPBES_REFUTES_Report.qmd) for
+the full methodology). A fourth level, "+ sufficient evidence", was
+considered and dropped: Phase 2's own parser forces `llm_label` to
+`NOT_ENOUGH_INFO` whenever `sufficient_evidence` is `FALSE`, so
+`llm_agrees == TRUE` (level 3) already implies `sufficient_evidence ==
+TRUE` for every row — a 4th level would always equal the 3rd. A list with:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `assessment` | string | Assessment ID |
+| `empty` | bool | `TRUE` if the snowball, NLI, or LLM verification stage hasn't produced output yet for this assessment |
+| `funnel_overall` | tibble | One row per level (`level1`..`level3`), with a human-readable `label` and the assessment-wide distinct-work count `n` — the sum of `funnel_by_bm`'s per-BM counts for that level, not a globally-deduped-across-BMs count |
+| `funnel_by_bm` | tibble | One row per `(km, bm)`, with `n1`..`n3` (distinct works at each level) and `pct_2of1`/`pct_3of2` (conversion rate between consecutive levels, `NA` when the denominator is 0) |
+| `level3_detail` | tibble | One row per `(km, bm, work_id, claim_id)` surviving to level 3 (`llm_agrees == TRUE`), with `claim`, `nli_confidence`, `quote`, `explanation`, `doi` — the source data for the level-3 DT table |
+
+### `refutes_funnel_table_l3_<id>.rds`
+
+Built by `R/build_refutes_funnel_tables.R`: the exact data.frame rendered
+into the level-3 DT table (`.html`, self-contained), after column curation
+and DOI/OpenAlex link formatting.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `km`, `bm` | factor | Cast to `factor` specifically so DT's `filter = "top"` renders them as `<select>` dropdowns |
+| `work` | string (HTML) | Clickable link to the work's DOI, or OpenAlex if no DOI exists — same `work_link()` convention as `nli_bm_explorer_html`'s drill-down table |
+| `claim` | string | Claim hypothesis text shown to the LLM |
+| `nli_confidence` | double | Phase 1's confidence for this pair, rounded to 3 d.p. |
+| `quote` | string | Verbatim quote the LLM cited as justification |
+| `explanation` | string | LLM's free-text rationale |

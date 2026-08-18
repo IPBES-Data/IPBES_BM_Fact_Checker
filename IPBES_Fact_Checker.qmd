@@ -571,3 +571,25 @@ The BMs with the widest REFUTES-over-SUPPORTS gap — the same zero-shot failure
 }
 ```
 
+# REFUTES Funnel
+
+A companion per-assessment report narrows REFUTES-labelled citing works
+down through NLI certainty and LLM re-verification. See each report's own
+Methodology section for the full 3-level sieve definition.
+
+```{r}
+#| label: refutes_funnel_links
+#| results: asis
+
+# Plain relative links, not iframes/copy_into_report_files(): each funnel
+# report is a full standalone page meant to be opened on its own, and both
+# it and this report sit as flat siblings both in the project root and in
+# output/reports/ (build_report_output_dir()), so a relative link resolves
+# in both places with no copying needed here.
+refutes_funnel_html_paths <- targets::tar_read(report_refutes_funnel_html)
+for (p in refutes_funnel_html_paths) {
+  id <- sub("^IPBES_REFUTES_Report_(.*)\\.html$", "\\1", basename(p))
+  cat(sprintf("- [%s REFUTES Funnel Report](%s)\n", id, basename(p)))
+}
+```
+

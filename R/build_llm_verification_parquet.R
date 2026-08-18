@@ -88,7 +88,14 @@ build_llm_verification_chat <- function(cfg, system_prompt, api_key) {
       temperature = cfg$temperature %||% 0,
       max_tokens = as.integer(cfg$max_tokens %||% 1000L)
     ),
-    echo = "none"
+    echo = "none",
+    # Without these, OpenRouter's dashboard attributes usage to the default
+    # User-Agent ("ellmer") instead of this project, making per-project cost
+    # tracking impossible across the multiple projects that call OpenRouter.
+    api_headers = c(
+      "HTTP-Referer" = "https://github.com/IPBES-Data/IPBES_BM_Fact_Checker",
+      "X-Title" = "IPBES_BM_Fact_Checker"
+    )
   )
 }
 

@@ -473,6 +473,45 @@ This replaced an earlier truth/citing-document LLM design
 of that source has been removed; see [TD_LLM_approach.qmd](TD_LLM_approach.html)
 for why.
 
+## Target 2h4c: `refutes_funnel_data`/`refutes_funnel_figures`/`refutes_funnel_tables` — REFUTES funnel
+
+**Source:** `R/build_refutes_funnel_data.R`, `R/build_refutes_funnel_figures.R`, `R/build_refutes_funnel_tables.R`
+
+A 3-level sieve of distinct citing works per `(km, bm)`, each level a subset
+of the previous: (1) the snowball corpus (`works_citing_parquet`), (2) NLI
+`REFUTES` + certain (`nli_scores_evidence`), (3) of those, `llm_agrees ==
+TRUE` in `llm_verification_parquet` (re-filtered to `nli_route ==
+"REFUTES-certain"` defensively, in case a future config routes other
+outcomes into the same output tree). A 4th level, `sufficient_evidence ==
+TRUE`, was considered and dropped: `build_llm_verification_parquet.R`'s own
+parser forces `llm_label` to `NOT_ENOUGH_INFO` whenever `sufficient_evidence`
+is `FALSE`, so `llm_agrees == TRUE` already implies `sufficient_evidence ==
+TRUE` for every row — a 4th level would always equal the 3rd, never
+narrowing anything further. `refutes_funnel_data` depends only on `works_citing_parquet`,
+`nli_active` (to reconstruct the `nli_scores_evidence` path, same
+convention as `nli_overview_data`'s call site), and `llm_verification_parquet`
+— pure local `arrow`/`dplyr`, no network/GPU calls, and no edge into
+`nli_scores_by_claim_evidence`'s actual computation (only as an
+already-built dependency elsewhere in the pipeline). Reuses
+`build_nli_overview_data.R`'s doi-lookup join verbatim, since neither
+source table stores `doi`. `deployment = "main"` for the same OOM reason as
+`nli_overview_data` (a full per-assessment `nli_scores_evidence` collect()).
+
+`refutes_funnel_figures` renders two PNGs per assessment (overall funnel,
+per-BM grouped bars) from the cached rds. `refutes_funnel_tables` renders
+one `DT::datatable()` table (level 3) with a BM dropdown filter — see
+[output/README.md](../output/README.md)'s Details section for the exact
+column-curation rationale (bypasses `IPBES.R::table_dt()`, since its
+wrapper can't pass through DT's top-level `filter` argument).
+
+Rendered into a standalone per-assessment report,
+`IPBES_REFUTES_Report.qmd` → `report_refutes_funnel_html`, via Quarto's
+`params:`/`execute_params=` mechanism (this project's first parameterized
+render — every other multi-output render, `td_doc_html`, branches over
+distinct source files instead of one file rendered N times). Linked from
+`IPBES_Fact_Checker.qmd`'s final section and folded into
+`report_output_dir`'s deployable copy alongside `td_doc_html`.
+
 ---
 
 ## SPARQL Queries

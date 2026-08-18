@@ -131,12 +131,16 @@ list(
     },
     iteration = "list"
   ),
-  tar_target(
-    fulltext_list,
-    lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
-      list(assessment_id = a[["id"]], enabled = isTRUE(a[["full_text"]]))
-    })
-  ),
+  # Parked: fulltext_list has no downstream consumer (R/build_fulltext.R is
+  # not wired into any target — see CLAUDE.md's orphaned-files note), so it
+  # was computing per-assessment full_text flags for nothing. Uncomment only
+  # once a real fulltext_* target reads it.
+  # tar_target(
+  #   fulltext_list,
+  #   lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
+  #     list(assessment_id = a[["id"]], enabled = isTRUE(a[["full_text"]]))
+  #   })
+  # ),
 
   # Phase 2 (LLM verification) config + prompt files — see the llm_verification_*
   # targets below, after the NLI scoring chain they consume. Same fine-grained
@@ -578,6 +582,82 @@ list(
     format = "file"
   ),
 
+  # Target 2h6: REFUTES funnel — a 4-level sieve of distinct citing works per
+  # (km, bm): snowball corpus -> NLI REFUTES-certain -> LLM-confirmed REFUTES
+  # -> + sufficient evidence, each a subset of the previous. Pure local
+  # arrow/dplyr over already-scored parquet (no network/GPU calls); reads
+  # llm_verification_parquet only as an already-built dependency, same
+  # DAG-dependency-only convention as nli_scores_by_claim_evidence elsewhere.
+  # See R/build_refutes_funnel_data.R and IPBES_REFUTES_Report.qmd.
+  tar_target(
+    refutes_funnel_data,
+    build_refutes_funnel_data(
+      assessment,
+      works_citing_parquet,
+      file.path(
+        "output/nli_scores_evidence",
+        paste0("nli_config=", nli_active),
+        paste0("assessment=", assessment$id)
+      ),
+      llm_verification_parquet,
+      "output/tables"
+    ),
+    pattern = map(assessment, works_citing_parquet, llm_verification_parquet),
+    format = "file",
+    # collect()s a full per-assessment nli_scores_evidence table, same OOM
+    # caution as nli_overview_data.
+    deployment = "main",
+    garbage_collection = TRUE
+  ),
+
+  tar_target(
+    refutes_funnel_figures,
+    build_refutes_funnel_figures(refutes_funnel_data, "output/figures"),
+    pattern = map(refutes_funnel_data),
+    format = "file"
+  ),
+
+  tar_target(
+    refutes_funnel_tables,
+    build_refutes_funnel_tables(refutes_funnel_data, "output/tables"),
+    pattern = map(refutes_funnel_data),
+    format = "file"
+  ),
+
+  tar_target(
+    qmd_refutes_funnel,
+    "IPBES_REFUTES_Report.qmd",
+    format = "file"
+  ),
+
+  # Rendered once per assessment via Quarto's params:/execute_params=
+  # mechanism (this project's first use of it — every other multi-output
+  # render, td_doc_html, branches over distinct source files instead of one
+  # file rendered N times). deployment = "main" avoids two quarto_render()
+  # calls against the same source .qmd racing on separate crew workers.
+  tar_target(
+    report_refutes_funnel_html,
+    {
+      # Bare references only to establish DAG edges — the qmd re-reads
+      # everything via tar_read()/readRDS(); quarto_render() re-reads the
+      # qmd from disk.
+      qmd_refutes_funnel
+      refutes_funnel_data
+      refutes_funnel_figures
+      refutes_funnel_tables
+      out <- paste0("IPBES_REFUTES_Report_", assessment$id, ".html")
+      quarto::quarto_render(
+        "IPBES_REFUTES_Report.qmd",
+        output_file = out,
+        execute_params = list(assessment_id = assessment$id)
+      )
+      out
+    },
+    pattern = map(assessment, refutes_funnel_data, refutes_funnel_figures, refutes_funnel_tables),
+    format = "file",
+    deployment = "main"
+  ),
+
   tar_target(
     qmd_fact_checker,
     "IPBES_Fact_Checker.qmd",
@@ -640,13 +720,14 @@ list(
       # deps by static-scanning this expression) — the qmd itself re-reads
       # nli_bm_explorer_html's and td_doc_html's actual values via
       # tar_read(), and quarto_render() re-reads the qmd from disk by path.
-      # Without nli_bm_explorer_html/td_doc_html, tar_make() would happily
-      # render the report against stale/missing dependents rather than
-      # building them first. Without qmd_fact_checker (file-hash tracked),
-      # targets has no visibility into the qmd's own content — editing the
-      # qmd (prose, code chunks, or YAML header, e.g. embed-resources) would
-      # silently NOT invalidate this target.
+      # Without nli_bm_explorer_html/td_doc_html/report_refutes_funnel_html,
+      # tar_make() would happily render the report against stale/missing
+      # dependents rather than building them first. Without qmd_fact_checker
+      # (file-hash tracked), targets has no visibility into the qmd's own
+      # content — editing the qmd (prose, code chunks, or YAML header, e.g.
+      # embed-resources) would silently NOT invalidate this target.
       nli_bm_explorer_html
+      report_refutes_funnel_html
       qmd_fact_checker
       td_doc_html
       quarto::quarto_render("IPBES_Fact_Checker.qmd")
@@ -655,15 +736,21 @@ list(
     format = "file"
   ),
 
-  # Deployable copy: the report + every TD doc, each with its _files/
-  # sidecar if it has one, plus CLAUDE.md (TD_targets.qmd links to it by a
-  # plain relative path), collected into one self-contained directory.
-  # deploy-pages.yml publishes this directory's contents verbatim to the
-  # gh-pages branch — it doesn't need its own logic to find which htmls
-  # exist or pair them with a _files/ folder.
+  # Deployable copy: the report + every TD doc + every per-assessment
+  # REFUTES funnel report, each with its _files/ sidecar if it has one, plus
+  # CLAUDE.md (TD_targets.qmd links to it by a plain relative path),
+  # collected into one self-contained directory. deploy-pages.yml publishes
+  # this directory's contents verbatim to the gh-pages branch — it doesn't
+  # need its own logic to find which htmls exist or pair them with a
+  # _files/ folder.
   tar_target(
     report_output_dir,
-    build_report_output_dir(report_fact_checker, td_doc_html, claude_md, "output/reports"),
+    build_report_output_dir(
+      report_fact_checker,
+      c(td_doc_html, report_refutes_funnel_html),
+      claude_md,
+      "output/reports"
+    ),
     format = "file"
   ),
 

@@ -456,6 +456,16 @@ oversight; see [Recommended Workflow](#recommended-workflow).
 5. Human expert review of all `REFUTES` calls regardless of source — still a manual step
 6. Optionally: use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
 
+A downstream, read-only **funnel view** of this data already exists —
+[IPBES_REFUTES_Report.qmd](IPBES_REFUTES_Report_GA1.html) counts how many
+distinct citing works survive `nli_label == "REFUTES" & !uncertain`, then
+`llm_agrees == TRUE`, per BM. It's a three-line filter composition over the
+columns documented above, not a new design — see
+`R/build_refutes_funnel_data.R`. There is deliberately no further
+"+ `sufficient_evidence`" level: per the required-evidence-gate design
+above, `llm_label` can only be `SUPPORTS`/`REFUTES` when `sufficient_evidence
+== TRUE`, so `llm_agrees == TRUE` already implies it for every row.
+
 ---
 
 ## See Also

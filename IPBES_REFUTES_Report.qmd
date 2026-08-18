@@ -1,0 +1,153 @@
+---
+title: REFUTES Funnel
+subtitle: Narrowing down citing works that contradict a Background Message
+date: today
+params:
+  assessment_id: "GA1"
+format:
+    html:
+        toc: true
+        toc-depth: 4
+        embed-resources: true
+        code-fold: true
+        code-summary: 'Show the code'
+        keep-md: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(dplyr)
+library(ggplot2)
+
+# Self-contained-report helper, same idiom as IPBES_Fact_Checker.qmd's setup
+# chunk -- but report_files_dir is built from params$assessment_id, NOT
+# knitr::current_input(). This qmd is rendered once per assessment via
+# quarto::quarto_render(output_file=, execute_params=); current_input()
+# always returns the SOURCE filename ("IPBES_REFUTES_Report"), which would
+# collide both assessment branches onto the same _files/ directory.
+report_files_dir <- paste0("IPBES_REFUTES_Report_", params$assessment_id, "_files")
+# Wipe before repopulating: copy_into_report_files() only copies in what it's
+# given, so a file dropped from one run's inputs (e.g. a removed funnel
+# level) would otherwise linger here forever across re-renders.
+unlink(report_files_dir, recursive = TRUE, force = TRUE)
+dir.create(report_files_dir, recursive = TRUE, showWarnings = FALSE)
+copy_into_report_files <- function(paths) {
+  file.copy(paths, report_files_dir, overwrite = TRUE)
+  file.path(basename(report_files_dir), basename(paths))
+}
+
+data_path <- targets::tar_read(refutes_funnel_data) |>
+  (\(x) x[grepl(paste0("_", params$assessment_id, "\\.rds$"), x)])()
+x <- readRDS(data_path)
+
+fig_paths <- copy_into_report_files(
+  targets::tar_read(refutes_funnel_figures) |>
+    (\(x) x[grepl(paste0("_", params$assessment_id, "\\.png$"), x)])()
+)
+fig_overall <- fig_paths[grepl("_overall_", fig_paths)]
+fig_by_bm <- fig_paths[grepl("_by_bm_", fig_paths)]
+
+table_paths <- copy_into_report_files(
+  targets::tar_read(refutes_funnel_tables) |>
+    (\(x) x[grepl(paste0("_", params$assessment_id, "\\.html$"), x)])()
+)
+table_l3 <- table_paths[grepl("_l3_", table_paths)]
+```
+
+# `r params$assessment_id`
+
+## Methodology
+
+Every work discovered by the snowball search under a Background Message
+(BM) is put through a 3-level sieve, each level a **subset** of the one
+before it, counted as **distinct citing works per (assessment, km, bm)** —
+a work cited under two different BMs is two separate findings, not one, so
+per-BM counts sum to the assessment-wide total shown below.
+
+1. **Snowball corpus** — every citing work discovered for that BM (the
+   forward/citing direction of the snowball search).
+2. **NLI REFUTES (certain)** — of those, works with at least one claim
+   scored `label == "REFUTES"` with `uncertain == FALSE` by the zero-shot
+   NLI model (Phase 1 — see
+   [TD_BM_NLI_approach](TD_BM_NLI_approach.html)).
+3. **LLM-confirmed REFUTES** — of those, works where OpenRouter's LLM
+   review (Phase 2 — see
+   [TD_NLI_LLM_two_phase](TD_NLI_LLM_two_phase.html)) independently agreed
+   with the REFUTES verdict (`llm_agrees == TRUE`).
+
+There is deliberately no further "+ sufficient evidence" level: Phase 2's
+own verification logic forces its `llm_label` to `NOT_ENOUGH_INFO` whenever
+it judges the evidence insufficient, so an LLM verdict of REFUTES already
+*implies* sufficient evidence — a separate level here would always contain
+exactly the same works as level 3.
+
+**Phase 2 (LLM verification) is a partial, ongoing process** — OpenRouter
+credit has run out mid-run at least once already, so level 3 below
+reflects only the pairs reviewed so far, not the full REFUTES-certain set
+from level 2. This number will grow as `llm_verification_parquet` gets
+more OpenRouter runs; re-render this report after a rerun rather than
+treating today's snapshot as final.
+
+```{r}
+#| label: empty-check
+#| results: asis
+if (isTRUE(x$empty)) {
+  cat("No data available yet for this assessment — the snowball, NLI, or LLM verification stage hasn't produced output here.\n\n")
+  knitr::knit_exit()
+}
+```
+
+## Overall numbers
+
+```{r}
+#| label: overall-table
+knitr::kable(
+  x$funnel_overall,
+  col.names = c("Level", "Description", "Distinct works")
+)
+```
+
+```{r}
+#| label: overall-figure
+#| results: asis
+if (length(fig_overall)) cat(sprintf("![](%s)\n\n", fig_overall))
+```
+
+## Per-BM numbers
+
+```{r}
+#| label: by-bm-table
+knitr::kable(
+  x$funnel_by_bm,
+  col.names = c(
+    "KM", "BM", "Corpus", "NLI REFUTES", "LLM-confirmed",
+    "% 2 of 1", "% 3 of 2"
+  )
+)
+```
+
+```{r}
+#| label: by-bm-figure
+#| results: asis
+if (length(fig_by_bm)) cat(sprintf("![](%s)\n\n", fig_by_bm))
+```
+
+## Level 3: LLM-confirmed REFUTES
+
+Every citing work where the LLM's own independent review agreed with NLI's
+REFUTES verdict (and, by construction, judged the evidence for it
+sufficient — see Methodology). Use the BM dropdown in the filter row below
+the header to narrow to one Background Message.
+
+```{r}
+#| label: level3-table
+#| results: asis
+if (length(table_l3)) {
+  cat(sprintf(
+    '<iframe src="%s" width="100%%" height="800px" style="border:none;"></iframe>\n\n',
+    table_l3
+  ))
+}
+```
