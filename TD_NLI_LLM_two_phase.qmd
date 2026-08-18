@@ -15,17 +15,20 @@ format:
 
 # Two-Phase Alignment Scoring: NLI → LLM
 
-**Status: planned — not yet implemented.** No Phase-2 LLM re-scoring target
-exists in `_targets.R` today; only the Phase-1 NLI scoring chain
-(`nli_scores_by_claim` / `nli_scores_by_claim_evidence`, see
-[TD_BM_NLI_approach](TD_BM_NLI_approach.html)) is live. This document is a
-design proposal for the LLM refinement layer described below.
+**Status: implemented.** The `llm_verification_parquet` target
+(`R/build_llm_verification_parquet.R`) runs Phase 2 below on top of the live
+Phase 1 NLI scoring chain (`nli_scores_by_claim_evidence`, see
+[TD_BM_NLI_approach](TD_BM_NLI_approach.html)). Its architecture is ported
+from the sibling `Categorisation_Literature` project's LLM epistemology
+classifier (`R/llm_epistemology.R` there) — see [Ported
+architecture](#ported-architecture) below for what came across unchanged and
+what didn't.
 
 ## Overview
 
-A two-phase pipeline that combines the speed and scale of NLI with the nuance and
-explanatory power of an LLM. NLI handles all pairs cheaply; the LLM only processes
-the remainder where a richer judgement is needed.
+A two-phase pipeline that combines the speed and scale of NLI with the nuance
+and explanatory power of an LLM. NLI handles all pairs cheaply; the LLM only
+processes the remainder where a richer judgement is needed.
 
 This is pure **inference** — no model training is involved. The LLM acts as a
 classifier and explainer on top of the NLI output.
@@ -34,137 +37,423 @@ classifier and explainer on top of the NLI output.
 
 ## Phase 1 — NLI (all pairs)
 
-Run the existing `nli_scores_by_claim` / `nli_scores_by_claim_evidence` pipeline across all citing works × BMs.
-The NLI model returns `label` + `p_supports` / `p_refutes` / `p_nei` /
-`confidence` / `uncertain` for every pair.
+Run the existing `nli_scores_by_claim_evidence` pipeline across all citing
+works × BM claims. The NLI model returns `label` + `p_supports` / `p_refutes`
+/ `p_nei` / `confidence` / `uncertain` for every pair.
 
-**Routing after Phase 1:**
+**Routing after Phase 1** — originally a single fixed filter
+(`label == "REFUTES" | uncertain`), now **per-config**: each
+`llm_verification` config picks its own routed set via two fields, read by
+`select_llm_verification_candidates()` in
+[R/build_llm_verification_parquet.R](R/build_llm_verification_parquet.R):
 
-| NLI result | Action |
-|---|---|
-| `SUPPORTS`, `confidence ≥ threshold` | Accept as SUPPORTS — done |
-| `REFUTES`, any confidence | Always send to LLM — rare, high value |
-| `NOT_ENOUGH_INFO`, `p_nei > nei_threshold` | Discard as not relevant — done |
-| `uncertain = TRUE` (confidence < threshold) | Send to LLM for refinement |
-| `NOT_ENOUGH_INFO`, `uncertain = TRUE` | Send to LLM — model was unsure |
+- **`nli_labels`** — `null`/omitted (any label, no filter) or one/more
+  labels, e.g. `[REFUTES]`, `[REFUTES, SUPPORTS]`.
+- **`nli_certainty`** — `null`/omitted (any), or one/more of `"certain"`
+  (`uncertain == FALSE`) / `"uncertain"` (`uncertain == TRUE`), e.g.
+  `certain`, or `[certain, uncertain]` (equivalent to `null`, spelled out).
 
-In practice the LLM input is roughly:
-- All `REFUTES` predictions
-- All `uncertain = TRUE` predictions
-- Optionally: `SUPPORTS` with low confidence (borderline cases)
+The two combine with **AND** to select candidates. This can't express the
+original rule's mixed per-label logic ("REFUTES at any confidence, OR any
+other label if uncertain") in a single config — that's a deliberate trade
+for simplicity; define a separate config per bucket instead of widening one
+config to cover several.
 
-Expected volume reduction from your data (~330k total pairs):
-- ~10–20% sent to LLM after filtering → ~30–60k pairs
+Listing several labels or certainties in one config does **not** merge
+their rows into one bucket, though: the hive partition each row lands in
+(`nli_route`, see [Output schema](#output-schema)) is derived **per row**
+from that row's own actual outcome, not from the filter that let it
+through. So `nli_labels: [REFUTES, SUPPORTS]`, `nli_certainty: certain`
+routes both labels in one config call, but still writes them to two
+separate partitions, `nli_route=REFUTES-certain` and
+`nli_route=SUPPORTS-certain` — never a merged `REFUTES_SUPPORTS-certain`.
+
+Measured against the real evidence-scored corpus (3,547,231 scored pairs, of
+which 2,357,718 / 66.5% would be routed under the original combined rule —
+far above the original design's 10-20% estimate, the bulk being
+`NOT_ENOUGH_INFO` pairs NLI itself wasn't confident about), the four buckets
+that combined rule was built from break down as:
+
+| `nli_labels` | `nli_certainty` | pairs (of 3,547,231 scored) | ~cost (gpt-4o-mini) |
+|---|---|---|---|
+| `REFUTES` | `certain` | 26,861 | ~$4 |
+| `REFUTES` | `uncertain` | 403,400 | ~$60 |
+| `SUPPORTS` | `uncertain` | 388,554 | ~$58 |
+| `NOT_ENOUGH_INFO` | `uncertain` | 1,538,903 | ~$231 |
+
+**`REFUTES` + `certain`** is the current first step (all four shipped
+configs route it) — the smallest, cheapest, and highest-signal bucket:
+cases where NLI was *confident* a paper contradicts the claim. The other
+three buckets stay available to route later, by defining additional configs
+or widening these two fields on existing ones — nothing else in the
+pipeline needs to change to pick them up.
 
 ---
 
 ## Phase 2 — LLM (remainder only)
 
+### Ported architecture {#ported-architecture}
+
+Rather than build Phase 2 from scratch, its plumbing is ported from
+`Categorisation_Literature/R/llm_epistemology.R` (an LLM classifier scoring
+papers against epistemological traditions in a sibling project), because that
+code already solves the reliability problems this task hits:
+
+| Ported as-is | Why |
+|---|---|
+| Resumable per-item JSON cache, keyed on a hash of `(system prompt, user template, output schema)` | A crashed or interrupted run does not restart from zero, and editing either prompt or the schema correctly starts a fresh cache namespace instead of silently reusing stale answers |
+| **Verbatim-quote verification** (`quote_is_verbatim()`) | The LLM is required to cite a quote supporting its verdict; this checks the quote actually occurs (normalised: lowercased, punctuation-stripped, whitespace-collapsed, ellipsis-split into fragments) in the premise text it was shown, and demotes the verdict to `NOT_ENOUGH_INFO` if not. Measured on the sibling project's corpus: 2-4% of otherwise well-formed responses cited a fabricated or reconstructed quote |
+| Required-boolean evidence gate (`sufficient_evidence`) rather than a nullable score | Sidesteps inconsistent JSON-schema `null` support across OpenRouter models; abstention is a first-class, always-present field rather than an edge case |
+| Fail-loud on structured-output non-compliance (`frac >= 0.5` → `stop()`, else `warning()`) | If a model ignores JSON-schema mode, every call fails to parse and the run would otherwise look like 100% honest `NOT_ENOUGH_INFO` rather than a broken pipeline |
+| Retry pass for failed calls | Provider errors (empty body, `finish_reason: error`) are usually transient; a blind retry recovers most of them without cost beyond the retry itself |
+
+**What didn't port as-is:** the sibling project's schema scores an array of
+*N* traditions per paper in one call (`assessments = type_array(...)`), which
+needs unwrapping a list-column ellmer returns for nested types (a genuine
+footgun there — see that project's `normalise_assessment()` comment). Phase 2
+here scores exactly one `(claim, work)` pair per call, so
+`llm_verification_output_type()` is a flat object with no nested field, and
+`normalise_llm_verification()` has no list-column to unwrap. Partitioning
+combines both projects' conventions: `llm_config=<name>` (the sibling's
+per-config separation, so switching `active` or comparing two named configs
+never overwrites either one's scored rows) nested with
+`assessment/km/bm` (this project's own convention, matching
+`nli_scores_evidence`).
+
+One more difference worth naming: Phase 1 (`score_one_claim.R`) dispatches
+across a **fixed pool of RunPod hosts** via file locks, because each host is
+a dedicated resource to load-balance across. Phase 2 talks to OpenRouter, a
+shared multi-tenant endpoint — there is nothing to load-balance, so
+`ellmer::parallel_chat_structured()`'s own `max_active` concurrency is
+sufficient and no crew/file-lock machinery was needed. One target call per
+assessment loops over its own routed candidates internally.
+
+### Candidate scoping (`subset`) {#candidate-scoping}
+
+**Status: parked.** This section describes a second, independent narrowing
+lever, orthogonal to the `nli_labels`/`nli_certainty` routing above — still
+implemented and tested, but not the active cost lever right now (the routing
+fields are doing that job instead, via `REFUTES` + `certain`). `subset: "sm"`
+remains available on any config whenever it's worth revisiting.
+
+The original combined routing rule (`REFUTES` at any confidence, OR any
+label if uncertain) alone left 66.5% of all NLI-scored pairs in scope for
+Phase 2 — far more than practical to run for real. This lever addresses that
+structurally rather than by tightening thresholds: **IPBES's own
+evidence-reference structure**.
+Each evidence-segmented claim ends with a brace group like
+`{5.4.1, 5.4.2}` naming the specific sub-chapter(s) it draws on, and
+`refs_parquet`'s `sm` column already links specific references (dois) to
+those same sub-chapter identifiers. Chaining
+`sm -> seed doi -> seed OpenAlex work id -> citing work` (via the existing
+snowball edges) gives, per claim, an allow-list of citing works actually
+tied to *that claim's own* evidentiary basis, rather than every citing work
+found anywhere under the whole BM.
+
+This is implemented as its own target, `llm_candidate_scope_parquet`
+(`R/build_llm_candidate_scope_parquet.R`), feeding into
+`llm_verification_parquet` — not folded into the LLM-stage
+builder itself, so the scoping logic and its target-level identity stay
+separately inspectable and independently cacheable. It reads only
+already-existing, unmodified targets (`key_messages_parquet`, `refs_parquet`,
+`works_parquet`, the snowball edges dataset, and — for a drift sanity check
+only — `nli_ready_evidence_parquet`) and writes to its own output root.
+Nothing about it edits `download_works.R`, `build_snowball_parquet.R`,
+`build_works_citing_parquet.R`, `build_nli_ready_evidence_parquet.R`, or the
+NLI scoring chain — `targets` invalidation only flows forward from something
+that actually changes, and adding a new *consumer* of an existing target's
+output does not retroactively invalidate it.
+
+One deliberate non-reuse: `extract_claim_evidence_tokens()` in the new file
+duplicates the sentence-splitting/terminal-brace/buffer logic from
+`segment_bm_by_evidence()` (`R/build_nli_ready_evidence_parquet.R`) rather
+than calling it, so that the two stay behaviorally identical (verified
+directly: run against the real BM text, both functions produce exactly the
+same segment count and boundaries in every test case, including a segment
+with multiple inline brace groups). Calling the original instead would work
+too — until someone edits it: `targets` hashes function *bodies* as
+dependencies, so even a behavior-preserving change there would mark
+`nli_ready_evidence_parquet`, and everything downstream of it including the
+NLI scoring chain, outdated. `build_llm_candidate_scope_parquet()` also
+cross-checks its own derived `claim_id`s against
+`nli_ready_evidence_parquet`'s real ones at build time and `warning()`s
+(not `stop()`s) on any mismatch, so a future edit to either segmentation
+implementation that silently drifts out of sync gets caught rather than
+silently mis-attributing evidence.
+
+Exposed per `llm_verification` config via `subset:`:
+
+| `subset` | Behavior |
+|---|---|
+| `"all"` | Every citing work found under the claim's BM (today's default; the 66.5%/2.36M figure above) |
+| `"sm"` | Only citing works tracing back to a seed reference whose `sm` matches the claim's own evidence sub-chapter(s) |
+
+Two policy decisions, made deliberately rather than defaulted into:
+
+- **A claim with no evidence braces at all falls back to unrestricted**
+  (keeps every one of its routed candidates) rather than being excluded —
+  no claim is ever silently dropped from Phase 2 review just because it
+  lacks a brace. The same fallback applies if the whole scope target found
+  nothing to write for an assessment (e.g. an unexpected data gap): absence
+  of scope data is never read as "review nothing."
+- **Sub-chapter token matching is prefix-based, not exact**, after
+  normalizing (lowercase; strip `box`/`table`/`spm table` prefixes; strip
+  `(...)` parenthetical annotations; split on comma/semicolon). The `sm`
+  field is messy free text (311 distinct values observed: comma- *and*
+  semicolon-separated lists, inconsistent `box`/`Box` casing, trailing
+  letter suffixes like `.a`, occasional malformed strings with unbalanced
+  parentheses). Prefix matching handles the common cases cleanly —
+  `"5.4.2.1"` matches `"5.4.2.1.a"`, a bare `"4"` matches any `"4.x.y"` — but
+  is deliberately not exhaustive; the malformed cases are an accepted,
+  disclosed gap. `subset: "all"` remains available as the exhaustive
+  fallback whenever `"sm"`'s narrower recall is a concern for a given
+  analysis.
+
 ### Prompt design
 
-Feed the LLM the abstract, the BM text, and the NLI result as a prior:
+Two files, tracked as `format = "file"` targets so editing either invalidates
+the cache namespace and the target:
 
-```
-You are reviewing whether a scientific paper supports or contradicts an IPBES
-Background Message.
+- [input/prompts/llm_verification_system.md](input/prompts/llm_verification_system.md)
+  — role, the "judge only the text you're given" rule, the evidence/quote
+  requirement, and the exact output contract.
+- [input/prompts/llm_verification_user.md](input/prompts/llm_verification_user.md)
+  — per-pair template with `{{BM_TEXT}}`, `{{TITLE_ABSTRACT}}`,
+  `{{NLI_LABEL}}`, `{{NLI_CONFIDENCE}}`, `{{P_SUPPORTS}}`, `{{P_REFUTES}}`,
+  `{{P_NEI}}` placeholders.
 
-Background Message:
-{bm_description}
-
-Paper title and abstract:
-{title}. {abstract}
-
-A zero-shot NLI model classified this pair as "{nli_label}" with confidence
-{confidence:.2f} (p_supports={p_supports:.2f}, p_refutes={p_refutes:.2f},
-p_nei={p_nei:.2f}).
-
-Tasks:
-1. Do you agree with the NLI classification? Answer: SUPPORTS / REFUTES /
-   NOT_ENOUGH_INFO.
-2. Explain in 2–3 sentences why, referencing specific content from the abstract.
-3. If you disagree with the NLI label, explain what likely caused the error.
-```
-
-The NLI result as a prior serves two purposes:
-- It focuses the LLM on the borderline or surprising cases
-- It gives the LLM a signal to agree with, refine, or override — reducing the
-  chance of the LLM ignoring a genuine connection
+The NLI result is passed as a prior for two reasons: it focuses the LLM on
+the borderline or surprising case at hand, and it gives the LLM something
+concrete to agree with, refine, or override, rather than scoring cold.
 
 ### Model choice
 
-| Model | Notes |
-|---|---|
-| `openai/gpt-4o-mini` | Good balance of quality and cost; recommended first choice |
-| `google/gemma-3-27b-it` | Free tier on OpenRouter; slower, weaker explanations |
-| `openai/gpt-4o` | Best quality; use for `REFUTES` cases only (high stakes) |
-| `anthropic/claude-haiku-4-5` | Fast and cheap; strong at structured extraction |
+`input/config.yaml`'s `llm_verification:` block follows the same
+`active` + named `configs` structure as `nli:` above — switch tiers by
+changing `active` to a different key, without touching any other config:
 
-Use a cheaper model for `uncertain` cases and a stronger model for `REFUTES`.
+```yaml
+llm_verification:
+  active: openrouter_cheap
 
-### Output schema
+  configs:
+    openrouter_cheap:
+      model: "openai/gpt-4o-mini"
+      temperature: 0
+      max_tokens: 8000
+      max_active: 24
+      max_retries: 2
+      subset: all
+      nli_labels: [REFUTES]
+      nli_certainty: certain
+
+    openrouter_cheap_sm:
+      model: "openai/gpt-4o-mini"
+      temperature: 0
+      max_tokens: 8000
+      max_active: 24
+      max_retries: 2
+      subset: sm
+      nli_labels: [REFUTES]
+      nli_certainty: certain
+
+    openrouter_midtier:
+      model: "google/gemini-2.5-flash"
+      temperature: 0
+      max_tokens: 8000
+      max_active: 24
+      max_retries: 2
+      subset: all
+      nli_labels: [REFUTES]
+      nli_certainty: certain
+
+    openrouter_toptier_gpt5:
+      model: "openai/gpt-5"
+      temperature: 0
+      max_tokens: 8000
+      max_active: 24
+      max_retries: 2
+      subset: all
+      nli_labels: [REFUTES]
+      nli_certainty: certain
+```
+
+The model tiers are carried over directly from the sibling
+`Categorisation_Literature` project's `epistemology:` config block (same
+model choices, same `max_active`/`max_tokens` values — see below for why
+those two specifically were kept rather than re-derived). `subset` and
+`nli_labels`/`nli_certainty` are new here — see [Candidate
+scoping](#candidate-scoping) above and [Routing after Phase
+1](#phase-1-nli-all-pairs) for what they do; all four configs currently
+route the same `REFUTES` + `certain` bucket (the confirmed first step), and
+differ only in model/subset.
+
+| Config | Model | Subset | Notes |
+|---|---|---|---|
+| `openrouter_cheap` | `openai/gpt-4o-mini` | `all` | Default; good balance of quality and cost for a first pass |
+| `openrouter_cheap_sm` | `openai/gpt-4o-mini` | `sm` | Same model, narrowed to the sm-derived candidate scope — parked (see [Candidate scoping](#candidate-scoping)) |
+| `openrouter_midtier` | `google/gemini-2.5-flash` | `all` | Step up when the cheap tier is topic-matching rather than judging the claim — spot-check `quote`/`explanation` |
+| `openrouter_toptier_gpt5` | `openai/gpt-5` | `all` | For a final, citable verification pass; a reasoning model |
+
+**`max_active: 24`** is the concurrency the sibling project actually ran at
+~2,800-call scale against OpenRouter without hitting rate limits — kept as
+the proven value rather than a smaller guess.
+
+**`max_tokens: 8000`** is a cap, not a reservation (unused tokens are not
+billed). It looks oversized for this schema's four short scalar fields on a
+non-reasoning model, but the reasoning tiers (`gpt-5` here, `gemini-2.5-pro`
+as a possible fourth) spend hidden thinking tokens against the same budget
+before any visible JSON appears — too low a cap truncated responses
+mid-JSON in the sibling project even on a *larger* per-tradition-array
+schema. Lower it per-config later only if measured usage on a specific
+non-reasoning model justifies it; there's no cost pressure to pre-tune it.
+
+`max_tokens` must be set explicitly in every config — left to the provider
+default, long responses can truncate mid-JSON on some models (the exact
+failure mode the sibling project's epistemology classifier hit on
+`google/gemini-2.5-flash` at `max_tokens: 4000`, which is why that project
+settled on 8000 for every tier).
+
+### Output schema {#output-schema}
+
+One row per LLM-reviewed pair, written to
+`output/llm_verification/scores/llm_config=<config>/subset=<subset>/assessment=<id>/nli_route=<route>/km=<km>/bm=<bm>/`.
+`<route>` is `nli_route_label()`'s hive-safe encoding of **that row's own**
+NLI outcome, e.g. `REFUTES-certain` or `SUPPORTS-uncertain` — not a single
+value per config call. So one `build_llm_verification_parquet()` call can
+write several `nli_route=` subdirectories under the same
+`llm_config/subset/assessment` (one per distinct label/certainty
+combination actually present among its routed candidates), and any two
+configs that happen to route the same outcome land on the same `nli_route`
+value regardless of their own names. `llm_config`/`subset`/`assessment` are
+the fixed prefix fully deleted and rewritten on each call; `nli_route`/`km`/`bm`
+vary within it based on the data:
 
 ```r
-# One row per LLM-reviewed pair (ellmer structured output)
 tibble(
-  nli_config       = character(),   # NLI profile used in Phase 1
-  llm_model        = character(),   # model used for Phase 2
-  assessment       = character(),
-  km               = character(),
-  bm               = character(),
-  work_id          = character(),
-  nli_label        = character(),   # original NLI label
-  nli_confidence   = double(),      # original NLI confidence
-  llm_label        = character(),   # SUPPORTS / REFUTES / NOT_ENOUGH_INFO
-  llm_agrees       = logical(),     # TRUE if llm_label == nli_label
-  explanation      = character(),   # 2–3 sentence free-text explanation
-  disagreement_reason = character() # filled when llm_agrees == FALSE
+  llm_config          = character(), # selected input/config.yaml llm_verification.configs entry name
+  subset              = character(), # "all" or "sm" -- which candidate scoping this config used
+  nli_config          = character(), # NLI profile used in Phase 1
+  assessment          = character(),
+  nli_route           = character(), # this ROW's own outcome, e.g. "REFUTES-certain" -- see nli_route_label()
+  km                  = character(),
+  bm                  = character(),
+  claim_id            = character(),
+  work_id             = character(),
+  claim               = character(), # the BM claim text, carried through for convenience
+  nli_label           = character(), # original NLI label
+  uncertain           = logical(),   # NLI's own confidence < uncertain_threshold flag
+  nli_confidence      = double(),
+  p_supports          = double(),
+  p_refutes           = double(),
+  p_nei               = double(),
+  llm_model           = character(),
+  llm_label           = character(),   # SUPPORTS / REFUTES / NOT_ENOUGH_INFO
+  llm_agrees          = logical(),     # TRUE if llm_label == nli_label
+  sufficient_evidence = logical(),     # FALSE forces llm_label = NOT_ENOUGH_INFO
+  quote               = character(),   # verbatim quote backing llm_label
+  quote_verbatim      = logical(),     # NA if not applicable, FALSE if fabricated (then demoted)
+  explanation         = character()    # 1-2 sentence free-text explanation
 )
 ```
 
-### Caching / prefix caching
+`quote_verbatim = FALSE` rows have already been demoted to
+`llm_label = "NOT_ENOUGH_INFO"` / `sufficient_evidence = FALSE` by the time
+they reach this table — the column is kept so a reader can distinguish "the
+LLM abstained" from "the LLM claimed evidence that wasn't real," which is a
+meaningfully different failure to audit.
 
-Group calls by BM — send all papers for the same BM in sequence so the provider's
-automatic prefix cache kicks in on the shared `(system + BM text)` prefix. This
-matches the parked LLM-comparison chain pattern in
-[R/build_alignement_scores_parquet.R](R/build_alignement_scores_parquet.R).
+### Caching
+
+Two layers, doing different jobs:
+
+- **Resumable per-pair cache** (the one that matters for cost and crash
+  safety): one JSON file per `(claim_id, work_id)` pair under
+  `output/llm_verification/raw/model=<model>/prompt=<hash>/`, where the hash
+  covers the system prompt, the user template, **and** the output schema
+  (adding a field to the schema silently reusing cached responses that
+  cannot contain it was a real bug in the sibling project before the schema
+  was added to the hash — ported here from the start instead of rediscovered).
+- **Provider-side automatic prefix caching** (OpenAI, Google) — a side
+  benefit of prompt ordering (system → fixed instructions → variable
+  per-pair content), not something explicitly engineered here since Phase 2
+  has no long shared prefix across pairs the way Phase 1's truth-document
+  design once did (see [TD_LLM_approach.qmd](TD_LLM_approach.html) for that
+  now-removed design).
 
 ---
 
 ## Using LLM Output as Training Data
 
-The LLM explanations are high-quality labeled examples for fine-tuning the NLI
-model (see [TD_NLI_training.qmd](TD_NLI_training.html)):
+The LLM explanations are high-quality labeled examples for fine-tuning the
+NLI model (see [TD_NLI_training.qmd](TD_NLI_training.html)):
 
 - `llm_agrees = TRUE` → confirms the NLI label; strong training signal
 - `llm_agrees = FALSE` → NLI error with explanation; gold-standard correction
 - `REFUTES` cases reviewed by LLM → rare but valuable negative examples
 
-Running Phase 2 on one assessment effectively generates a domain-specific labeled
-dataset for free as a side effect of the inference pipeline.
+This dataset now exists as a side effect of running `llm_verification_parquet`
+— no separate collection step is needed to start using it.
 
 ---
 
 ## Estimated Cost (Phase 2 only)
 
-Assuming ~50k pairs sent to LLM, average prompt ~400 tokens, completion ~150 tokens:
+Per-1k-pair unit costs, average prompt ~400 tokens, completion ~150 tokens:
 
-| Model | Input cost | Output cost | Total (~50k pairs) |
+| Model | Input cost | Output cost | Total per 1k pairs |
 |---|---|---|---|
-| `gpt-4o-mini` | $0.15/1M | $0.60/1M | ~$8 |
-| `gpt-4o` | $2.50/1M | $10/1M | ~$125 |
-| `claude-haiku-4-5` | $0.80/1M | $4/1M | ~$26 |
+| `gpt-4o-mini` | $0.15/1M | $0.60/1M | ~$0.15 |
+| `gpt-4o` | $2.50/1M | $10/1M | ~$2.50 |
+| `claude-haiku-4-5` | $0.80/1M | $4/1M | ~$0.52 |
 
-`gpt-4o-mini` is the practical default. Reserve `gpt-4o` for `REFUTES` cases only.
+Scaled to each `nli_labels`/`nli_certainty` bucket, measured on the real
+evidence-scored corpus (3,547,231 pairs total):
+
+| Bucket | Pairs | `gpt-4o-mini` | `gpt-5`-tier |
+|---|---|---|---|
+| `REFUTES` + `certain` (**current default, all 4 configs**) | 26,861 | ~$4 | ~$65 |
+| `REFUTES` + `uncertain` | 403,400 | ~$60 | ~$960 |
+| `SUPPORTS` + `uncertain` | 388,554 | ~$58 | ~$925 |
+| `NOT_ENOUGH_INFO` + `uncertain` | 1,538,903 | ~$231 | ~$3,660 |
+| All four combined (the original fixed-rule design) | 2,357,718 (66.5% of scored) | ~$375 | ~$5,900+ |
+| `sm`-narrowed variant of the combined set | 1,792,007 (24% smaller) | ~$269 | ~$4,480 |
+
+`openrouter_cheap` (`gpt-4o-mini`) is the configured default, currently
+routing `REFUTES` + `certain` only across all four shipped configs — the
+smallest, cheapest, highest-signal bucket, and the confirmed first step. The
+other buckets stay available by defining additional configs or widening
+`nli_labels`/`nli_certainty` on existing ones. The resumable per-pair cache
+means cost is paid once per `(prompt hash, pair)`, not once per
+`tar_make()` — and a pair's cached answer is valid under any combination of
+routing/subset that happens to select it again later.
 
 ---
 
-## Recommended Workflow
+## Where this sits in the pipeline
 
-1. Run `nli_scores_by_claim` / `nli_scores_by_claim_evidence` (Phase 1) — existing pipeline
-2. Filter output to LLM candidates (routing table above)
-3. Run Phase 2 LLM scoring — new `llm_scores_parquet` target (not yet built)
-4. Merge: use `llm_label` where available, fall back to `nli_label` elsewhere
-5. Human expert review of all `REFUTES` calls regardless of source
+`llm_verification_parquet` and `llm_candidate_scope_parquet` are both live,
+active targets (not commented out) — `tar_make()` runs them. Neither is
+deliberately a dependency of `report_fact_checker`, so rendering the report
+never forces an OpenRouter call: run Phase 2 explicitly with
+`targets::tar_make(names = "llm_verification_parquet")`, or let a bare
+`tar_make()` pick it up alongside everything else.
+`llm_candidate_scope_parquet` is always computed regardless of which
+`llm_verification` config is active — it makes no paid API calls of its own
+(pure local joins over already-downloaded parquet), so `subset: "all"`
+configs simply never read its output rather than the target being
+conditionally skipped. Phase 2's output is not yet consumed by the report's
+tables/figures or by `nli_overview_data` — that merge (`llm_label`
+overriding `nli_label` where available) is a deliberate next step, not an
+oversight; see [Recommended Workflow](#recommended-workflow).
+
+## Recommended Workflow {#recommended-workflow}
+
+1. Run `nli_scores_by_claim_evidence` (Phase 1) — existing pipeline
+2. Run `llm_verification_parquet` (Phase 2) — reviews whichever bucket the active config's `nli_labels`/`nli_certainty` select (currently `REFUTES` + `certain` on every shipped config)
+3. Widen coverage incrementally: define or switch to a config targeting the next bucket (`REFUTES`+`uncertain`, then `SUPPORTS`/`NOT_ENOUGH_INFO`+`uncertain`) once the first is reviewed
+4. Merge: use `llm_label` where available, fall back to `nli_label` elsewhere — **not yet wired into `nli_overview_data`/the report**
+5. Human expert review of all `REFUTES` calls regardless of source — still a manual step
 6. Optionally: use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
 
 ---
@@ -173,6 +462,12 @@ Assuming ~50k pairs sent to LLM, average prompt ~400 tokens, completion ~150 tok
 
 - [TD_BM_NLI_approach.qmd](TD_BM_NLI_approach.html) — Phase 1 design and compute
 - [TD_NLI_training.qmd](TD_NLI_training.html) — fine-tuning the NLI model
+- [TD_LLM_approach.qmd](TD_LLM_approach.html) — the earlier single-phase
+  −5..+5 LLM alignment design this one replaced; kept as a record of why that
+  scale was dropped in favour of the SUPPORTS/REFUTES/NOT_ENOUGH_INFO labels
+  used here
 - [R/score_one_claim.R](R/score_one_claim.R) — Phase 1 implementation
-- [R/build_alignement_scores_parquet.R](R/build_alignement_scores_parquet.R) — parked
-  LLM-comparison chain (reference implementation for Phase 2)
+- [R/build_llm_verification_parquet.R](R/build_llm_verification_parquet.R) — Phase 2 implementation
+- [R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) — `subset: "sm"` candidate scoping
+- `Categorisation_Literature/R/llm_epistemology.R` (sibling project) — the
+  ported architecture's origin

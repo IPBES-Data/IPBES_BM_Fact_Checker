@@ -32,6 +32,7 @@ tar_option_set(
     "openalexPro",
     "openalexSnowball",
     "jsonlite",
+    "digest",
     "ellmer",
     "future",
     "future.apply",
@@ -70,8 +71,10 @@ list.files(
 
 list(
   # Diagrams — re-render SVGs whenever .mmd source files change.
-  # Two hand-authored conceptual workflows are kept: `_nli` is the active NLI
-  # scoring approach; `_lm` is the parked LLM-comparison approach (reference).
+  # workflow_nli.mmd is the active, hand-authored conceptual workflow;
+  # its parked `_lm` counterpart (the earlier single-phase LLM-comparison
+  # approach) was removed once that approach's source was deleted outright
+  # rather than kept parked — see TD_LLM_approach.qmd for the design record.
   tar_target(
     mmd_workflow_nli,
     "input/mmd/workflow_nli.mmd",
@@ -82,20 +85,9 @@ list(
     render_mmd(mmd_workflow_nli),
     format = "file"
   ),
-  tar_target(
-    mmd_workflow_lm,
-    "input/mmd/workflow_lm.mmd",
-    format = "file"
-  ),
-  tar_target(
-    diagram_workflow_lm,
-    render_mmd(mmd_workflow_lm),
-    format = "file"
-  ),
 
   # Pipeline diagram — auto-generated from the live tar_mermaid() DAG (TD
-  # layout, no status colours). Writes input/mmd/pipeline_nli.mmd. The parked
-  # LLM-comparison DAG is kept as a frozen snapshot in pipeline_lm.mmd.
+  # layout, no status colours). Writes input/mmd/pipeline_nli.mmd.
   tar_target(
     r_files,
     c("_targets.R", list.files("R", full.names = TRUE)),
@@ -109,16 +101,6 @@ list(
   tar_target(
     diagram_pipeline_nli,
     render_mmd(pipeline_mmd),
-    format = "file"
-  ),
-  tar_target(
-    pipeline_lm,
-    "input/mmd/pipeline_lm.mmd",
-    format = "file"
-  ),
-  tar_target(
-    diagram_pipeline_lm,
-    render_mmd(pipeline_lm),
     format = "file"
   ),
 
@@ -149,30 +131,36 @@ list(
     },
     iteration = "list"
   ),
-  # PARKED (LLM-comparison approach): consumed only by alignement_scores_run_specs.
-  # tar_target(analysis_list, yaml::read_yaml(config_file)[["analysis"]]),
   tar_target(
     fulltext_list,
     lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
       list(assessment_id = a[["id"]], enabled = isTRUE(a[["full_text"]]))
     })
   ),
-  # PARKED (LLM-comparison approach): prompt files feed only the alignement targets.
-  # tar_target(
-  #   system_prompt_file,
-  #   "input/prompts/system_prompt.md",
-  #   format = "file"
-  # ),
-  # tar_target(
-  #   truth_wrapper_file,
-  #   "input/prompts/truth_wrapper.md",
-  #   format = "file"
-  # ),
-  # tar_target(
-  #   citing_wrapper_file,
-  #   "input/prompts/citing_wrapper.md",
-  #   format = "file"
-  # ),
+
+  # Phase 2 (LLM verification) config + prompt files — see the llm_verification_*
+  # targets below, after the NLI scoring chain they consume. Same fine-grained
+  # active/config split as nli_active/nli_config: changing which named config
+  # is active only invalidates llm_verification_config (and thus
+  # llm_verification_parquet), not unrelated targets.
+  tar_target(
+    llm_verification_active,
+    yaml::read_yaml(config_file)[["llm_verification"]][["active"]]
+  ),
+  tar_target(llm_verification_config, {
+    lv <- yaml::read_yaml(config_file)[["llm_verification"]]
+    lv[["configs"]][[lv[["active"]]]]
+  }),
+  tar_target(
+    llm_verification_system_prompt_file,
+    "input/prompts/llm_verification_system.md",
+    format = "file"
+  ),
+  tar_target(
+    llm_verification_user_prompt_file,
+    "input/prompts/llm_verification_user.md",
+    format = "file"
+  ),
 
   # Target 1: Download TTL files to output/LoD/ (cached on disk).
   # Required when sparql_url == "fuseki" (the TTL is POSTed into the local
@@ -307,67 +295,6 @@ list(
     format = "file"
   ),
 
-  # ==========================================================================
-  # PARKED — LLM-comparison approach (truth/citing prompts + ellmer/OpenRouter
-  # alignement scoring). Superseded by the NLI approach (nli_scores_parquet
-  # below). Source files (R/build_prompts_*.R, R/build_alignement_*.R,
-  # R/alignement_schema.R) and the input/prompts/*.md files are kept on disk so
-  # this chain can be un-parked by uncommenting these targets (plus the
-  # analysis_list, system_prompt_file, truth_wrapper_file, citing_wrapper_file
-  # targets above and the analysis: block in input/config.yaml).
-  # --------------------------------------------------------------------------
-  # # Target 2g: Truth prompts — one structured-JSON prompt per (assessment, KM, BM).
-  # tar_target(
-  #   prompts_truth_parquet,
-  #   build_prompts_truth_parquet(
-  #     assessment,
-  #     key_messages_parquet,
-  #     sections_parquet,
-  #     "output/prompts/truth"
-  #   ),
-  #   pattern = map(assessment, key_messages_parquet, sections_parquet),
-  #   format = "file"
-  # ),
-  #
-  # # Target 2h: Citing prompts — one structured-JSON prompt per citing work.
-  # tar_target(
-  #   prompts_citing_parquet,
-  #   build_prompts_citing_parquet(
-  #     assessment,
-  #     works_citing_parquet,
-  #     "output/prompts/citing"
-  #   ),
-  #   pattern = map(assessment, works_citing_parquet),
-  #   format = "file"
-  # ),
-  #
-  # # Target 2i: Alignement run specs — per-run config expanded into a list.
-  # tar_target(
-  #   alignement_scores_run_specs,
-  #   build_alignement_scores_run_specs(
-  #     analysis_list,
-  #     assessment,
-  #     prompts_truth_parquet,
-  #     prompts_citing_parquet
-  #   ),
-  #   iteration = "list"
-  # ),
-  #
-  # # Target 2j: Alignement scores — score citing prompts against truth prompts.
-  # tar_target(
-  #   alignement_scores_parquet,
-  #   build_alignement_scores_parquet(
-  #     alignement_scores_run_specs,
-  #     system_prompt_file,
-  #     truth_wrapper_file,
-  #     citing_wrapper_file,
-  #     output_root = "output/alignement_scores"
-  #   ),
-  #   pattern = map(alignement_scores_run_specs),
-  #   format = "file"
-  # ),
-  # ==========================================================================
-
   # Target 2g (NLI-ready): NLI-ready parquet — BM descriptions split into
   # sentences (falling back to bm_label when bm_description is absent), crossed
   # with the cleaned (premise = title + abstract) of each citing work.
@@ -382,7 +309,20 @@ list(
       "output/nli_ready"
     ),
     pattern = map(assessment, key_messages_parquet, works_citing_parquet),
-    format = "file"
+    format = "file",
+    # Already forks its own `workers` mclapply processes internally, each
+    # holding a work x sentence cross-join with full title+abstract text in
+    # memory. Dispatching the GA1 and IAS branches to separate crew workers
+    # ON TOP of that internal forking stacks two layers of parallelism on
+    # the most memory-hungry step in the pipeline -- observed to trigger OOM
+    # kills when it lands alongside nli_overview_data/llm_verification_parquet.
+    # deployment = "main" runs branches one at a time in the orchestrating
+    # process instead; NLI scoring's own crew concurrency (sized to the
+    # RunPod host count) is untouched. garbage_collection = TRUE forces a
+    # gc() after each branch so its memory is reclaimed before the next one
+    # starts, rather than accumulating across the sequential run.
+    deployment = "main",
+    garbage_collection = TRUE
   ),
 
   # Target 2g' (NLI-ready, SECOND approach): identical to nli_ready_parquet but
@@ -400,7 +340,13 @@ list(
       "output/nli_ready_evidence"
     ),
     pattern = map(assessment, key_messages_parquet, works_citing_parquet),
-    format = "file"
+    format = "file",
+    # Same reasoning as nli_ready_parquet just above: internally forks its
+    # own `workers` mclapply processes over a full-text cross-join, so
+    # running its GA1/IAS branches on separate crew workers too stacks two
+    # layers of parallelism on the pipeline's biggest in-memory data.
+    deployment = "main",
+    garbage_collection = TRUE
   ),
 
   # Target 2h (NLI): NLI alignement scores — classify each citing work against
@@ -529,7 +475,84 @@ list(
       nli_scores_by_claim_evidence
     ),
     pattern = map(assessment, works_citing_parquet),
+    format = "file",
+    # collect()s the entire per-assessment nli_scores_evidence table (every
+    # row, not just REFUTES/uncertain) to build the summary tables — for GA1
+    # alone that's ~1.9M rows. Running GA1's and IAS's branches on separate
+    # crew workers doubles that peak; deployment = "main" processes them one
+    # at a time instead. Contributed to an observed OOM alongside
+    # llm_verification_parquet/nli_ready_parquet running concurrently.
+    deployment = "main",
+    garbage_collection = TRUE
+  ),
+
+  # Target 2h4a: Per-claim candidate scope for Phase 2's `subset: "sm"`
+  # configs — see R/build_llm_candidate_scope_parquet.R and
+  # TD_NLI_LLM_two_phase.qmd. Chains refs_parquet's `sm` (sub-chapter id) ->
+  # seed doi -> seed OpenAlex work id -> citing work (via the existing
+  # snowball edges) to produce, per evidence-segmented claim, an allow-list
+  # of citing works actually tied to its own sub-chapter rather than the
+  # whole BM's. Reads only already-existing, unmodified targets
+  # (key_messages_parquet, refs_parquet, works_parquet, snowball_parquet,
+  # nli_ready_evidence_parquet) and makes no network/API calls of its own —
+  # adding it does not invalidate any of Phase 1's NLI chain or the
+  # download/snowball steps upstream of it. Always computed regardless of
+  # which llm_verification config is active; `subset: "all"` configs simply
+  # never read its output.
+  tar_target(
+    llm_candidate_scope_parquet,
+    build_llm_candidate_scope_parquet(
+      assessment,
+      key_messages_parquet,
+      refs_parquet,
+      works_parquet,
+      snowball_parquet,
+      nli_ready_evidence_parquet,
+      "output/llm_candidate_scope"
+    ),
+    pattern = map(
+      assessment, key_messages_parquet, refs_parquet, works_parquet,
+      snowball_parquet, nli_ready_evidence_parquet
+    ),
     format = "file"
+  ),
+
+  # Target 2h4b: Phase 2 — LLM verification of NLI-flagged pairs. Reviews
+  # only what NLI itself flagged as needing a second opinion (every REFUTES
+  # call, and every call NLI marked `uncertain`) — see
+  # R/build_llm_verification_parquet.R and TD_NLI_LLM_two_phase.qmd. One
+  # target call per assessment loops internally over its own candidates
+  # (ellmer's own parallel_chat_structured concurrency is enough here — no
+  # crew/file-lock dispatch needed, since OpenRouter is a shared endpoint,
+  # not a fixed host pool to load-balance across like the NLI RunPod pool).
+  # nli_scores_by_claim_evidence is passed only to establish the DAG
+  # dependency on Phase 1 scoring, same convention as nli_overview_data.
+  tar_target(
+    llm_verification_parquet,
+    build_llm_verification_parquet(
+      assessment,
+      nli_ready_evidence_parquet,
+      nli_active,
+      llm_verification_active,
+      llm_verification_config,
+      llm_verification_system_prompt_file,
+      llm_verification_user_prompt_file,
+      llm_candidate_scope_parquet,
+      nli_scores_by_claim_evidence
+    ),
+    pattern = map(assessment, nli_ready_evidence_parquet, llm_candidate_scope_parquet),
+    format = "file",
+    # select_llm_verification_candidates() collect()s both the routed NLI
+    # scores AND the full nli_ready_evidence premise table (title+abstract
+    # per work x claim) per assessment before joining in R — multi-GB for a
+    # single assessment. Running GA1's and IAS's branches on separate crew
+    # workers holds both in memory at once; deployment = "main" processes
+    # them one at a time. ellmer's own max_active concurrency (OpenRouter
+    # calls within one assessment) is unaffected. Contributed to an
+    # observed OOM alongside nli_overview_data/nli_ready_parquet running
+    # concurrently.
+    deployment = "main",
+    garbage_collection = TRUE
   ),
 
   # Target 2h3: NLI overview figures — label split (overall/per-KM/per-BM),

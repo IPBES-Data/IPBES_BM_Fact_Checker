@@ -29,7 +29,7 @@ nli:
   configs:
     deberta_zeroshot:
       scheme: https
-      host: ["tlv4z3u7ahgb0n-8080.proxy.runpod.net", "3gim3k42xceftd-8080.proxy.runpod.net", "9i0jcc7gafre28-8080.proxy.runpod.net", "pvuovaa9ocdfm7-8080.proxy.runpod.net", "xv5ccg37c1m06y-8080.proxy.runpod.net", "iivdnlg03ueqvj-8080.proxy.runpod.net", "12ri77rzg0msyp-8080.proxy.runpod.net"]
+      host: ["93k88733biunbu-8080.proxy.runpod.net", "8ynqkgqdxvkyn7-8080.proxy.runpod.net", "mrvuiqje7g8990-8080.proxy.runpod.net", "7y462hj3j0h5gj-8080.proxy.runpod.net", "709moshubtrr3d-8080.proxy.runpod.net", "5954f9w11l930f-8080.proxy.runpod.net", "gvbxu946iom8qi-8080.proxy.runpod.net"]
       port: null                              # null → scheme://host (RunPod proxy)
       auth_token_keyring: null                # optional keyring entry for a bearer token
       model: MoritzLaurer/deberta-v3-large-zeroshot-v2.0   # label only; actual model is read from /health and recorded as nli_model. Warns on mismatch.
@@ -65,30 +65,104 @@ nli:
     #   uncertain_threshold: 0.60
     #   nei_threshold: 0.90
 
-# PARKED — LLM-comparison approach (see parked targets in _targets.R).
-# analysis:
-#   # n_citing: number of citing works to score per (KM, BM). 0 = score all.
-#   - assessment_id: IAS
-#     runs:
-#       - run_id: IAS_km_ab
-#         km: ["KM-A1"]
-#         model: "openai/gpt-4o-mini"
-#         temperature: 0
-#         max_active: 8
-#         replicates: 1
-#         n_citing: 100
-#   - assessment_id: GA1
-#     runs:
-#       - run_id: GA1_km_ab
-#         km: ["A."]
-#         model: "openai/gpt-4o-mini"
-#         temperature: 0
-#         max_active: 8
-#         replicates: 1
-#         n_citing: 100
-#       # - run_id: GA1_km_a
-#       #   km: ["A."]
-#       #   model: "google/gemma-4-31b-it:free"
-#       #   temperature: 0.5
-#       #   max_active: 1
-#       #   replicates: 2
+# Phase 2 — LLM verification of NLI-flagged pairs (see TD_NLI_LLM_two_phase.qmd
+# and R/build_llm_verification_parquet.R). One ellmer::chat_openrouter() call
+# per (claim, work) pair via OpenRouter. Switch models by changing `active` to
+# a key under `configs`, same pattern as `nli.active` above.
+#
+# max_active and max_tokens are carried over unchanged from the sibling
+# Categorisation_Literature project's proven epistemology-classifier configs
+# (input/config.yaml's `epistemology:` block there), not re-derived from this
+# schema's smaller field count:
+#   - max_active: 24 concurrent OpenRouter requests was the value actually run
+#     at ~2,800-call scale there without hitting rate limits.
+#   - max_tokens: 8000 is a cap, not a reservation -- unused tokens are not
+#     billed. It matters on REASONING models (gpt-5, gemini-2.5-pro): thinking
+#     tokens are billed against the same budget as the visible JSON, and
+#     leaving it too low there truncated responses mid-JSON in the sibling
+#     project even though this schema's own visible output (four short
+#     scalar fields) needs far less than 8000 on a non-reasoning model like
+#     gpt-4o-mini. Lower it per-config if measured usage justifies it; there
+#     is no cost pressure to do so pre-emptively.
+#
+# nli_labels: which NLI label(s) this config routes -- null/omitted (any
+#   label, no filter) or one/more labels, e.g. [REFUTES], [REFUTES, SUPPORTS].
+# nli_certainty: which confidence band(s) -- null/omitted (any), or one/more
+#   of "certain" (uncertain == FALSE) / "uncertain" (uncertain == TRUE), e.g.
+#   certain, or [certain, uncertain] (equivalent to null, spelled out).
+# Combined with AND: nli_labels: [REFUTES], nli_certainty: certain routes
+# only high-confidence REFUTES pairs (measured: 26,861 of 3,547,231 scored
+# pairs, ~$4 at gpt-4o-mini rates) -- the current first step. Broader sets
+# (REFUTES at any confidence: 430,261 pairs; adding SUPPORTS/NOT_ENOUGH_INFO
+# when uncertain: 2,357,718 pairs) are left for later by widening either
+# field or defining additional configs. Output is hive-partitioned by
+# nli_route=<LABEL>-<certainty> too -- but that value is derived PER ROW
+# from its own actual label/uncertain outcome, not from these filter
+# fields, so a config listing several labels or certainties still splits
+# its output across one partition per outcome actually present (e.g.
+# nli_labels: [REFUTES, SUPPORTS] produces nli_route=REFUTES-certain AND
+# nli_route=SUPPORTS-certain as separate partitions, not one merged one).
+#
+# subset: picks which citing-work candidates each config reviews, on top of
+# the nli_labels/nli_certainty routing above:
+#   "all" -- every citing work found anywhere under the claim's BM
+#   "sm"  -- only citing works tracing back to a seed reference whose
+#            refs_parquet `sm` matches the claim's OWN evidence-reference
+#            sub-chapter(s), via the llm_candidate_scope_parquet target (see
+#            TD_NLI_LLM_two_phase.qmd). A claim with no evidence braces at
+#            all falls back to unrestricted rather than being excluded.
+#            Parked for now -- not the active cost lever while nli_labels/
+#            nli_certainty are doing the narrowing instead.
+llm_verification:
+  active: openrouter_cheap   # which entry under configs: is active
+
+  configs:
+    # Default: cheap, fast, non-reasoning, no candidate narrowing. First
+    # step: high-confidence REFUTES only.
+    openrouter_cheap:
+      model: "openai/gpt-4o-mini"
+      temperature: 0
+      max_tokens: 8000
+      max_active: 24
+      max_retries: 2
+      subset: all
+      nli_labels: [REFUTES]
+      nli_certainty: certain
+
+    # Same model/settings as openrouter_cheap, narrowed to the sm-derived
+    # candidate scope. Switch `active` to this to try the cost-reduced pass
+    # once the sm narrowing is un-parked.
+    openrouter_cheap_sm:
+      model: "openai/gpt-4o-mini"
+      temperature: 0
+      max_tokens: 8000
+      max_active: 24
+      max_retries: 2
+      subset: sm
+      nli_labels: [REFUTES]
+      nli_certainty: certain
+
+    # Step up when the cheap model is topic-matching rather than actually
+    # judging the claim (spot-check the `quote`/`explanation` columns).
+    openrouter_midtier:
+      model: "google/gemini-2.5-flash"
+      temperature: 0
+      max_tokens: 8000
+      max_active: 24
+      max_retries: 2
+      subset: all
+      nli_labels: [REFUTES]
+      nli_certainty: certain
+
+    # For a final, citable verification pass. Reasoning model -- see the
+    # max_tokens note above for why it still needs the full 8000 despite the
+    # small visible schema.
+    openrouter_toptier_gpt5:
+      model: "openai/gpt-5"
+      temperature: 0
+      max_tokens: 8000
+      max_active: 24
+      max_retries: 2
+      subset: all
+      nli_labels: [REFUTES]
+      nli_certainty: certain

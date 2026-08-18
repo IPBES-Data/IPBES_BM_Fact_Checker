@@ -15,17 +15,29 @@ format:
 
 # LLM Alignment Scoring Approach
 
+**Status: superseded, source removed.** This was the original LLM scoring
+design (truth/citing JSON documents, a −5..+5 `work_alignement` scale) and,
+at the time this document was first written, the intended shape of Phase 2 of
+the two-phase pipeline. Phase 2 was ultimately implemented differently — a
+flat SUPPORTS/REFUTES/NOT_ENOUGH_INFO label per pair, ported from a sibling
+project's LLM classifier rather than built out from this design — see
+[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) for what actually
+shipped. `R/build_prompts_truth_parquet.R`, `R/build_prompts_citing_parquet.R`,
+`R/build_alignement_scores_parquet.R`, `R/alignement_schema.R`, and
+`input/prompts/system_prompt.md`/`truth_wrapper.md`/`citing_wrapper.md` have
+all been deleted; the source-code links below are kept as plain paths (not
+links) for that reason. This document is kept as a record of the design that
+was considered and the reasoning for not building it — in particular the
+**Shortcomings** section below directly motivated the simpler design that
+replaced it.
+
 ## Overview
 
-This document describes the LLM-based alignment scoring approach: feeding structured
-representations of an IPBES Background Message (the *truth*) and a citing paper (the
-*candidate*) to an LLM via OpenRouter/ellmer, and receiving a structured judgement of
-whether the paper supports, contradicts, or is neutral toward the BM.
-
-This approach was the original pipeline (now parked — see CLAUDE.md) and is the
-intended **Phase 2** of the two-phase NLI → LLM pipeline described in
-[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html). In Phase 2, only the subset of
-papers that NLI flagged as uncertain or contradicting are sent here.
+This document describes the LLM-based alignment scoring approach that was
+considered: feeding structured representations of an IPBES Background
+Message (the *truth*) and a citing paper (the *candidate*) to an LLM via
+OpenRouter/ellmer, and receiving a structured judgement of whether the paper
+supports, contradicts, or is neutral toward the BM.
 
 ---
 
@@ -58,8 +70,8 @@ JSON suffix is the variable cost per candidate. Group calls by BM to exploit thi
 
 ## Truth Document Structure
 
-One document per `(assessment, KM, BM)`. Built by
-[R/build_prompts_truth_parquet.R](R/build_prompts_truth_parquet.R).
+One document per `(assessment, KM, BM)`. Was built by
+`R/build_prompts_truth_parquet.R` (removed).
 
 ```json
 {
@@ -97,8 +109,8 @@ to the underlying LOD and not a bug.
 
 ## Citing Document Structure
 
-One document per citing work. Built by
-[R/build_prompts_citing_parquet.R](R/build_prompts_citing_parquet.R).
+One document per citing work. Was built by
+`R/build_prompts_citing_parquet.R` (removed).
 
 ```json
 {
@@ -118,8 +130,8 @@ One document per citing work. Built by
 
 ## Output Schema
 
-Defined as an `ellmer` structured type in
-[R/alignement_schema.R](R/alignement_schema.R). One row per `(KM, BM, work_id)`.
+Was defined as an `ellmer` structured type in `R/alignement_schema.R`
+(removed). One row per `(KM, BM, work_id)`.
 
 | Field | Type | Description |
 |---|---|---|
@@ -145,9 +157,9 @@ Defined as an `ellmer` structured type in
 
 ---
 
-## System Prompt (current)
+## System Prompt (as designed)
 
-Located at [input/prompts/system_prompt.md](input/prompts/system_prompt.md). Key rules:
+Was located at `input/prompts/system_prompt.md` (removed). Key rules:
 
 - Use only the information in the two JSON documents — no outside knowledge
 - Do not invent quotations or claims not present in the abstract
@@ -156,10 +168,9 @@ Located at [input/prompts/system_prompt.md](input/prompts/system_prompt.md). Key
 
 ---
 
-## Implementation
+## Implementation (as designed, never fully built out)
 
-The scoring pipeline is in
-[R/build_alignement_scores_parquet.R](R/build_alignement_scores_parquet.R):
+The scoring pipeline lived in `R/build_alignement_scores_parquet.R` (removed):
 
 1. Load truth prompt for the `(assessment, KM, BM)`
 2. Load citing prompts for the same partition (optionally capped at `n_citing`)
@@ -168,8 +179,9 @@ The scoring pipeline is in
 5. Validate structured output; retry individually on failure
 6. Write to `output/alignement_scores/assessment=<id>/run_id=<id>/km=<km>/bm=<bm>/model=<model>/replicate=<n>/`
 
-Run configuration (model, KMs to score, `n_citing`, `replicates`, `temperature`) is
-defined per run in the `analysis:` block of `input/config.yaml`.
+Run configuration (model, KMs to score, `n_citing`, `replicates`, `temperature`) was
+defined per run in an `analysis:` block of `input/config.yaml`, since replaced by the
+simpler `llm_verification:` block the implemented Phase 2 actually uses.
 
 ---
 
@@ -210,26 +222,40 @@ scoring would improve precision but multiply the number of calls.
 
 ---
 
-## Relation to the Two-Phase Pipeline
+## Relation to the Two-Phase Pipeline (what actually shipped)
 
-In [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html), this LLM approach becomes
-**Phase 2** applied only to the NLI remainder:
+[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) kept the routing idea
+from this design — NLI `uncertain` and `REFUTES` cases go to the LLM,
+high-confidence `SUPPORTS`/`NOT_ENOUGH_INFO` do not — but implemented Phase 2
+independently rather than adapting this document's pipeline:
 
-- NLI `uncertain` cases → LLM for refinement + explanation
-- NLI `REFUTES` cases → LLM for confirmation + explanation (high stakes)
-- NLI high-confidence `SUPPORTS` → accepted without LLM review
+- The `work_alignement` −5..+5 scale was **dropped** in favour of a flat
+  `SUPPORTS`/`REFUTES`/`NOT_ENOUGH_INFO` `llm_label`, matching the NLI label
+  scheme it's reviewing rather than introducing a second, differently-shaped
+  scale to reconcile downstream.
+- The truth/citing structured-JSON document design (SubMessages, source
+  passages) was dropped for a single BM claim + one paper's title/abstract
+  per call — Phase 2 reviews already-routed `(claim, work)` pairs one at a
+  time, so there was no need for the fuller per-BM document this design used
+  to batch candidates.
+- The implementation itself was ported from a sibling project's LLM
+  classifier rather than built out from `R/build_alignement_scores_parquet.R`
+  — see [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html#ported-architecture)
+  for what was reused and why.
 
-The `work_alignement` −5 to +5 scale remains the target output format. The NLI
-label and confidence scores are added to the prompt as a prior (see
-[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) for the adapted prompt template).
+The **Shortcomings** above (cost at scale, no calibrated probability
+distribution, prompt sensitivity) still apply to any LLM-based approach, and
+are exactly why Phase 2 only reviews the NLI-flagged subset rather than
+attempting the full pair space this document's `n_citing`-capped design
+would have needed to bound cost on.
 
 ---
 
 ## See Also
 
 - [TD_BM_NLI_approach.qmd](TD_BM_NLI_approach.html) — Phase 1 design
-- [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) — two-phase pipeline design
+- [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) — the implemented two-phase pipeline
 - [TD_NLI_training.qmd](TD_NLI_training.html) — fine-tuning the NLI model
-- [R/build_alignement_scores_parquet.R](R/build_alignement_scores_parquet.R) — implementation
-- [R/alignement_schema.R](R/alignement_schema.R) — ellmer structured output schema
-- [input/prompts/](input/prompts/) — system prompt and wrapper files
+- `R/build_alignement_scores_parquet.R`, `R/alignement_schema.R`,
+  `input/prompts/system_prompt.md`/`truth_wrapper.md`/`citing_wrapper.md` —
+  all removed; this document is their only remaining record

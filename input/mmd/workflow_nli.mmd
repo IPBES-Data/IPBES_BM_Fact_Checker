@@ -97,6 +97,43 @@ flowchart TD
   %% Made invisible via linkStyle below so it doesn't add visual noise.
   data --> nli_assessment
 
+  subgraph llm_verification["Phase 2 — LLM Verification of Flagged Pairs"]
+    direction TB
+
+    %% Nodes
+    llm_scope@{ shape: rect, label: "Narrow citing works per claim via evidence sub-chapter refs<br/>{5.4.1} → refs sm → seed dois → snowball edges → citing works<br/>(subset: sm only — subset: all skips this)" }
+    llm_scope_db@{ shape: lin-cyl, label: "Candidate Scope DB<br/><tt>output/llm_candidate_scope/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    llm_route@{ shape: rect, label: "Route NLI-flagged pairs<br/>label == REFUTES | uncertain<br/>then intersect with candidate scope (subset: sm)" }
+    llm_server@{ shape: cloud, label: "OpenRouter LLM<br/>(gpt-4o-mini / gemini-2.5-flash / gpt-5)" }
+    llm_verify@{ shape: rect, label: "LLM verification call per (claim, work)<br/>NLI label + confidence as prior<br/>→ SUPPORTS / REFUTES / NEI + verbatim quote" }
+    llm_scores_db@{ shape: lin-cyl, label: "LLM Verification Scores DB<br/><tt>output/llm_verification/scores/llm_config=&lt;cfg&gt;/subset=&lt;subset&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+
+    %% Edges
+    llm_scope --> llm_scope_db
+    llm_scope_db --> llm_route
+    llm_route --> llm_verify
+    llm_server <--> llm_verify
+    llm_verify --> llm_scores_db
+  end
+
+  %% Active LLM verification profile (model + subset) feeds the verification call
+  llm_active@{ shape: rect, label: "Active LLM verification profile<br/><tt>llm_verification.active</tt>" }
+  config_file --> llm_active
+  llm_active --> llm_verify
+
+  %% Inputs to Phase 2: NLI's own flagged output, plus the data the scope
+  %% narrowing step needs (BM text for evidence tokens, refs for sm↔doi,
+  %% seed works for doi↔id, snowball for citing-work↔seed provenance)
+  nli_scores_db --> llm_route
+  key_messages_db --> llm_scope
+  refs_db --> llm_scope
+  works_db --> llm_scope
+  snowball --> llm_scope
+
+  %% Force `llm_verification` to sit below `nli_assessment` (subgraph-to-subgraph
+  %% edge). Made invisible via linkStyle below so it doesn't add visual noise.
+  nli_assessment --> llm_verification
+
   %% Styles
   classDef input_file  fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
   classDef config      fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
@@ -105,12 +142,15 @@ flowchart TD
   classDef helper      fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
   classDef disabled    fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px,stroke-dasharray:4 3;
 
-  %% Hide the data → nli_assessment subgraph-level constraint edge (last edge, index 26).
-  %% If you add or remove edges above, bump this index.
+  %% Hide the data → nli_assessment subgraph-level constraint edge (index 26).
+  %% Hide the nli_assessment → llm_verification one the same way (index 39,
+  %% last edge in the file). If you add or remove edges above either line,
+  %% recount and bump both indices.
   linkStyle 26 stroke:transparent,fill:none;
+  linkStyle 39 stroke:transparent,fill:none;
 
   class config_file input_file;
-  class assessment_list,assessment_id,nli_active config;
-  class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db,nli_scores_db database;
-  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,nli_scoring,nli_segment processing;
-  class sparql,zotero_api,openalex,nli_server helper;
+  class assessment_list,assessment_id,nli_active,llm_active config;
+  class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db,nli_scores_db,llm_scope_db,llm_scores_db database;
+  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,nli_scoring,nli_segment,llm_scope,llm_route,llm_verify processing;
+  class sparql,zotero_api,openalex,nli_server,llm_server helper;

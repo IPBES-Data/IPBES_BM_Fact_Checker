@@ -105,8 +105,8 @@ pipeline as it stands today.
 
 - [TD_targets](`r td_doc_link("TD_targets")`) — the `targets` pipeline architecture
 - [TD_BM_NLI_approach](`r td_doc_link("TD_BM_NLI_approach")`) — the active NLI scoring approach
-- [TD_LLM_approach](`r td_doc_link("TD_LLM_approach")`) — the parked LLM-comparison approach
-- [TD_NLI_LLM_two_phase](`r td_doc_link("TD_NLI_LLM_two_phase")`) — the two-phase NLI → LLM design (**planned, not yet implemented**)
+- [TD_LLM_approach](`r td_doc_link("TD_LLM_approach")`) — the earlier LLM-comparison approach (**superseded, source removed**)
+- [TD_NLI_LLM_two_phase](`r td_doc_link("TD_NLI_LLM_two_phase")`) — the two-phase NLI → LLM design (**implemented**; not yet wired into this report's tables/figures)
 - [TD_NLI_training](`r td_doc_link("TD_NLI_training")`) — NLI fine-tuning plan (**planned, not yet implemented**)
 - [TD_formatting](`r td_doc_link("TD_formatting")`) — archived report design system
 

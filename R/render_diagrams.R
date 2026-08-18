@@ -5,15 +5,11 @@ build_pipeline_mmd <- function(r_files, path = "input/mmd/pipeline_nli.mmd") {
     outdated = FALSE,
     legend = FALSE,
     exclude = c(
-      "mmd_workflow_lm",
       "mmd_workflow_nli",
-      "diagram_workflow_lm",
       "diagram_workflow_nli",
       "r_files",
       "pipeline_mmd",
-      "diagram_pipeline_nli",
-      "pipeline_lm",
-      "diagram_pipeline_lm"
+      "diagram_pipeline_nli"
     )
   )
 

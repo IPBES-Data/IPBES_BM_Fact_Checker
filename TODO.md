@@ -8,20 +8,18 @@
 
 - [ ] Gaps: Same pipeline, in CONF DATA (the one we have)
 - [ ] Fine-tune NLI model using BM citations as training data — see [TD_NLI_training.qmd](TD_NLI_training.qmd)
+- [ ] `score_one_claim()`'s resumability check (`dir.exists(claim_dir) && length(list.files(..., pattern = "\\.parquet$"))`) skips a claim entirely once it has ANY prior output, without checking whether the current candidate work-set for that claim still matches. If a later snowball re-run finds new citing works for an already-scored BM/claim (which happens naturally as new papers get published and cite the seed works), those new works are silently never NLI-scored — the claim is treated as done. Fixing this would mean diffing the claim's current work_id set against what's already scored and only dispatching the delta, rather than an all-or-nothing per-claim skip.
 
 ## Two-phase NLI → LLM pipeline
 
 See [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.qmd) for full design.
+Phase 2 (`llm_verification_parquet`) is implemented — remaining work is
+downstream consumption:
 
-- [ ] Implement `llm_scores_parquet` target (Phase 2)
-  - Route `REFUTES`, `uncertain`, and low-confidence `SUPPORTS` from `nli_scores_by_claim`/`nli_scores_by_claim_evidence` to LLM
-  - Use NLI label + confidence as prior in LLM prompt
-  - Structured output: `llm_label`, `llm_agrees`, `explanation`, `disagreement_reason`
-  - Model config in `input/config.yaml` (separate from NLI config)
-  - Cheaper model (`gpt-4o-mini`) for `uncertain`; stronger model (`gpt-4o`) for `REFUTES`
-- [ ] Merge phase: use `llm_label` where available, fall back to `nli_label`
+- [ ] Merge phase: use `llm_label` where available, fall back to `nli_label` — not yet wired into `nli_overview_data`/the report
 - [ ] Human expert review of all `REFUTES` calls
 - [ ] Use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
+- [ ] `input/mmd/workflow_nli.mmd` (hand-authored conceptual diagram) needs updating for the `nli_labels`/`nli_certainty`/`nli_route`/per-row-partitioning changes to the LLM verification stage — the diagram's Phase 2 subgraph still reflects the earlier, simpler `REFUTES | uncertain` routing shown when it was first added, not the configurable per-row routing implemented since. Deliberately deferred, not forgotten.
 
 ## Done
 
@@ -35,3 +33,4 @@ See [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.qmd) for full design.
 - [x] Wire the report (`IPBES_Fact_Checker.qmd`) and its rendered artifacts (BM explorer, overlap tables, TD design docs) into `_targets.R` (`report_fact_checker`, `qmd_fact_checker`, `td_doc_html`) so `tar_make()` builds and renders everything, and copy heavy standalone HTML into `IPBES_Fact_Checker_files/` so the report distributes as just that one file + one directory
 - [x] Render the `TD_*.md` design documents as standalone styled HTML pages (`TD_<name>.qmd` wrappers + `td_doc_html` target), linked from the report's Methods section
 - [x] Combine each `TD_<name>.qmd` wrapper and its `TD_<name>.md` prose back into one self-contained `.qmd` file per doc; drop the `td_doc_md` target and the `{{< include >}}` indirection accordingly
+- [x] Implement Phase 2 LLM verification (`llm_verification_parquet`, `R/build_llm_verification_parquet.R`): routes NLI's `REFUTES`/`uncertain` pairs to `openai/gpt-4o-mini` via OpenRouter, architecture ported from the sibling `Categorisation_Literature` project's LLM epistemology classifier (resumable per-pair cache, verbatim-quote verification, retry + fail-loud on unparseable responses). Removed the superseded truth/citing-document LLM design it replaced (`R/build_prompts_truth_parquet.R`, `R/build_prompts_citing_parquet.R`, `R/build_alignement_scores_parquet.R`, `R/alignement_schema.R`, `R/build_alignement_parquet.R`, the `analysis:` config block) — see [TD_LLM_approach.qmd](TD_LLM_approach.qmd) for that record

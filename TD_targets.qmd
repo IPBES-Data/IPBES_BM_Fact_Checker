@@ -31,7 +31,7 @@ The pipeline fetches IPBES assessment data from the [IPBES Linked Open Data (LOD
 
 The **active scoring approach** is NLI (`nli_scores_by_claim` / `nli_scores_by_claim_evidence`): each citing work is classified as SUPPORTS / REFUTES / NOT_ENOUGH_INFO against its partition's Background Message using a zero-shot DeBERTa NLI model served on RunPod (see [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/) and [TD_BM_NLI_approach.qmd](TD_BM_NLI_approach.html)).
 
-The **parked LLM-comparison approach** (`prompts_truth_parquet` → `prompts_citing_parquet` → `alignement_scores_parquet`) is not wired into `_targets.R` but its source files remain on disk.
+**Phase 2 LLM verification** (`llm_verification_parquet`) reviews whichever slice of NLI scores each config's `nli_labels`/`nli_certainty` fields select (currently `REFUTES` + `certain` on every shipped config — the confirmed first step, ~27k of 3.5M scored pairs), one `ellmer::chat_openrouter()` call per `(claim, work)` pair, optionally narrowed further by `llm_candidate_scope_parquet` (per-claim citing-work scoping via IPBES's own sub-chapter evidence references — parked for now) — see [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) for the design and [R/build_llm_verification_parquet.R](R/build_llm_verification_parquet.R)/[R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) for the implementation. The earlier truth/citing-document LLM design it replaced (`prompts_truth_parquet` → `prompts_citing_parquet` → `alignement_scores_parquet`) has been removed; see [TD_LLM_approach.qmd](TD_LLM_approach.html) for that record.
 
 Fuseki startup and shutdown are handled inside the parquet builders rather than as separate targets. When `sparql_url: fuseki`, each builder boots an in-memory Fuseki, POSTs the TTL into the named graph `http://ontology.ipbes.net/report/<id>` via the Graph Store Protocol, runs its query, and tears Fuseki down.
 
@@ -89,13 +89,36 @@ config_file (file)
         works_citing_parquet ───────────────────────────────┘
 ```
 
-**PARKED — LLM-comparison chain** (targets commented out in `_targets.R`):
+**Phase 2 — LLM verification + candidate scoping** (both active targets):
 
 ```
-# prompts_truth_parquet  ← Target 2h (parked)
-# prompts_citing_parquet ← Target 2i (parked)
-# alignement_scores_parquet ← Target 3 (parked)
+assessment ───────────────────────────────────┐
+key_messages_parquet ─────────────────────────┤
+refs_parquet ──────────────────────────────────┤→ llm_candidate_scope_parquet ← Target 2h4a
+works_parquet ─────────────────────────────────┤
+snowball_parquet ──────────────────────────────┤
+nli_ready_evidence_parquet ────────────────────┘
+
+nli_active ──────────────────────────────────┐
+assessment ──────────────────────────────────┤
+nli_ready_evidence_parquet ──────────────────┤
+llm_verification_active ─────────────────────┤→ llm_verification_parquet ← Target 2h4b
+llm_verification_config ─────────────────────┤
+llm_verification_system_prompt_file ─────────┤
+llm_verification_user_prompt_file ───────────┤
+llm_candidate_scope_parquet ──────────────────┤
+nli_scores_by_claim_evidence (DAG dep only) ──┘
+
+config_file ── llm_verification_active ── llm_verification_config   (mirrors nli_active → nli_config)
 ```
+
+`llm_candidate_scope_parquet` reads only already-existing, unmodified
+targets (`key_messages_parquet`, `refs_parquet`, `works_parquet`,
+`snowball_parquet`, plus `nli_ready_evidence_parquet` for a drift sanity
+check) and makes no network/API calls of its own — adding it does not
+invalidate Phase 1's NLI chain or any download/snowball step upstream of
+it. It always runs regardless of which `llm_verification` config is active;
+`subset: "all"` configs simply never read its output.
 
 ## Configuration (`input/config.yaml`)
 
@@ -135,6 +158,8 @@ cascades.
 | `assessments` | `assessments_list` → `assessment` | Assessment branches and their outputs |
 | `nli.active` | `nli_active` → `nli_config` | `nli_scores_parquet` only |
 | `nli.configs.<active>.*` | `nli_config` | `nli_scores_parquet` only |
+| `llm_verification.active` | `llm_verification_active` → `llm_verification_config` | `llm_verification_parquet` only |
+| `llm_verification.configs.<active>.*` (incl. `subset`) | `llm_verification_config` | `llm_verification_parquet` only |
 
 ## Target 0: `assessment` — Assessment Specs
 
@@ -383,35 +408,70 @@ arrow::open_dataset("output/nli_scores") |>
 | `confidence` | dbl | `max(p_supports, p_refutes, p_nei)` |
 | `uncertain` | lgl | `TRUE` if `confidence < uncertain_threshold` |
 
-## PARKED — LLM-comparison chain
+## Target 2h4a: `llm_candidate_scope_parquet` — per-claim candidate scoping
 
-The following targets are **commented out** in `_targets.R`. Source files remain on
-disk to allow un-parking. See [TD_LLM_approach.qmd](TD_LLM_approach.html) for design
-and [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) for the planned two-phase
-extension.
+**Source:** `R/build_llm_candidate_scope_parquet.R`
 
-### Target 2h: `prompts_truth_parquet` *(parked)*
+Chains `refs_parquet`'s `sm` (sub-chapter id) → seed doi → seed OpenAlex
+work id → citing work (via the existing snowball edges) to produce, per
+evidence-segmented claim, an allow-list of citing works tied to that
+claim's own evidentiary sub-chapter rather than the whole BM's — the input
+`llm_verification_parquet`'s `subset: "sm"` configs narrow against. Reads
+only already-existing, unmodified targets (`key_messages_parquet`,
+`refs_parquet`, `works_parquet`, `snowball_parquet`, and
+`nli_ready_evidence_parquet` for a drift sanity check) and makes no
+network/API calls of its own. Deliberately does **not** call
+`segment_bm_by_evidence()` (`R/build_nli_ready_evidence_parquet.R`) — even a
+behavior-preserving edit there would mark `nli_ready_evidence_parquet`, and
+the NLI scoring chain downstream of it, outdated, since `targets` hashes
+function bodies as dependencies. Instead duplicates the small amount of
+segmentation logic needed, verified byte-for-byte identical in behavior
+against the original. See
+[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html#candidate-scoping) for
+the full design, including the fallback and prefix-matching policy
+decisions. Writes to
+`output/llm_candidate_scope/assessment=<id>/km=<km>/bm=<bm>/`
+(`assessment, km, bm, claim_id, work_id` — one row per allowed pair).
+Always computed regardless of which `llm_verification` config is active.
 
-**Source:** `R/build_prompts_truth_parquet.R`
+## Target 2h4b: `llm_verification_parquet` — Phase 2 LLM verification
 
-Structured JSON truth document per `(assessment, KM, BM)` combining BM metadata,
-SubMessages, and source passages. Written to `output/prompts/truth/assessment=<id>/`.
+**Source:** `R/build_llm_verification_parquet.R`
 
-### Target 2i: `prompts_citing_parquet` *(parked)*
+One `ellmer::chat_openrouter()` call per `(claim, work)` pair selected by
+the active config's `nli_labels`/`nli_certainty` fields (see
+[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) for the full design
+and its ported-architecture rationale) — `select_llm_verification_candidates()`
+filters on `label %in% nli_labels` AND the certainty band, both optional
+(`NULL`/absent = no filter on that dimension); currently every shipped
+config sets `nli_labels: [REFUTES]`, `nli_certainty: certain`. Optionally
+narrowed further by `llm_candidate_scope_parquet` when the active config's
+`subset` is `"sm"` (parked for now). Resumable per-pair JSON cache under
+`output/llm_verification/raw/model=<model>/prompt=<hash>/`; final output —
+`nli_label`, `llm_label`, `llm_agrees`, a required verbatim `quote`
+(demoted to `NOT_ENOUGH_INFO` if fabricated), `explanation` — written to
+`output/llm_verification/scores/llm_config=<config>/subset=<subset>/assessment=<id>/nli_route=<route>/km=<km>/bm=<bm>/`.
+`nli_route` is `nli_route_label()`'s hive-safe encoding of **that row's
+own** NLI outcome (e.g. `REFUTES-certain`), computed per row from its
+actual label/uncertain values — not a single value per config call, so a
+config listing several labels/certainties (e.g. `nli_labels: [REFUTES, SUPPORTS]`)
+still writes one `nli_route=` subdirectory per distinct outcome actually
+present, never a merged string. `llm_config`/`subset`/`assessment` form the
+fixed prefix fully deleted and rewritten each call.
 
-**Source:** `R/build_prompts_citing_parquet.R`
-
-Structured JSON candidate prompt per citing work. Written to
-`output/prompts/citing/assessment=<id>/km=<km>/bm=<bm>/`.
-
-### Target 3: `alignement_scores_parquet` *(parked)*
-
-**Source:** `R/build_alignement_scores_parquet.R`
-
-Per run in `analysis.runs[]`, scores citing prompts against the matching truth prompt
-via OpenRouter / ellmer. Output schema: `work_alignement` (−5 to +5), `confidence`,
-`evidence`, `justification`. Written to
-`output/alignement_scores/assessment=<id>/run_id=<id>/km=<km>/bm=<bm>/model=<model>/replicate=<n>/`.
+Configured via `input/config.yaml`'s `llm_verification:` block — `active` +
+named `configs` (`model`, `temperature`, `max_tokens`, `max_active`,
+`max_retries`, `subset`, `nli_labels`, `nli_certainty` per config),
+mirroring `nli:`'s structure exactly. Four configs ship by default
+(`openrouter_cheap`/`openrouter_cheap_sm`/`openrouter_midtier`/`openrouter_toptier_gpt5`;
+only `openrouter_cheap_sm` uses `subset: "sm"`), the model tiers carried
+over from the sibling `Categorisation_Literature` project's `epistemology:`
+config, including its proven `max_active: 24`/`max_tokens: 8000` values.
+This replaced an earlier truth/citing-document LLM design
+(`prompts_truth_parquet` → `prompts_citing_parquet` →
+`alignement_scores_parquet`, driven by an `analysis:` config block) — all
+of that source has been removed; see [TD_LLM_approach.qmd](TD_LLM_approach.html)
+for why.
 
 ---
 
@@ -436,7 +496,6 @@ Not wired into the current `_targets.R`; kept for reference:
 
 - `R/build_fulltext.R` — legacy Grobid XML / PDF download for citing works
 - `R/resolve_citations.R` — replace `(Author, Year)` with OpenAlex W-IDs in section content
-- `R/build_alignement_parquet.R` — legacy single-pass LLM scoring; superseded by `build_alignement_scores_parquet.R`
 
 ## Notes
 
