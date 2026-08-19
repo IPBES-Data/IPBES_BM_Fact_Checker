@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-12">
+<meta name="dcterms.date" content="2026-08-18">
 
 <title>Two-Phase Alignment Scoring: NLI → LLM</title>
 <style>
@@ -2217,13 +2217,16 @@ vertical-align: -.125em;
   <li><a href="#phase-1-nli-all-pairs" id="toc-phase-1-nli-all-pairs" class="nav-link" data-scroll-target="#phase-1-nli-all-pairs">Phase 1 — NLI (all pairs)</a></li>
   <li><a href="#phase-2-llm-remainder-only" id="toc-phase-2-llm-remainder-only" class="nav-link" data-scroll-target="#phase-2-llm-remainder-only">Phase 2 — LLM (remainder only)</a>
   <ul>
+  <li><a href="#ported-architecture" id="toc-ported-architecture" class="nav-link" data-scroll-target="#ported-architecture">Ported architecture</a></li>
+  <li><a href="#candidate-scoping" id="toc-candidate-scoping" class="nav-link" data-scroll-target="#candidate-scoping">Candidate scoping (<code>subset</code>)</a></li>
   <li><a href="#prompt-design" id="toc-prompt-design" class="nav-link" data-scroll-target="#prompt-design">Prompt design</a></li>
   <li><a href="#model-choice" id="toc-model-choice" class="nav-link" data-scroll-target="#model-choice">Model choice</a></li>
   <li><a href="#output-schema" id="toc-output-schema" class="nav-link" data-scroll-target="#output-schema">Output schema</a></li>
-  <li><a href="#caching-prefix-caching" id="toc-caching-prefix-caching" class="nav-link" data-scroll-target="#caching-prefix-caching">Caching / prefix caching</a></li>
+  <li><a href="#caching" id="toc-caching" class="nav-link" data-scroll-target="#caching">Caching</a></li>
   </ul></li>
   <li><a href="#using-llm-output-as-training-data" id="toc-using-llm-output-as-training-data" class="nav-link" data-scroll-target="#using-llm-output-as-training-data">Using LLM Output as Training Data</a></li>
   <li><a href="#estimated-cost-phase-2-only" id="toc-estimated-cost-phase-2-only" class="nav-link" data-scroll-target="#estimated-cost-phase-2-only">Estimated Cost (Phase 2 only)</a></li>
+  <li><a href="#where-this-sits-in-the-pipeline" id="toc-where-this-sits-in-the-pipeline" class="nav-link" data-scroll-target="#where-this-sits-in-the-pipeline">Where this sits in the pipeline</a></li>
   <li><a href="#recommended-workflow" id="toc-recommended-workflow" class="nav-link" data-scroll-target="#recommended-workflow">Recommended Workflow</a></li>
   <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See Also</a></li>
   </ul></li>
@@ -2246,7 +2249,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 12, 2026</p>
+      <p class="date">August 18, 2026</p>
     </div>
   </div>
   
@@ -2260,7 +2263,7 @@ vertical-align: -.125em;
 
 <section id="two-phase-alignment-scoring-nli-llm" class="level1">
 <h1>Two-Phase Alignment Scoring: NLI → LLM</h1>
-<p><strong>Status: planned — not yet implemented.</strong> No Phase-2 LLM re-scoring target exists in <code>_targets.R</code> today; only the Phase-1 NLI scoring chain (<code>nli_scores_by_claim</code> / <code>nli_scores_by_claim_evidence</code>, see <a href="TD_BM_NLI_approach.html">TD_BM_NLI_approach</a>) is live. This document is a design proposal for the LLM refinement layer described below.</p>
+<p><strong>Status: implemented.</strong> The <code>llm_verification_parquet</code> target (<code>R/build_llm_verification_parquet.R</code>) runs Phase 2 below on top of the live Phase 1 NLI scoring chain (<code>nli_scores_by_claim_evidence</code>, see <a href="TD_BM_NLI_approach.html">TD_BM_NLI_approach</a>). Its architecture is ported from the sibling <code>Categorisation_Literature</code> project’s LLM epistemology classifier (<code>R/llm_epistemology.R</code> there) — see <a href="#ported-architecture">Ported architecture</a> below for what came across unchanged and what didn’t.</p>
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">Overview</h2>
 <p>A two-phase pipeline that combines the speed and scale of NLI with the nuance and explanatory power of an LLM. NLI handles all pairs cheaply; the LLM only processes the remainder where a richer judgement is needed.</p>
@@ -2269,73 +2272,71 @@ vertical-align: -.125em;
 </section>
 <section id="phase-1-nli-all-pairs" class="level2">
 <h2 class="anchored" data-anchor-id="phase-1-nli-all-pairs">Phase 1 — NLI (all pairs)</h2>
-<p>Run the existing <code>nli_scores_by_claim</code> / <code>nli_scores_by_claim_evidence</code> pipeline across all citing works × BMs. The NLI model returns <code>label</code> + <code>p_supports</code> / <code>p_refutes</code> / <code>p_nei</code> / <code>confidence</code> / <code>uncertain</code> for every pair.</p>
-<p><strong>Routing after Phase 1:</strong></p>
+<p>Run the existing <code>nli_scores_by_claim_evidence</code> pipeline across all citing works × BM claims. The NLI model returns <code>label</code> + <code>p_supports</code> / <code>p_refutes</code> / <code>p_nei</code> / <code>confidence</code> / <code>uncertain</code> for every pair.</p>
+<p><strong>Routing after Phase 1</strong> — originally a single fixed filter (<code>label == &quot;REFUTES&quot; | uncertain</code>), now <strong>per-config</strong>: each <code>llm_verification</code> config picks its own routed set via two fields, read by <code>select_llm_verification_candidates()</code> in <a href="R/build_llm_verification_parquet.R">R/build_llm_verification_parquet.R</a>:</p>
+<ul>
+<li><strong><code>nli_labels</code></strong> — <code>null</code>/omitted (any label, no filter) or one/more labels, e.g. <code>[REFUTES]</code>, <code>[REFUTES, SUPPORTS]</code>.</li>
+<li><strong><code>nli_certainty</code></strong> — <code>null</code>/omitted (any), or one/more of <code>&quot;certain&quot;</code> (<code>uncertain == FALSE</code>) / <code>&quot;uncertain&quot;</code> (<code>uncertain == TRUE</code>), e.g. <code>certain</code>, or <code>[certain, uncertain]</code> (equivalent to <code>null</code>, spelled out).</li>
+</ul>
+<p>The two combine with <strong>AND</strong> to select candidates. This can’t express the original rule’s mixed per-label logic (“REFUTES at any confidence, OR any other label if uncertain”) in a single config — that’s a deliberate trade for simplicity; define a separate config per bucket instead of widening one config to cover several.</p>
+<p>Listing several labels or certainties in one config does <strong>not</strong> merge their rows into one bucket, though: the hive partition each row lands in (<code>nli_route</code>, see <a href="#output-schema">Output schema</a>) is derived <strong>per row</strong> from that row’s own actual outcome, not from the filter that let it through. So <code>nli_labels: [REFUTES, SUPPORTS]</code>, <code>nli_certainty: certain</code> routes both labels in one config call, but still writes them to two separate partitions, <code>nli_route=REFUTES-certain</code> and <code>nli_route=SUPPORTS-certain</code> — never a merged <code>REFUTES_SUPPORTS-certain</code>.</p>
+<p>Measured against the real evidence-scored corpus (3,547,231 scored pairs, of which 2,357,718 / 66.5% would be routed under the original combined rule — far above the original design’s 10-20% estimate, the bulk being <code>NOT_ENOUGH_INFO</code> pairs NLI itself wasn’t confident about), the four buckets that combined rule was built from break down as:</p>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
 </colgroup>
 <thead>
 <tr class="header">
-<th>NLI result</th>
-<th>Action</th>
+<th><code>nli_labels</code></th>
+<th><code>nli_certainty</code></th>
+<th>pairs (of 3,547,231 scored)</th>
+<th>~cost (gpt-4o-mini)</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td><code>SUPPORTS</code>, <code>confidence ≥ threshold</code></td>
-<td>Accept as SUPPORTS — done</td>
+<td><code>REFUTES</code></td>
+<td><code>certain</code></td>
+<td>26,861</td>
+<td>~$4</td>
 </tr>
 <tr class="even">
-<td><code>REFUTES</code>, any confidence</td>
-<td>Always send to LLM — rare, high value</td>
+<td><code>SUPPORTS</code></td>
+<td><code>certain</code></td>
+<td>52,061</td>
+<td>~$7.75</td>
 </tr>
 <tr class="odd">
-<td><code>NOT_ENOUGH_INFO</code>, <code>p_nei &gt; nei_threshold</code></td>
-<td>Discard as not relevant — done</td>
+<td><code>REFUTES</code></td>
+<td><code>uncertain</code></td>
+<td>403,400</td>
+<td>~$60</td>
 </tr>
 <tr class="even">
-<td><code>uncertain = TRUE</code> (confidence &lt; threshold)</td>
-<td>Send to LLM for refinement</td>
+<td><code>SUPPORTS</code></td>
+<td><code>uncertain</code></td>
+<td>388,554</td>
+<td>~$58</td>
 </tr>
 <tr class="odd">
-<td><code>NOT_ENOUGH_INFO</code>, <code>uncertain = TRUE</code></td>
-<td>Send to LLM — model was unsure</td>
+<td><code>NOT_ENOUGH_INFO</code></td>
+<td><code>uncertain</code></td>
+<td>1,538,903</td>
+<td>~$231</td>
 </tr>
 </tbody>
 </table>
-<p>In practice the LLM input is roughly: - All <code>REFUTES</code> predictions - All <code>uncertain = TRUE</code> predictions - Optionally: <code>SUPPORTS</code> with low confidence (borderline cases)</p>
-<p>Expected volume reduction from your data (~330k total pairs): - ~10–20% sent to LLM after filtering → ~30–60k pairs</p>
+<p><strong><code>REFUTES</code> + <code>certain</code></strong> was the original first step; <strong><code>SUPPORTS</code> + <code>certain</code></strong> was added once the REFUTES funnel report (<code>IPBES_Label_Funnel_Report.qmd</code>) was generalized to a SUPPORTS counterpart — all four shipped configs now route both (<code>nli_labels: [REFUTES, SUPPORTS]</code>), 78,922 pairs combined, ~$11.75 at <code>gpt-4o-mini</code> rates. <code>SUPPORTS</code> is nearly 2x the size of <code>REFUTES</code> at the same certainty band (52,061 vs. 26,861) — GA1’s NLI scores skew SUPPORTS-heavy overall (37,371 of the 52,061 SUPPORTS-certain pairs are GA1’s), consistent with what the main report’s own “AI Based Interpretation” section already says about GA1’s KM D. The remaining two <code>uncertain</code> buckets and <code>NOT_ENOUGH_INFO</code> stay available to route later, by defining additional configs or widening these two fields on existing ones — nothing else in the pipeline needs to change to pick them up.</p>
 <hr>
 </section>
 <section id="phase-2-llm-remainder-only" class="level2">
 <h2 class="anchored" data-anchor-id="phase-2-llm-remainder-only">Phase 2 — LLM (remainder only)</h2>
-<section id="prompt-design" class="level3">
-<h3 class="anchored" data-anchor-id="prompt-design">Prompt design</h3>
-<p>Feed the LLM the abstract, the BM text, and the NLI result as a prior:</p>
-<pre><code>You are reviewing whether a scientific paper supports or contradicts an IPBES
-Background Message.
-
-Background Message:
-{bm_description}
-
-Paper title and abstract:
-{title}. {abstract}
-
-A zero-shot NLI model classified this pair as &quot;{nli_label}&quot; with confidence
-{confidence:.2f} (p_supports={p_supports:.2f}, p_refutes={p_refutes:.2f},
-p_nei={p_nei:.2f}).
-
-Tasks:
-1. Do you agree with the NLI classification? Answer: SUPPORTS / REFUTES /
-   NOT_ENOUGH_INFO.
-2. Explain in 2–3 sentences why, referencing specific content from the abstract.
-3. If you disagree with the NLI label, explain what likely caused the error.</code></pre>
-<p>The NLI result as a prior serves two purposes: - It focuses the LLM on the borderline or surprising cases - It gives the LLM a signal to agree with, refine, or override — reducing the chance of the LLM ignoring a genuine connection</p>
-</section>
-<section id="model-choice" class="level3">
-<h3 class="anchored" data-anchor-id="model-choice">Model choice</h3>
+<section id="ported-architecture" class="level3">
+<h3 class="anchored" data-anchor-id="ported-architecture">Ported architecture</h3>
+<p>Rather than build Phase 2 from scratch, its plumbing is ported from <code>Categorisation_Literature/R/llm_epistemology.R</code> (an LLM classifier scoring papers against epistemological traditions in a sibling project), because that code already solves the reliability problems this task hits:</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 50%">
@@ -2343,52 +2344,204 @@ Tasks:
 </colgroup>
 <thead>
 <tr class="header">
+<th>Ported as-is</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Resumable per-item JSON cache, keyed on a hash of <code>(system prompt, user template, output schema)</code></td>
+<td>A crashed or interrupted run does not restart from zero, and editing either prompt or the schema correctly starts a fresh cache namespace instead of silently reusing stale answers</td>
+</tr>
+<tr class="even">
+<td><strong>Verbatim-quote verification</strong> (<code>quote_is_verbatim()</code>)</td>
+<td>The LLM is required to cite a quote supporting its verdict; this checks the quote actually occurs (normalised: lowercased, punctuation-stripped, whitespace-collapsed, ellipsis-split into fragments) in the premise text it was shown, and demotes the verdict to <code>NOT_ENOUGH_INFO</code> if not. Measured on the sibling project’s corpus: 2-4% of otherwise well-formed responses cited a fabricated or reconstructed quote</td>
+</tr>
+<tr class="odd">
+<td>Required-boolean evidence gate (<code>sufficient_evidence</code>) rather than a nullable score</td>
+<td>Sidesteps inconsistent JSON-schema <code>null</code> support across OpenRouter models; abstention is a first-class, always-present field rather than an edge case</td>
+</tr>
+<tr class="even">
+<td>Fail-loud on structured-output non-compliance (<code>frac &gt;= 0.5</code> → <code>stop()</code>, else <code>warning()</code>)</td>
+<td>If a model ignores JSON-schema mode, every call fails to parse and the run would otherwise look like 100% honest <code>NOT_ENOUGH_INFO</code> rather than a broken pipeline</td>
+</tr>
+<tr class="odd">
+<td>Retry pass for failed calls</td>
+<td>Provider errors (empty body, <code>finish_reason: error</code>) are usually transient; a blind retry recovers most of them without cost beyond the retry itself</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What didn’t port as-is:</strong> the sibling project’s schema scores an array of <em>N</em> traditions per paper in one call (<code>assessments = type_array(...)</code>), which needs unwrapping a list-column ellmer returns for nested types (a genuine footgun there — see that project’s <code>normalise_assessment()</code> comment). Phase 2 here scores exactly one <code>(claim, work)</code> pair per call, so <code>llm_verification_output_type()</code> is a flat object with no nested field, and <code>normalise_llm_verification()</code> has no list-column to unwrap. Partitioning combines both projects’ conventions: <code>llm_config=&lt;name&gt;</code> (the sibling’s per-config separation, so switching <code>active</code> or comparing two named configs never overwrites either one’s scored rows) nested with <code>assessment/km/bm</code> (this project’s own convention, matching <code>nli_scores_evidence</code>).</p>
+<p>One more difference worth naming: Phase 1 (<code>score_one_claim.R</code>) dispatches across a <strong>fixed pool of RunPod hosts</strong> via file locks, because each host is a dedicated resource to load-balance across. Phase 2 talks to OpenRouter, a shared multi-tenant endpoint — there is nothing to load-balance, so <code>ellmer::parallel_chat_structured()</code>’s own <code>max_active</code> concurrency is sufficient and no crew/file-lock machinery was needed. One target call per assessment loops over its own routed candidates internally.</p>
+</section>
+<section id="candidate-scoping" class="level3">
+<h3 class="anchored" data-anchor-id="candidate-scoping">Candidate scoping (<code>subset</code>)</h3>
+<p><strong>Status: parked.</strong> This section describes a second, independent narrowing lever, orthogonal to the <code>nli_labels</code>/<code>nli_certainty</code> routing above — still implemented and tested, but not the active cost lever right now (the routing fields are doing that job instead, via <code>REFUTES</code> + <code>certain</code>). <code>subset: &quot;sm&quot;</code> remains available on any config whenever it’s worth revisiting.</p>
+<p>The original combined routing rule (<code>REFUTES</code> at any confidence, OR any label if uncertain) alone left 66.5% of all NLI-scored pairs in scope for Phase 2 — far more than practical to run for real. This lever addresses that structurally rather than by tightening thresholds: <strong>IPBES’s own evidence-reference structure</strong>. Each evidence-segmented claim ends with a brace group like <code>{5.4.1, 5.4.2}</code> naming the specific sub-chapter(s) it draws on, and <code>refs_parquet</code>’s <code>sm</code> column already links specific references (dois) to those same sub-chapter identifiers. Chaining <code>sm -&gt; seed doi -&gt; seed OpenAlex work id -&gt; citing work</code> (via the existing snowball edges) gives, per claim, an allow-list of citing works actually tied to <em>that claim’s own</em> evidentiary basis, rather than every citing work found anywhere under the whole BM.</p>
+<p>This is implemented as its own target, <code>llm_candidate_scope_parquet</code> (<code>R/build_llm_candidate_scope_parquet.R</code>), feeding into <code>llm_verification_parquet</code> — not folded into the LLM-stage builder itself, so the scoping logic and its target-level identity stay separately inspectable and independently cacheable. It reads only already-existing, unmodified targets (<code>key_messages_parquet</code>, <code>refs_parquet</code>, <code>works_parquet</code>, the snowball edges dataset, and — for a drift sanity check only — <code>nli_ready_evidence_parquet</code>) and writes to its own output root. Nothing about it edits <code>download_works.R</code>, <code>build_snowball_parquet.R</code>, <code>build_works_citing_parquet.R</code>, <code>build_nli_ready_evidence_parquet.R</code>, or the NLI scoring chain — <code>targets</code> invalidation only flows forward from something that actually changes, and adding a new <em>consumer</em> of an existing target’s output does not retroactively invalidate it.</p>
+<p>One deliberate non-reuse: <code>extract_claim_evidence_tokens()</code> in the new file duplicates the sentence-splitting/terminal-brace/buffer logic from <code>segment_bm_by_evidence()</code> (<code>R/build_nli_ready_evidence_parquet.R</code>) rather than calling it, so that the two stay behaviorally identical (verified directly: run against the real BM text, both functions produce exactly the same segment count and boundaries in every test case, including a segment with multiple inline brace groups). Calling the original instead would work too — until someone edits it: <code>targets</code> hashes function <em>bodies</em> as dependencies, so even a behavior-preserving change there would mark <code>nli_ready_evidence_parquet</code>, and everything downstream of it including the NLI scoring chain, outdated. <code>build_llm_candidate_scope_parquet()</code> also cross-checks its own derived <code>claim_id</code>s against <code>nli_ready_evidence_parquet</code>’s real ones at build time and <code>warning()</code>s (not <code>stop()</code>s) on any mismatch, so a future edit to either segmentation implementation that silently drifts out of sync gets caught rather than silently mis-attributing evidence.</p>
+<p>Exposed per <code>llm_verification</code> config via <code>subset:</code>:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th><code>subset</code></th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>&quot;all&quot;</code></td>
+<td>Every citing work found under the claim’s BM (today’s default; the 66.5%/2.36M figure above)</td>
+</tr>
+<tr class="even">
+<td><code>&quot;sm&quot;</code></td>
+<td>Only citing works tracing back to a seed reference whose <code>sm</code> matches the claim’s own evidence sub-chapter(s)</td>
+</tr>
+</tbody>
+</table>
+<p>Two policy decisions, made deliberately rather than defaulted into:</p>
+<ul>
+<li><strong>A claim with no evidence braces at all falls back to unrestricted</strong> (keeps every one of its routed candidates) rather than being excluded — no claim is ever silently dropped from Phase 2 review just because it lacks a brace. The same fallback applies if the whole scope target found nothing to write for an assessment (e.g. an unexpected data gap): absence of scope data is never read as “review nothing.”</li>
+<li><strong>Sub-chapter token matching is prefix-based, not exact</strong>, after normalizing (lowercase; strip <code>box</code>/<code>table</code>/<code>spm table</code> prefixes; strip <code>(...)</code> parenthetical annotations; split on comma/semicolon). The <code>sm</code> field is messy free text (311 distinct values observed: comma- <em>and</em> semicolon-separated lists, inconsistent <code>box</code>/<code>Box</code> casing, trailing letter suffixes like <code>.a</code>, occasional malformed strings with unbalanced parentheses). Prefix matching handles the common cases cleanly — <code>&quot;5.4.2.1&quot;</code> matches <code>&quot;5.4.2.1.a&quot;</code>, a bare <code>&quot;4&quot;</code> matches any <code>&quot;4.x.y&quot;</code> — but is deliberately not exhaustive; the malformed cases are an accepted, disclosed gap. <code>subset: &quot;all&quot;</code> remains available as the exhaustive fallback whenever <code>&quot;sm&quot;</code>’s narrower recall is a concern for a given analysis.</li>
+</ul>
+</section>
+<section id="prompt-design" class="level3">
+<h3 class="anchored" data-anchor-id="prompt-design">Prompt design</h3>
+<p>Two files, tracked as <code>format = &quot;file&quot;</code> targets so editing either invalidates the cache namespace and the target:</p>
+<ul>
+<li><a href="input/prompts/llm_verification_system.md">input/prompts/llm_verification_system.md</a> — role, the “judge only the text you’re given” rule, the evidence/quote requirement, and the exact output contract.</li>
+<li><a href="input/prompts/llm_verification_user.md">input/prompts/llm_verification_user.md</a> — per-pair template with <code>{BM_TEXT}</code>, <code>{TITLE_ABSTRACT}</code>, <code>{NLI_LABEL}</code>, <code>{NLI_CONFIDENCE}</code>, <code>{P_SUPPORTS}</code>, <code>{P_REFUTES}</code>, <code>{P_NEI}</code> placeholders.</li>
+</ul>
+<p>The NLI result is passed as a prior for two reasons: it focuses the LLM on the borderline or surprising case at hand, and it gives the LLM something concrete to agree with, refine, or override, rather than scoring cold.</p>
+</section>
+<section id="model-choice" class="level3">
+<h3 class="anchored" data-anchor-id="model-choice">Model choice</h3>
+<p><code>input/config.yaml</code>’s <code>llm_verification:</code> block follows the same <code>active</code> + named <code>configs</code> structure as <code>nli:</code> above — switch tiers by changing <code>active</code> to a different key, without touching any other config:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">llm_verification</span><span class="kw">:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">active</span><span class="kw">:</span><span class="at"> openrouter_cheap</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">configs</span><span class="kw">:</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_cheap</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;openai/gpt-4o-mini&quot;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_cheap_sm</span><span class="kw">:</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;openai/gpt-4o-mini&quot;</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> sm</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_midtier</span><span class="kw">:</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;google/gemini-2.5-flash&quot;</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_toptier_gpt5</span><span class="kw">:</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;openai/gpt-5&quot;</span></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The model tiers are carried over directly from the sibling <code>Categorisation_Literature</code> project’s <code>epistemology:</code> config block (same model choices, same <code>max_active</code>/<code>max_tokens</code> values — see below for why those two specifically were kept rather than re-derived). <code>subset</code> and <code>nli_labels</code>/<code>nli_certainty</code> are new here — see <a href="#candidate-scoping">Candidate scoping</a> above and <a href="#phase-1-nli-all-pairs">Routing after Phase 1</a> for what they do; all four configs currently route both <code>REFUTES</code> + <code>certain</code> (the original first step) and <code>SUPPORTS</code> + <code>certain</code> (added once the REFUTES funnel report was generalized to a SUPPORTS counterpart — see <code>IPBES_Label_Funnel_Report.qmd</code>), and differ only in model/subset.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Config</th>
 <th>Model</th>
+<th>Subset</th>
 <th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
+<td><code>openrouter_cheap</code></td>
 <td><code>openai/gpt-4o-mini</code></td>
-<td>Good balance of quality and cost; recommended first choice</td>
+<td><code>all</code></td>
+<td>Default; good balance of quality and cost for a first pass</td>
 </tr>
 <tr class="even">
-<td><code>google/gemma-3-27b-it</code></td>
-<td>Free tier on OpenRouter; slower, weaker explanations</td>
+<td><code>openrouter_cheap_sm</code></td>
+<td><code>openai/gpt-4o-mini</code></td>
+<td><code>sm</code></td>
+<td>Same model, narrowed to the sm-derived candidate scope — parked (see <a href="#candidate-scoping">Candidate scoping</a>)</td>
 </tr>
 <tr class="odd">
-<td><code>openai/gpt-4o</code></td>
-<td>Best quality; use for <code>REFUTES</code> cases only (high stakes)</td>
+<td><code>openrouter_midtier</code></td>
+<td><code>google/gemini-2.5-flash</code></td>
+<td><code>all</code></td>
+<td>Step up when the cheap tier is topic-matching rather than judging the claim — spot-check <code>quote</code>/<code>explanation</code></td>
 </tr>
 <tr class="even">
-<td><code>anthropic/claude-haiku-4-5</code></td>
-<td>Fast and cheap; strong at structured extraction</td>
+<td><code>openrouter_toptier_gpt5</code></td>
+<td><code>openai/gpt-5</code></td>
+<td><code>all</code></td>
+<td>For a final, citable verification pass; a reasoning model</td>
 </tr>
 </tbody>
 </table>
-<p>Use a cheaper model for <code>uncertain</code> cases and a stronger model for <code>REFUTES</code>.</p>
+<p><strong><code>max_active: 24</code></strong> is the concurrency the sibling project actually ran at ~2,800-call scale against OpenRouter without hitting rate limits — kept as the proven value rather than a smaller guess.</p>
+<p><strong><code>max_tokens: 8000</code></strong> is a cap, not a reservation (unused tokens are not billed). It looks oversized for this schema’s four short scalar fields on a non-reasoning model, but the reasoning tiers (<code>gpt-5</code> here, <code>gemini-2.5-pro</code> as a possible fourth) spend hidden thinking tokens against the same budget before any visible JSON appears — too low a cap truncated responses mid-JSON in the sibling project even on a <em>larger</em> per-tradition-array schema. Lower it per-config later only if measured usage on a specific non-reasoning model justifies it; there’s no cost pressure to pre-tune it.</p>
+<p><code>max_tokens</code> must be set explicitly in every config — left to the provider default, long responses can truncate mid-JSON on some models (the exact failure mode the sibling project’s epistemology classifier hit on <code>google/gemini-2.5-flash</code> at <code>max_tokens: 4000</code>, which is why that project settled on 8000 for every tier).</p>
 </section>
 <section id="output-schema" class="level3">
 <h3 class="anchored" data-anchor-id="output-schema">Output schema</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># One row per LLM-reviewed pair (ellmer structured output)</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">tibble</span>(</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_config       =</span> <span class="fu">character</span>(),   <span class="co"># NLI profile used in Phase 1</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_model        =</span> <span class="fu">character</span>(),   <span class="co"># model used for Phase 2</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">assessment       =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">km               =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">bm               =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">work_id          =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_label        =</span> <span class="fu">character</span>(),   <span class="co"># original NLI label</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_confidence   =</span> <span class="fu">double</span>(),      <span class="co"># original NLI confidence</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_label        =</span> <span class="fu">character</span>(),   <span class="co"># SUPPORTS / REFUTES / NOT_ENOUGH_INFO</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_agrees       =</span> <span class="fu">logical</span>(),     <span class="co"># TRUE if llm_label == nli_label</span></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">explanation      =</span> <span class="fu">character</span>(),   <span class="co"># 2–3 sentence free-text explanation</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">disagreement_reason =</span> <span class="fu">character</span>() <span class="co"># filled when llm_agrees == FALSE</span></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>One row per LLM-reviewed pair, written to <code>output/llm_verification/scores/llm_config=&lt;config&gt;/subset=&lt;subset&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</code>. <code>&lt;route&gt;</code> is <code>nli_route_label()</code>’s hive-safe encoding of <strong>that row’s own</strong> NLI outcome, e.g. <code>REFUTES-certain</code> or <code>SUPPORTS-uncertain</code> — not a single value per config call. So one <code>build_llm_verification_parquet()</code> call can write several <code>nli_route=</code> subdirectories under the same <code>llm_config/subset/assessment</code> (one per distinct label/certainty combination actually present among its routed candidates), and any two configs that happen to route the same outcome land on the same <code>nli_route</code> value regardless of their own names. <code>llm_config</code>/<code>subset</code>/<code>assessment</code> are the fixed prefix fully deleted and rewritten on each call; <code>nli_route</code>/<code>km</code>/<code>bm</code> vary within it based on the data:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">tibble</span>(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_config          =</span> <span class="fu">character</span>(), <span class="co"># selected input/config.yaml llm_verification.configs entry name</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">subset              =</span> <span class="fu">character</span>(), <span class="co"># &quot;all&quot; or &quot;sm&quot; -- which candidate scoping this config used</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_config          =</span> <span class="fu">character</span>(), <span class="co"># NLI profile used in Phase 1</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">assessment          =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_route           =</span> <span class="fu">character</span>(), <span class="co"># this ROW&#39;s own outcome, e.g. &quot;REFUTES-certain&quot; -- see nli_route_label()</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">km                  =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">bm                  =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">claim_id            =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">work_id             =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">claim               =</span> <span class="fu">character</span>(), <span class="co"># the BM claim text, carried through for convenience</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_label           =</span> <span class="fu">character</span>(), <span class="co"># original NLI label</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">uncertain           =</span> <span class="fu">logical</span>(),   <span class="co"># NLI&#39;s own confidence &lt; uncertain_threshold flag</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_confidence      =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_supports          =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_refutes           =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_nei               =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_model           =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_label           =</span> <span class="fu">character</span>(),   <span class="co"># SUPPORTS / REFUTES / NOT_ENOUGH_INFO</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_agrees          =</span> <span class="fu">logical</span>(),     <span class="co"># TRUE if llm_label == nli_label</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>  <span class="at">sufficient_evidence =</span> <span class="fu">logical</span>(),     <span class="co"># FALSE forces llm_label = NOT_ENOUGH_INFO</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>  <span class="at">quote               =</span> <span class="fu">character</span>(),   <span class="co"># verbatim quote backing llm_label</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>  <span class="at">quote_verbatim      =</span> <span class="fu">logical</span>(),     <span class="co"># NA if not applicable, FALSE if fabricated (then demoted)</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>  <span class="at">explanation         =</span> <span class="fu">character</span>()    <span class="co"># 1-2 sentence free-text explanation</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>quote_verbatim = FALSE</code> rows have already been demoted to <code>llm_label = &quot;NOT_ENOUGH_INFO&quot;</code> / <code>sufficient_evidence = FALSE</code> by the time they reach this table — the column is kept so a reader can distinguish “the LLM abstained” from “the LLM claimed evidence that wasn’t real,” which is a meaningfully different failure to audit.</p>
 </section>
-<section id="caching-prefix-caching" class="level3">
-<h3 class="anchored" data-anchor-id="caching-prefix-caching">Caching / prefix caching</h3>
-<p>Group calls by BM — send all papers for the same BM in sequence so the provider’s automatic prefix cache kicks in on the shared <code>(system + BM text)</code> prefix. This matches the parked LLM-comparison chain pattern in <a href="R/build_alignement_scores_parquet.R">R/build_alignement_scores_parquet.R</a>.</p>
+<section id="caching" class="level3">
+<h3 class="anchored" data-anchor-id="caching">Caching</h3>
+<p>Two layers, doing different jobs:</p>
+<ul>
+<li><strong>Resumable per-pair cache</strong> (the one that matters for cost and crash safety): one JSON file per <code>(claim_id, work_id)</code> pair under <code>output/llm_verification/raw/model=&lt;model&gt;/prompt=&lt;hash&gt;/</code>, where the hash covers the system prompt, the user template, <strong>and</strong> the output schema (adding a field to the schema silently reusing cached responses that cannot contain it was a real bug in the sibling project before the schema was added to the hash — ported here from the start instead of rediscovered).</li>
+<li><strong>Provider-side automatic prefix caching</strong> (OpenAI, Google) — a side benefit of prompt ordering (system → fixed instructions → variable per-pair content), not something explicitly engineered here since Phase 2 has no long shared prefix across pairs the way Phase 1’s truth-document design once did (see <a href="TD_LLM_approach.html">TD_LLM_approach.qmd</a> for that now-removed design).</li>
+</ul>
 <hr>
 </section>
 </section>
@@ -2400,19 +2553,19 @@ Tasks:
 <li><code>llm_agrees = FALSE</code> → NLI error with explanation; gold-standard correction</li>
 <li><code>REFUTES</code> cases reviewed by LLM → rare but valuable negative examples</li>
 </ul>
-<p>Running Phase 2 on one assessment effectively generates a domain-specific labeled dataset for free as a side effect of the inference pipeline.</p>
+<p>This dataset now exists as a side effect of running <code>llm_verification_parquet</code> — no separate collection step is needed to start using it.</p>
 <hr>
 </section>
 <section id="estimated-cost-phase-2-only" class="level2">
 <h2 class="anchored" data-anchor-id="estimated-cost-phase-2-only">Estimated Cost (Phase 2 only)</h2>
-<p>Assuming ~50k pairs sent to LLM, average prompt ~400 tokens, completion ~150 tokens:</p>
+<p>Per-1k-pair unit costs, average prompt ~400 tokens, completion ~150 tokens:</p>
 <table class="caption-top table">
 <thead>
 <tr class="header">
 <th>Model</th>
 <th>Input cost</th>
 <th>Output cost</th>
-<th>Total (~50k pairs)</th>
+<th>Total per 1k pairs</th>
 </tr>
 </thead>
 <tbody>
@@ -2420,35 +2573,108 @@ Tasks:
 <td><code>gpt-4o-mini</code></td>
 <td>$0.15/1M</td>
 <td>$0.60/1M</td>
-<td>~$8</td>
+<td>~$0.15</td>
 </tr>
 <tr class="even">
 <td><code>gpt-4o</code></td>
 <td>$2.50/1M</td>
 <td>$10/1M</td>
-<td>~$125</td>
+<td>~$2.50</td>
 </tr>
 <tr class="odd">
 <td><code>claude-haiku-4-5</code></td>
 <td>$0.80/1M</td>
 <td>$4/1M</td>
-<td>~$26</td>
+<td>~$0.52</td>
 </tr>
 </tbody>
 </table>
-<p><code>gpt-4o-mini</code> is the practical default. Reserve <code>gpt-4o</code> for <code>REFUTES</code> cases only.</p>
+<p>Scaled to each <code>nli_labels</code>/<code>nli_certainty</code> bucket, measured on the real evidence-scored corpus (3,547,231 pairs total):</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Bucket</th>
+<th>Pairs</th>
+<th><code>gpt-4o-mini</code></th>
+<th><code>gpt-5</code>-tier</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>REFUTES</code> + <code>certain</code> (original first step)</td>
+<td>26,861</td>
+<td>~$4</td>
+<td>~$65</td>
+</tr>
+<tr class="even">
+<td><code>SUPPORTS</code> + <code>certain</code> (added alongside the SUPPORTS funnel report)</td>
+<td>52,061</td>
+<td>~$7.75</td>
+<td>~$126</td>
+</tr>
+<tr class="odd">
+<td><strong><code>REFUTES</code> + <code>SUPPORTS</code>, <code>certain</code> (current default, all 4 configs)</strong></td>
+<td><strong>78,922</strong></td>
+<td><strong>~$11.75</strong></td>
+<td><strong>~$191</strong></td>
+</tr>
+<tr class="even">
+<td><code>REFUTES</code> + <code>uncertain</code></td>
+<td>403,400</td>
+<td>~$60</td>
+<td>~$960</td>
+</tr>
+<tr class="odd">
+<td><code>SUPPORTS</code> + <code>uncertain</code></td>
+<td>388,554</td>
+<td>~$58</td>
+<td>~$925</td>
+</tr>
+<tr class="even">
+<td><code>NOT_ENOUGH_INFO</code> + <code>uncertain</code></td>
+<td>1,538,903</td>
+<td>~$231</td>
+<td>~$3,660</td>
+</tr>
+<tr class="odd">
+<td>All labels, both certainty bands (the original fixed-rule design)</td>
+<td>2,357,718 (66.5% of scored)</td>
+<td>~$375</td>
+<td>~$5,900+</td>
+</tr>
+<tr class="even">
+<td><code>sm</code>-narrowed variant of the combined set</td>
+<td>1,792,007 (24% smaller)</td>
+<td>~$269</td>
+<td>~$4,480</td>
+</tr>
+</tbody>
+</table>
+<p><code>openrouter_cheap</code> (<code>gpt-4o-mini</code>) is the configured default, currently routing <code>REFUTES</code> + <code>SUPPORTS</code>, both <code>certain</code>, across all four shipped configs — the smallest, cheapest, highest-signal bucket for each label, and the confirmed first step. The remaining <code>uncertain</code>/<code>NOT_ENOUGH_INFO</code> buckets stay available by defining additional configs or widening <code>nli_labels</code>/<code>nli_certainty</code> on existing ones. The resumable per-pair cache means cost is paid once per <code>(prompt hash, pair)</code>, not once per <code>tar_make()</code> — and a pair’s cached answer is valid under any combination of routing/subset that happens to select it again later.</p>
 <hr>
+</section>
+<section id="where-this-sits-in-the-pipeline" class="level2">
+<h2 class="anchored" data-anchor-id="where-this-sits-in-the-pipeline">Where this sits in the pipeline</h2>
+<p><code>llm_verification_parquet</code> and <code>llm_candidate_scope_parquet</code> are both live, active targets (not commented out) — <code>tar_make()</code> runs them. <code>llm_candidate_scope_parquet</code> is always computed regardless of which <code>llm_verification</code> config is active — it makes no paid API calls of its own (pure local joins over already-downloaded parquet), so <code>subset: &quot;all&quot;</code> configs simply never read its output rather than the target being conditionally skipped.</p>
+<p><strong><code>report_fact_checker</code> is no longer safe to render blind.</strong> Originally neither Phase 2 target was a dependency of it, so rendering the report never forced an OpenRouter call. That changed once the label funnel reports (<code>refutes_funnel_data</code>/<code>supports_funnel_data</code> → <code>report_refutes_funnel_html</code>/<code>report_supports_funnel_html</code>, both folded into <code>report_fact_checker</code>’s dependency list) started reading <code>llm_verification_parquet</code> directly — a plain <code>tar_make()</code> or <code>tar_make(names = &quot;report_fact_checker&quot;)</code> will now rebuild <code>llm_verification_parquet</code> first if it’s outdated, which means real OpenRouter spend can happen as a side effect of “just rendering the report.” This is exactly what happened when <code>SUPPORTS</code> was added to <code>nli_labels</code>: that edit alone makes <code>llm_verification_parquet</code> outdated, so the next non-<code>shortcut</code> <code>tar_make()</code> touching <code>report_fact_checker</code> would try to review the new ~52,061-pair <code>SUPPORTS</code>-certain backlog (~$7.75 at <code>gpt-4o-mini</code> rates) automatically. To render the report (or the funnel reports) against <strong>currently on-disk</strong> Phase 2 data without triggering a fresh Phase 2 run, use <code>targets::tar_make(names = ..., shortcut = TRUE)</code> — it uses stored metadata for upstream targets instead of re-checking them. Run Phase 2 explicitly and deliberately with <code>targets::tar_make(names = &quot;llm_verification_parquet&quot;)</code> when you actually want to spend the money. Phase 2’s output is not yet consumed by the report’s own overview tables/figures or by <code>nli_overview_data</code> — that merge (<code>llm_label</code> overriding <code>nli_label</code> where available) is a deliberate next step, not an oversight; see <a href="#recommended-workflow">Recommended Workflow</a>.</p>
 </section>
 <section id="recommended-workflow" class="level2">
 <h2 class="anchored" data-anchor-id="recommended-workflow">Recommended Workflow</h2>
 <ol type="1">
-<li>Run <code>nli_scores_by_claim</code> / <code>nli_scores_by_claim_evidence</code> (Phase 1) — existing pipeline</li>
-<li>Filter output to LLM candidates (routing table above)</li>
-<li>Run Phase 2 LLM scoring — new <code>llm_scores_parquet</code> target (not yet built)</li>
-<li>Merge: use <code>llm_label</code> where available, fall back to <code>nli_label</code> elsewhere</li>
-<li>Human expert review of all <code>REFUTES</code> calls regardless of source</li>
+<li>Run <code>nli_scores_by_claim_evidence</code> (Phase 1) — existing pipeline</li>
+<li>Run <code>llm_verification_parquet</code> (Phase 2) — reviews whichever bucket(s) the active config’s <code>nli_labels</code>/<code>nli_certainty</code> select (currently <code>REFUTES</code> + <code>SUPPORTS</code>, both <code>certain</code>, on every shipped config)</li>
+<li>Widen coverage incrementally: define or switch to a config targeting the next bucket (<code>REFUTES</code>/<code>SUPPORTS</code> + <code>uncertain</code>, then <code>NOT_ENOUGH_INFO</code> + <code>uncertain</code>) once the current one is reviewed</li>
+<li>Merge: use <code>llm_label</code> where available, fall back to <code>nli_label</code> elsewhere — <strong>not yet wired into <code>nli_overview_data</code>/the report</strong></li>
+<li>Human expert review of all <code>REFUTES</code> calls regardless of source — still a manual step</li>
 <li>Optionally: use <code>llm_agrees = FALSE</code> rows as training data for NLI fine-tuning</li>
 </ol>
+<p>A downstream, read-only <strong>funnel view</strong> of this data already exists, for both labels — <a href="IPBES_REFUTES_Report_GA1.html">IPBES_Label_Funnel_Report.qmd</a> counts how many distinct citing works survive <code>nli_label == target_label &amp; !uncertain</code>, then <code>llm_agrees == TRUE</code>, per BM (<code>target_label</code> is <code>REFUTES</code> or <code>SUPPORTS</code>, rendered as two separate reports per assessment — <code>IPBES_REFUTES_Report_&lt;id&gt;.html</code> and <code>IPBES_SUPPORTS_Report_&lt;id&gt;.html</code>). It’s a three-line filter composition over the columns documented above, not a new design — see <code>R/build_label_funnel_data.R</code>. There is deliberately no further “+ <code>sufficient_evidence</code>” level: per the required-evidence-gate design above, <code>llm_label</code> can only be <code>SUPPORTS</code>/<code>REFUTES</code> when <code>sufficient_evidence == TRUE</code>, so <code>llm_agrees == TRUE</code> already implies it for every row.</p>
 <hr>
 </section>
 <section id="see-also" class="level2">
@@ -2456,8 +2682,11 @@ Tasks:
 <ul>
 <li><a href="TD_BM_NLI_approach.html">TD_BM_NLI_approach.qmd</a> — Phase 1 design and compute</li>
 <li><a href="TD_NLI_training.html">TD_NLI_training.qmd</a> — fine-tuning the NLI model</li>
+<li><a href="TD_LLM_approach.html">TD_LLM_approach.qmd</a> — the earlier single-phase −5..+5 LLM alignment design this one replaced; kept as a record of why that scale was dropped in favour of the SUPPORTS/REFUTES/NOT_ENOUGH_INFO labels used here</li>
 <li><a href="R/score_one_claim.R">R/score_one_claim.R</a> — Phase 1 implementation</li>
-<li><a href="R/build_alignement_scores_parquet.R">R/build_alignement_scores_parquet.R</a> — parked LLM-comparison chain (reference implementation for Phase 2)</li>
+<li><a href="R/build_llm_verification_parquet.R">R/build_llm_verification_parquet.R</a> — Phase 2 implementation</li>
+<li><a href="R/build_llm_candidate_scope_parquet.R">R/build_llm_candidate_scope_parquet.R</a> — <code>subset: &quot;sm&quot;</code> candidate scoping</li>
+<li><code>Categorisation_Literature/R/llm_epistemology.R</code> (sibling project) — the ported architecture’s origin</li>
 </ul>
 </section>
 </section>

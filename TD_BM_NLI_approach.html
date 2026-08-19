@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-12">
+<meta name="dcterms.date" content="2026-08-19">
 
 <title>Assessing Reference Support for IPBES Background Messages via NLI</title>
 <style>
@@ -2218,6 +2218,8 @@ vertical-align: -.125em;
   <li><a href="#the-nli-task" id="toc-the-nli-task" class="nav-link" data-scroll-target="#the-nli-task">The NLI Task</a></li>
   <li><a href="#recommended-model" id="toc-recommended-model" class="nav-link" data-scroll-target="#recommended-model">Recommended Model</a></li>
   <li><a href="#context-length-considerations" id="toc-context-length-considerations" class="nav-link" data-scroll-target="#context-length-considerations">Context Length Considerations</a></li>
+  <li><a href="#claim-granularity-naive_bm-vs.-complete_bm-see-also-atomic_bm-below" id="toc-claim-granularity-naive_bm-vs.-complete_bm-see-also-atomic_bm-below" class="nav-link" data-scroll-target="#claim-granularity-naive_bm-vs.-complete_bm-see-also-atomic_bm-below">Claim Granularity: <code>naive_bm</code> vs. <code>complete_bm</code> (see also <code>atomic_bm</code> below)</a></li>
+  <li><a href="#a-third-granularity-atomic_bm" id="toc-a-third-granularity-atomic_bm" class="nav-link" data-scroll-target="#a-third-granularity-atomic_bm">A third granularity: <code>atomic_bm</code></a></li>
   <li><a href="#compute-estimates" id="toc-compute-estimates" class="nav-link" data-scroll-target="#compute-estimates">Compute Estimates</a>
   <ul>
   <li><a href="#throughput-by-hardware" id="toc-throughput-by-hardware" class="nav-link" data-scroll-target="#throughput-by-hardware">Throughput by hardware</a></li>
@@ -2259,7 +2261,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 12, 2026</p>
+      <p class="date">August 19, 2026</p>
     </div>
   </div>
   
@@ -2367,6 +2369,81 @@ vertical-align: -.125em;
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">n_over_400    =</span> <span class="fu">sum</span>(n_tokens <span class="sc">&gt;</span> <span class="dv">400</span>)</span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>For abstracts exceeding ~400 tokens, truncate from the end (the claim is typically stated early). Do not truncate mid-sentence.</p>
+<hr>
+</section>
+<section id="claim-granularity-naive_bm-vs.-complete_bm-see-also-atomic_bm-below" class="level2">
+<h2 class="anchored" data-anchor-id="claim-granularity-naive_bm-vs.-complete_bm-see-also-atomic_bm-below">Claim Granularity: <code>naive_bm</code> vs. <code>complete_bm</code> (see also <code>atomic_bm</code> below)</h2>
+<p>The implemented pipeline (<code>R/build_nli_ready_evidence_parquet.R</code>) doesn’t score a whole BM against a paper in one pair — it first cuts each BM’s <code>bm_description</code>/<code>bm_label</code> into smaller claims. <code>input/config.yaml</code>’s per-NLI-config <code>granularity</code> field picks how:</p>
+<ul>
+<li><strong><code>naive_bm</code></strong> (default, the active approach) — <code>segment_bm_by_evidence()</code> splits at brace evidence-references (<code>{5.4.1, 5.4.2}</code>) that end a sentence, producing 2-17 claims per BM. Each claim is short (measured: 62-86 tokens average, max 229-328), comfortably inside the 512-token headroom discussed above.</li>
+<li><strong><code>complete_bm</code></strong> — <code>segment_bm_whole()</code> takes each field whole, unsegmented: 2 claims per BM (<code>bm_description</code> + <code>bm_label</code>), or 1 if the two are identical text after whitespace normalization (checked against all 88 declared BMs across both assessments: currently 0 are identical, so this collapses nothing today, but the rule exists for correctness).</li>
+</ul>
+<p><strong>Measured claim/pair reduction</strong>, from the real on-disk <code>naive_bm</code> data:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Assessment</th>
+<th>BMs</th>
+<th><code>naive_bm</code> claims (mean/BM)</th>
+<th><code>naive_bm</code> (claim,work) pairs</th>
+<th><code>complete_bm</code> claims</th>
+<th>Projected pairs</th>
+<th>Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GA1</td>
+<td>30</td>
+<td>171 (5.7)</td>
+<td>1,887,289</td>
+<td>60</td>
+<td>~662,382</td>
+<td>~65%</td>
+</tr>
+<tr class="even">
+<td>IAS</td>
+<td>49</td>
+<td>429 (8.76)</td>
+<td>1,695,040</td>
+<td>98</td>
+<td>~387,190</td>
+<td>~77%</td>
+</tr>
+<tr class="odd">
+<td>Combined</td>
+<td>79</td>
+<td>600</td>
+<td>3,582,329</td>
+<td>158</td>
+<td>~1,049,572</td>
+<td>~71%</td>
+</tr>
+</tbody>
+</table>
+<p>Phase 2 (LLM verification) volume would shrink by roughly the same factor <em>if</em> the REFUTES/SUPPORTS-certain rate per pair holds under the much longer hypothesis text <code>complete_bm</code> produces — genuinely uncertain, not a rounding caveat (see below).</p>
+<p><strong>Why <code>complete_bm</code> isn’t just a free win — the token-limit problem is worse than the “headroom” framing above suggests.</strong> A whole <code>bm_description</code>/<code>bm_label</code> averages <strong>~245-271 tokens</strong> (median 120-155, <strong>up to 733-885</strong> at the extreme) — 3-10x longer than a <code>naive_bm</code> claim. <code>max_length: 512</code> in <code>input/config.yaml</code> looks like a conservative, raisable setting; it is not. Fetched <code>MoritzLaurer/deberta-v3-large-zeroshot-v2.0</code>’s real <code>config.json</code> directly from Hugging Face and confirmed <code>max_position_embeddings: 512</code> — a hard architectural limit of the model itself (its position-embedding table has exactly 512 slots), already matching <code>input/config.yaml</code>’s setting exactly. <code>external/runpod/docker/nli-runpod/server.py</code>’s tokenizer call truncates the <strong>combined</strong> premise+hypothesis pair (<code>truncation=&quot;longest_first&quot;</code>), so for any BM whose <code>complete_bm</code> claim already exceeds ~512 tokens on its own, the <strong>hypothesis itself</strong> gets cut — not just the premise’s tail, which is the only thing that ever truncates under <code>naive_bm</code>. Treat <code>complete_bm</code> results for the largest BMs with real skepticism until truncation is actually measured against a run, not as a minor footnote.</p>
+<p><strong>The mitigation is a different model, not a bigger <code>max_length</code>.</strong> <code>input/config.yaml</code> ships a second config, <code>bge_m3_zeroshot</code> (<code>MoritzLaurer/bge-m3-zeroshot-v2.0-c</code>, <code>max_position_embeddings: 8194</code> — also confirmed against its real <code>config.json</code>), meant to pair with <code>granularity: complete_bm</code>. It needed to be multilingual, not just long-context: the <em>hypothesis</em> (BM claim) is always English, but the <em>premise</em> (citing-paper title+abstract, from OpenAlex) can be in whatever language the source paper was published in, so an English-only long-context alternative (<code>MoritzLaurer/ModernBERT-large-zeroshot-v2.0</code>, also 8192 tokens, considered first) would still fail on non-English premises. <code>bge_m3_zeroshot</code> and the currently-deployed <code>deberta_zeroshot</code> use the <strong>same 2-class</strong> <code>entailment</code>/<code>not_entailment</code> head (both real <code>config.json</code>s checked) — MoritzLaurer’s “v2.0” series reformulates zero-shot as one entailment-vs-not_entailment pass per candidate label, not classic 3-way MNLI — so <code>server.py</code>’s already-dynamic <code>_entailment_id()</code> (derived from <code>_model.config.label2id</code>, not hardcoded) needs no changes to serve either model; only a different <code>NLI_MODEL</code> build arg (<code>external/runpod/docker/nli-runpod/Dockerfile</code>) and a new image tag, <code>ghcr.io/rkrug/nli-runpod-bge-m3</code> (see <code>input/nli_pods_bge_m3.conf</code>).</p>
+<p>Not yet built, provisioned, or run — <code>bge_m3_zeroshot</code>’s <code>uncertain_threshold: 0.60</code> is carried over unverified from <code>deberta_zeroshot</code> as a starting point, not a calibrated value for this different model. See <code>TODO.md</code>.</p>
+</section>
+<section id="a-third-granularity-atomic_bm" class="level2">
+<h2 class="anchored" data-anchor-id="a-third-granularity-atomic_bm">A third granularity: <code>atomic_bm</code></h2>
+<p><strong>Real-money validation of <code>complete_bm</code> found a structural problem, not just a token-limit one.</strong> A stratified sample of 60 real <code>complete_bm</code> <code>REFUTES</code>/<code>SUPPORTS</code>-certain pairs was independently reviewed by two LLMs (<code>gpt-4o-mini</code> and <code>gpt-oss-20b</code>, 96.6% agreement between them) — 0/20 <code>REFUTES</code>-certain and 1/40 <code>SUPPORTS</code>-certain pairs were confirmed; both models defaulted to <code>NOT_ENOUGH_INFO</code> for the same reason: a whole BM is a <strong>compound, multi-clause statement</strong>, and no single citing paper addresses every clause of it. This isn’t fixable by raising <code>max_length</code> or picking a longer-context model — it’s a mismatch between the claim’s granularity and what one paper can actually speak to.</p>
+<p><strong>The same problem exists inside <code>naive_bm</code>, one level down.</strong> Real GA1/A2 text: “Nature provides a broad diversity of nutritious foods, medicines and clean water {ref1}; can help to regulate disease and the immune system {ref2}; can reduce levels of certain air pollutants {ref3}…” — four semicolon-separated clauses, each with its <strong>own distinct evidence reference</strong>, but <code>segment_bm_by_evidence()</code> treats mid-sentence braces as non-splitting inline citations, so all four get bundled into one claim. Same compound-claim problem, smaller scale. A regex hunt across all 88 real BMs (both assessments) for a brace immediately followed by a continuation word (“particularly”, “and”, “including”, …) found this pattern in 13/88 BMs (~15%) — a real, non-rare construct.</p>
+<p><strong><code>atomic_bm</code> fixes this by splitting at <em>every</em> evidence brace</strong>, not just sentence-terminal ones (<code>segment_bm_atomic()</code>, <code>R/build_nli_ready_evidence_parquet.R</code>) — each evidence reference becomes its own candidate claim. This routinely produces grammatically elliptical fragments (“can help to regulate disease and the immune system” has no subject of its own), so a second pass, <code>complete_bm_fragments()</code> (<code>R/build_claim_completion.R</code>), asks an LLM to either confirm a fragment is already complete or rewrite it into one self-contained sentence, reusing only words already present in the fragments that precede it in the same BM field — never introducing new facts. A faithfulness guard (<code>claim_completion_is_faithful()</code>, same spirit as <code>quote_is_verbatim()</code> in Phase 2) checks every substantive word in a completion against the source fragments and falls back to the uncompleted original on failure.</p>
+<p><strong>Confidence qualifiers are extracted into their own column, for both <code>naive_bm</code> and <code>atomic_bm</code>.</strong> IPBES’s 4 standard qualifiers — “(well established)”, “(established but incomplete)”, “(unresolved)”, “(inconclusive)” — appear inline in the source text (598 occurrences across both assessments, checked directly). Leaving them in the claim text risked two problems: NLI/LLM scoring treating them as part of the assertion to entail/refute, and — found directly in an early smoke test — the completion LLM silently <em>dropping</em> one while rewording a fragment (<code>complete_bm_fragments()</code>’s own faithfulness guard only catches <em>fabricated</em> content, not <em>omitted</em> content, so a dropped qualifier wouldn’t be caught after the fact). Extracting them out before either step reaches the text removes the failure mode structurally rather than detecting it after the fact.</p>
+<p><strong><code>complete_bm</code>’s segmentation (<code>segment_bm_whole()</code>) later got the same treatment, for consistency across all three granularities</strong> — a deliberate, knowingly-accepted tradeoff, not an oversight: it already had 949,334 real scored pairs on disk at the time, scored against claim text that still had qualifiers inline. <code>score_one_claim()</code>’s resumability check is purely directory-existence, so those existing scores were <strong>not</strong> automatically redone — they now reflect the old (pre-strip) claim text until a real rescore is run across all three granularities (planned, not yet executed as of this writing). A field can carry several qualifiers across its original clauses (unlike <code>naive_bm</code>/<code>atomic_bm</code>’s per-fragment extraction); all of them are joined into one <code>confidence</code> value for the single whole-field claim.</p>
+<p><strong>QA report, not a scoring result</strong>: <code>QA_BM_Split_Report.qmd</code> (<code>bm_split_report_table</code>/<code>bm_split_report_html</code> targets) renders one table per assessment, per whichever granularity is currently active, showing every original BM field alongside every resulting claim (and, where applicable, its extracted confidence qualifier) — generated directly from <code>nli_ready_evidence_parquet</code>’s own real output, so it can never drift from what was actually produced. Meant to be reviewed by eye before committing to a real scoring run under a new granularity, the same role <code>QA_BM_Split_Report</code>-style validation played during this design’s own development.</p>
+<p><strong>Not yet run for real</strong>: <code>atomic_bm</code> has never been scored under any NLI config — this section documents the capability and the real validation work that motivated it, not a decision to switch the active granularity. <code>naive_bm</code> (the renamed <code>sub_bm</code>) has likewise never been scored under any NLI config to date, which is what made extending the confidence-qualifier fix to it, and not just <code>atomic_bm</code>, a zero-risk change.</p>
 <hr>
 </section>
 <section id="compute-estimates" class="level2">

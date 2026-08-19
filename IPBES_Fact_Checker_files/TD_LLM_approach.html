@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-12">
+<meta name="dcterms.date" content="2026-08-18">
 
 <title>LLM Alignment Scoring Approach</title>
 <style>
@@ -2225,10 +2225,10 @@ vertical-align: -.125em;
   <ul>
   <li><a href="#alignment-rubric" id="toc-alignment-rubric" class="nav-link" data-scroll-target="#alignment-rubric">Alignment rubric</a></li>
   </ul></li>
-  <li><a href="#system-prompt-current" id="toc-system-prompt-current" class="nav-link" data-scroll-target="#system-prompt-current">System Prompt (current)</a></li>
-  <li><a href="#implementation" id="toc-implementation" class="nav-link" data-scroll-target="#implementation">Implementation</a></li>
+  <li><a href="#system-prompt-as-designed" id="toc-system-prompt-as-designed" class="nav-link" data-scroll-target="#system-prompt-as-designed">System Prompt (as designed)</a></li>
+  <li><a href="#implementation-as-designed-never-fully-built-out" id="toc-implementation-as-designed-never-fully-built-out" class="nav-link" data-scroll-target="#implementation-as-designed-never-fully-built-out">Implementation (as designed, never fully built out)</a></li>
   <li><a href="#shortcomings" id="toc-shortcomings" class="nav-link" data-scroll-target="#shortcomings">Shortcomings</a></li>
-  <li><a href="#relation-to-the-two-phase-pipeline" id="toc-relation-to-the-two-phase-pipeline" class="nav-link" data-scroll-target="#relation-to-the-two-phase-pipeline">Relation to the Two-Phase Pipeline</a></li>
+  <li><a href="#relation-to-the-two-phase-pipeline-what-actually-shipped" id="toc-relation-to-the-two-phase-pipeline-what-actually-shipped" class="nav-link" data-scroll-target="#relation-to-the-two-phase-pipeline-what-actually-shipped">Relation to the Two-Phase Pipeline (what actually shipped)</a></li>
   <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See Also</a></li>
   </ul></li>
   </ul>
@@ -2250,7 +2250,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 12, 2026</p>
+      <p class="date">August 18, 2026</p>
     </div>
   </div>
   
@@ -2264,10 +2264,10 @@ vertical-align: -.125em;
 
 <section id="llm-alignment-scoring-approach" class="level1">
 <h1>LLM Alignment Scoring Approach</h1>
+<p><strong>Status: superseded, source removed.</strong> This was the original LLM scoring design (truth/citing JSON documents, a −5..+5 <code>work_alignement</code> scale) and, at the time this document was first written, the intended shape of Phase 2 of the two-phase pipeline. Phase 2 was ultimately implemented differently — a flat SUPPORTS/REFUTES/NOT_ENOUGH_INFO label per pair, ported from a sibling project’s LLM classifier rather than built out from this design — see <a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a> for what actually shipped. <code>R/build_prompts_truth_parquet.R</code>, <code>R/build_prompts_citing_parquet.R</code>, <code>R/build_alignement_scores_parquet.R</code>, <code>R/alignement_schema.R</code>, and <code>input/prompts/system_prompt.md</code>/<code>truth_wrapper.md</code>/<code>citing_wrapper.md</code> have all been deleted; the source-code links below are kept as plain paths (not links) for that reason. This document is kept as a record of the design that was considered and the reasoning for not building it — in particular the <strong>Shortcomings</strong> section below directly motivated the simpler design that replaced it.</p>
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">Overview</h2>
-<p>This document describes the LLM-based alignment scoring approach: feeding structured representations of an IPBES Background Message (the <em>truth</em>) and a citing paper (the <em>candidate</em>) to an LLM via OpenRouter/ellmer, and receiving a structured judgement of whether the paper supports, contradicts, or is neutral toward the BM.</p>
-<p>This approach was the original pipeline (now parked — see CLAUDE.md) and is the intended <strong>Phase 2</strong> of the two-phase NLI → LLM pipeline described in <a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a>. In Phase 2, only the subset of papers that NLI flagged as uncertain or contradicting are sent here.</p>
+<p>This document describes the LLM-based alignment scoring approach that was considered: feeding structured representations of an IPBES Background Message (the <em>truth</em>) and a citing paper (the <em>candidate</em>) to an LLM via OpenRouter/ellmer, and receiving a structured judgement of whether the paper supports, contradicts, or is neutral toward the BM.</p>
 <hr>
 </section>
 <section id="prompt-architecture" class="level2">
@@ -2290,7 +2290,7 @@ vertical-align: -.125em;
 </section>
 <section id="truth-document-structure" class="level2">
 <h2 class="anchored" data-anchor-id="truth-document-structure">Truth Document Structure</h2>
-<p>One document per <code>(assessment, KM, BM)</code>. Built by <a href="R/build_prompts_truth_parquet.R">R/build_prompts_truth_parquet.R</a>.</p>
+<p>One document per <code>(assessment, KM, BM)</code>. Was built by <code>R/build_prompts_truth_parquet.R</code> (removed).</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;assessment&quot;</span><span class="fu">:</span> <span class="st">&quot;GA1&quot;</span><span class="fu">,</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;km&quot;</span><span class="fu">:</span> <span class="st">&quot;A.&quot;</span><span class="fu">,</span></span>
@@ -2322,7 +2322,7 @@ vertical-align: -.125em;
 </section>
 <section id="citing-document-structure" class="level2">
 <h2 class="anchored" data-anchor-id="citing-document-structure">Citing Document Structure</h2>
-<p>One document per citing work. Built by <a href="R/build_prompts_citing_parquet.R">R/build_prompts_citing_parquet.R</a>.</p>
+<p>One document per citing work. Was built by <code>R/build_prompts_citing_parquet.R</code> (removed).</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;assessment&quot;</span><span class="fu">:</span> <span class="st">&quot;GA1&quot;</span><span class="fu">,</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;km&quot;</span><span class="fu">:</span> <span class="st">&quot;A.&quot;</span><span class="fu">,</span></span>
@@ -2338,7 +2338,7 @@ vertical-align: -.125em;
 </section>
 <section id="output-schema" class="level2">
 <h2 class="anchored" data-anchor-id="output-schema">Output Schema</h2>
-<p>Defined as an <code>ellmer</code> structured type in <a href="R/alignement_schema.R">R/alignement_schema.R</a>. One row per <code>(KM, BM, work_id)</code>.</p>
+<p>Was defined as an <code>ellmer</code> structured type in <code>R/alignement_schema.R</code> (removed). One row per <code>(KM, BM, work_id)</code>.</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 33%">
@@ -2433,9 +2433,9 @@ vertical-align: -.125em;
 <hr>
 </section>
 </section>
-<section id="system-prompt-current" class="level2">
-<h2 class="anchored" data-anchor-id="system-prompt-current">System Prompt (current)</h2>
-<p>Located at <a href="input/prompts/system_prompt.md">input/prompts/system_prompt.md</a>. Key rules:</p>
+<section id="system-prompt-as-designed" class="level2">
+<h2 class="anchored" data-anchor-id="system-prompt-as-designed">System Prompt (as designed)</h2>
+<p>Was located at <code>input/prompts/system_prompt.md</code> (removed). Key rules:</p>
 <ul>
 <li>Use only the information in the two JSON documents — no outside knowledge</li>
 <li>Do not invent quotations or claims not present in the abstract</li>
@@ -2444,9 +2444,9 @@ vertical-align: -.125em;
 </ul>
 <hr>
 </section>
-<section id="implementation" class="level2">
-<h2 class="anchored" data-anchor-id="implementation">Implementation</h2>
-<p>The scoring pipeline is in <a href="R/build_alignement_scores_parquet.R">R/build_alignement_scores_parquet.R</a>:</p>
+<section id="implementation-as-designed-never-fully-built-out" class="level2">
+<h2 class="anchored" data-anchor-id="implementation-as-designed-never-fully-built-out">Implementation (as designed, never fully built out)</h2>
+<p>The scoring pipeline lived in <code>R/build_alignement_scores_parquet.R</code> (removed):</p>
 <ol type="1">
 <li>Load truth prompt for the <code>(assessment, KM, BM)</code></li>
 <li>Load citing prompts for the same partition (optionally capped at <code>n_citing</code>)</li>
@@ -2455,7 +2455,7 @@ vertical-align: -.125em;
 <li>Validate structured output; retry individually on failure</li>
 <li>Write to <code>output/alignement_scores/assessment=&lt;id&gt;/run_id=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/model=&lt;model&gt;/replicate=&lt;n&gt;/</code></li>
 </ol>
-<p>Run configuration (model, KMs to score, <code>n_citing</code>, <code>replicates</code>, <code>temperature</code>) is defined per run in the <code>analysis:</code> block of <code>input/config.yaml</code>.</p>
+<p>Run configuration (model, KMs to score, <code>n_citing</code>, <code>replicates</code>, <code>temperature</code>) was defined per run in an <code>analysis:</code> block of <code>input/config.yaml</code>, since replaced by the simpler <code>llm_verification:</code> block the implemented Phase 2 actually uses.</p>
 <hr>
 </section>
 <section id="shortcomings" class="level2">
@@ -2474,26 +2474,24 @@ vertical-align: -.125em;
 <p>A paper may support one sub-message of a BM while contradicting another. The LLM returns a single score for the whole BM. Splitting BMs into atomic sub-claims before scoring would improve precision but multiply the number of calls.</p>
 <hr>
 </section>
-<section id="relation-to-the-two-phase-pipeline" class="level2">
-<h2 class="anchored" data-anchor-id="relation-to-the-two-phase-pipeline">Relation to the Two-Phase Pipeline</h2>
-<p>In <a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a>, this LLM approach becomes <strong>Phase 2</strong> applied only to the NLI remainder:</p>
+<section id="relation-to-the-two-phase-pipeline-what-actually-shipped" class="level2">
+<h2 class="anchored" data-anchor-id="relation-to-the-two-phase-pipeline-what-actually-shipped">Relation to the Two-Phase Pipeline (what actually shipped)</h2>
+<p><a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a> kept the routing idea from this design — NLI <code>uncertain</code> and <code>REFUTES</code> cases go to the LLM, high-confidence <code>SUPPORTS</code>/<code>NOT_ENOUGH_INFO</code> do not — but implemented Phase 2 independently rather than adapting this document’s pipeline:</p>
 <ul>
-<li>NLI <code>uncertain</code> cases → LLM for refinement + explanation</li>
-<li>NLI <code>REFUTES</code> cases → LLM for confirmation + explanation (high stakes)</li>
-<li>NLI high-confidence <code>SUPPORTS</code> → accepted without LLM review</li>
+<li>The <code>work_alignement</code> −5..+5 scale was <strong>dropped</strong> in favour of a flat <code>SUPPORTS</code>/<code>REFUTES</code>/<code>NOT_ENOUGH_INFO</code> <code>llm_label</code>, matching the NLI label scheme it’s reviewing rather than introducing a second, differently-shaped scale to reconcile downstream.</li>
+<li>The truth/citing structured-JSON document design (SubMessages, source passages) was dropped for a single BM claim + one paper’s title/abstract per call — Phase 2 reviews already-routed <code>(claim, work)</code> pairs one at a time, so there was no need for the fuller per-BM document this design used to batch candidates.</li>
+<li>The implementation itself was ported from a sibling project’s LLM classifier rather than built out from <code>R/build_alignement_scores_parquet.R</code> — see <a href="TD_NLI_LLM_two_phase.html#ported-architecture">TD_NLI_LLM_two_phase.qmd</a> for what was reused and why.</li>
 </ul>
-<p>The <code>work_alignement</code> −5 to +5 scale remains the target output format. The NLI label and confidence scores are added to the prompt as a prior (see <a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a> for the adapted prompt template).</p>
+<p>The <strong>Shortcomings</strong> above (cost at scale, no calibrated probability distribution, prompt sensitivity) still apply to any LLM-based approach, and are exactly why Phase 2 only reviews the NLI-flagged subset rather than attempting the full pair space this document’s <code>n_citing</code>-capped design would have needed to bound cost on.</p>
 <hr>
 </section>
 <section id="see-also" class="level2">
 <h2 class="anchored" data-anchor-id="see-also">See Also</h2>
 <ul>
 <li><a href="TD_BM_NLI_approach.html">TD_BM_NLI_approach.qmd</a> — Phase 1 design</li>
-<li><a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a> — two-phase pipeline design</li>
+<li><a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a> — the implemented two-phase pipeline</li>
 <li><a href="TD_NLI_training.html">TD_NLI_training.qmd</a> — fine-tuning the NLI model</li>
-<li><a href="R/build_alignement_scores_parquet.R">R/build_alignement_scores_parquet.R</a> — implementation</li>
-<li><a href="R/alignement_schema.R">R/alignement_schema.R</a> — ellmer structured output schema</li>
-<li><a href="input/prompts/">input/prompts/</a> — system prompt and wrapper files</li>
+<li><code>R/build_alignement_scores_parquet.R</code>, <code>R/alignement_schema.R</code>, <code>input/prompts/system_prompt.md</code>/<code>truth_wrapper.md</code>/<code>citing_wrapper.md</code> — all removed; this document is their only remaining record</li>
 </ul>
 </section>
 </section>
