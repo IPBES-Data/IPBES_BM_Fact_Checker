@@ -47,8 +47,22 @@ claim_completion_output_type <- function() {
 # (R/build_llm_verification_parquet.R): every substantive (>=4-letter) word
 # in the completed claim must already appear somewhere in the BM field's
 # own original (uncompleted) fragments. Short/common connective words
-# ("the", "and", "to") are excluded from the check -- restoring grammatical
-# glue is expected and fine; inventing new content words is not.
+# ("the", "and", "to") are excluded from the check by length alone --
+# restoring grammatical glue is expected and fine; inventing new content
+# words is not. That length cutoff isn't enough on its own, though: a real
+# completion joining a carried-forward subject to an elliptical
+# continuation needs relative pronouns/conjunctions that are often exactly
+# 4+ letters ("...clean water THAT can help..."), so an explicit stopword
+# list catches those regardless of length. Caught via a real case: "that"
+# was flagged as fabricated and silently discarded an otherwise faithful,
+# correct completion (see git history/session notes).
+claim_completion_connective_stopwords <- c(
+  "that", "which", "this", "these", "those", "such", "than", "then",
+  "when", "with", "from", "also", "both", "have", "were", "been",
+  "will", "would", "could", "should", "shall", "must", "into", "upon",
+  "onto", "whose", "whom"
+)
+
 claim_completion_is_faithful <- function(completed, source_fragments_text) {
   norm_words <- function(x) {
     x <- tolower(as.character(x))
@@ -57,6 +71,7 @@ claim_completion_is_faithful <- function(completed, source_fragments_text) {
   }
   completed_words <- norm_words(completed)
   completed_words <- completed_words[nchar(completed_words) >= 4L]
+  completed_words <- setdiff(completed_words, claim_completion_connective_stopwords)
   if (!length(completed_words)) {
     return(TRUE)
   }

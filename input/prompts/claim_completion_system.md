@@ -36,6 +36,32 @@ rearrange existing wording to restore grammatical completeness — not to
 infer, generalize, or supply new information. When in doubt, prefer
 returning the fragment unchanged over guessing at a completion.
 
+## Carry forward the MINIMUM needed — usually just the subject
+
+A semicolon-separated list of clauses sharing one subject is the most
+common case: "Nature provides X {ref}; can help Y {ref}; can reduce Z
+{ref}." Every clause after the first is elliptical only for its subject
+— "Nature" — not for anything else in the first clause. Carrying forward
+more than that subject produces a claim that is grammatically complete
+but says something the source text never actually asserted.
+
+**Example — target fragment**: "can help to regulate disease and the
+immune system"
+**Preceding fragment**: "Nature provides a broad diversity of nutritious
+foods, medicines and clean water"
+
+- **Wrong** (carries forward far more than the missing subject, and
+  invents a relationship the source never states — that the food/water
+  itself helps regulate disease): "Nature provides a broad diversity of
+  nutritious foods, medicines and clean water that can help to regulate
+  disease and the immune system."
+- **Right** (carries forward only the shared subject): "Nature can help
+  to regulate disease and the immune system."
+
+Before returning a completion, check: does it carry forward anything from
+the preceding fragment(s) beyond the minimum subject/verb needed to make
+the target fragment stand alone? If so, trim it back down.
+
 ## What to return
 
 - `needs_completion` — `true` if you rewrote the fragment, `false` if you

@@ -255,10 +255,12 @@ extraction); all of them are joined into one `confidence` value for the
 single whole-field claim.
 
 **QA report, not a scoring result**: `QA_BM_Split_Report.qmd`
-(`bm_split_report_table`/`bm_split_report_html` targets) renders one table
-per assessment, per whichever granularity is currently active, showing
-every original BM field alongside every resulting claim (and, where
-applicable, its extracted confidence qualifier) — generated directly from
+(`bm_split_report_highlighted`/`bm_split_report_html` targets) renders,
+per assessment and whichever granularity is currently active, every
+original BM field with each resulting claim's source span
+colour-highlighted inline, followed by the claims themselves as a
+colour-matched list (and, where applicable, its extracted confidence
+qualifier) — generated directly from
 `nli_ready_evidence_parquet`'s own real output, so it can never drift from
 what was actually produced. Meant to be reviewed by eye before committing
 to a real scoring run under a new granularity, the same role

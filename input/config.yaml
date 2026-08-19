@@ -80,7 +80,7 @@ nli:
         model: "anthropic/claude-haiku-4.5"
 
 
-  active: bge_m3_zeroshot_naive_bm   # which entry under configs: is active -- the only config with running pods
+  active: bge_m3_zeroshot_atomic_bm   # which entry under configs: is active -- the only config with running pods
 
   configs:
     # RETIRED -- superseded by bge_m3_zeroshot below (faster per-pod,

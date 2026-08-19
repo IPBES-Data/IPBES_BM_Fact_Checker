@@ -193,6 +193,38 @@ segment_bm_whole <- function(text) {
 # by a separate LLM completion pass (complete_bm_fragments(),
 # R/build_claim_completion.R), NOT here.
 #
+# ALSO splits after a confidence qualifier -- e.g. "(well established)" --
+# whenever it is not immediately followed by its own evidence brace. Real
+# QA data (via the split report) caught the same compound-claim problem one
+# level up: several sentences can share a single trailing brace between
+# them (e.g. "X is Y (well established). Z is W (established but
+# incomplete) {ref}."), so splitting on braces alone still bundled two
+# independently-rated assertions into one fragment -- visible as two
+# qualifiers joined by "; " in the resulting `confidence` column, since a
+# genuine single (sub-)claim only ever carries one. A qualifier immediately
+# followed by `{` is left alone (it's already paired with its own brace,
+# which triggers the split above); tested against every real occurrence of
+# this pattern across GA1's own BM text, confirming every resulting
+# fragment now carries at most one confidence qualifier. This does produce
+# occasional additional, over-fine splits when IPBES's own source text
+# tags one assertion with a qualifier twice (e.g. once mid-clause, once at
+# the end of an elaborating "including ..." continuation) -- accepted, since
+# the completion pass already exists specifically to re-join elliptical
+# fragments, and erring toward over-splitting is the same tradeoff this
+# whole granularity already makes over segment_bm_by_evidence().
+#
+# Symmetrically, does NOT split right after a brace when a confidence
+# qualifier immediately FOLLOWS it (e.g. "...pollinator loss {2.3.5.3}
+# (established but incomplete)." -- the qualifier here comes after the
+# brace, the reverse of the usual order). Splitting there unconditionally
+# used to cut the qualifier off into its own fragment, which then strips
+# down to nothing and gets silently dropped by the nzchar/alpha-content
+# filter below -- not just misplaced, but the confidence value was lost
+# entirely (a real GA1/A1 case, caught via the QA split report). The
+# qualifier instead stays attached to the fragment before it, and is
+# picked up by the split point right after ITSELF (the second alternative
+# below) instead.
+#
 # Deliberately does NOT apply segment_bm_by_evidence()'s nchar > 20 floor --
 # a short fragment like "and for soil stabilization" is exactly the kind of
 # thing that only becomes a valid, complete claim after completion;
@@ -216,10 +248,17 @@ segment_bm_atomic <- function(text) {
   }
 
   # Split right after every closing brace (a zero-width lookbehind keeps the
-  # brace, and everything before it, with the segment it closes). Any text
-  # after the LAST brace -- or the whole text, if there are no braces at all
-  # -- is naturally produced as the final/only element.
-  segments <- stringr::str_split(text, "(?<=\\})\\s*")[[1L]]
+  # brace, and everything before it, with the segment it closes), OR right
+  # after a confidence qualifier not immediately followed by its own brace
+  # (see this function's header comment). Any text after the last split
+  # point -- or the whole text, if neither pattern occurs at all -- is
+  # naturally produced as the final/only element.
+  atomic_split_pattern <- paste0(
+    "(?<=\\})(?!\\s*", segment_bm_confidence_pattern, ")\\s*",
+    "|",
+    "(?<=", segment_bm_confidence_pattern, ")(?!\\s*\\{)\\s*"
+  )
+  segments <- stringr::str_split(text, atomic_split_pattern)[[1L]]
   segments <- segments[nzchar(stringr::str_squish(segments))]
 
   confidence <- extract_bm_confidence(segments)
@@ -249,6 +288,30 @@ build_nli_ready_evidence_parquet <- function(
   completion_model = NULL
 ) {
   assessment_id <- assessment$id
+  output_path <- file.path(output_root, paste0("assessment=", assessment_id))
+
+  # Resumability: if this assessment already has parquet output for this
+  # EXACT output_root (which already encodes granularity=<value>/ -- see
+  # the _targets.R call site), skip regenerating entirely, same
+  # short-circuit convention score_one_claim() uses. Without this,
+  # switching nli.active back and forth between granularities forces a
+  # full rebuild every time `targets` sees granularity's value change --
+  # even reverting to a granularity that was already fully built earlier
+  # in the session -- since targets only compares against the LAST
+  # recorded value, not a history of past ones. For atomic_bm that meant
+  # redoing real LLM completion calls for no reason. To force a genuine
+  # rebuild (e.g. after a real segmentation/completion code change),
+  # delete this assessment's output_path by hand first -- same lever
+  # score_one_claim()'s own resumability check requires.
+  if (dir.exists(output_path) &&
+    length(list.files(output_path, pattern = "\\.parquet$", recursive = TRUE))) {
+    message(sprintf(
+      "[NLI_READY_EV %s] output already exists at %s (granularity=%s) -- skipping",
+      assessment_id, output_path, granularity
+    ))
+    return(output_path)
+  }
+
   now <- function() format(Sys.time(), "%H:%M:%S")
   # Each granularity is handled via its own explicit branch below in the
   # claims-building loop: naive_bm and atomic_bm both return a (claim,
@@ -360,7 +423,10 @@ build_nli_ready_evidence_parquet <- function(
   }))
 
   # ── 2. Process works_citing partitions in parallel ───────────────────────
-  output_path <- file.path(output_root, paste0("assessment=", assessment_id))
+  # output_path already computed above (used by the early resumability
+  # check); a defensive wipe here only matters for a partial/corrupt
+  # leftover (dir exists but had no parquet files, which is exactly what
+  # let execution reach this point instead of returning early).
   if (file.exists(output_path)) {
     unlink(output_path, recursive = TRUE, force = TRUE)
   }

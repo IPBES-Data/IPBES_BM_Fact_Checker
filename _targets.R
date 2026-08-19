@@ -405,8 +405,9 @@ list(
   ),
 
   # QA report: how nli_ready_evidence_parquet actually split each BM into
-  # claims, one table per assessment, reflecting whichever granularity is
-  # currently active (naive_bm/atomic_bm show the extracted confidence
+  # claims, one assessment's worth of colour-highlighted-original-text +
+  # itemised-claim-list HTML per branch, reflecting whichever granularity
+  # is currently active (naive_bm/atomic_bm show the extracted confidence
   # column; complete_bm gracefully has none). Deliberately downstream of
   # nli_ready_evidence_parquet itself (reads its real on-disk output,
   # distinct()-ed back to one row per claim) rather than a separate
@@ -414,13 +415,14 @@ list(
   # produced. Not a TD_ design doc -- a QA artifact, same self-contained
   # `format: html` convention as the other reports.
   tar_target(
-    bm_split_report_table,
-    build_bm_split_report_table(
+    bm_split_report_highlighted,
+    build_bm_split_highlighted(
       assessment,
       nli_ready_evidence_parquet,
       key_messages_parquet,
       granularity,
-      "output/tables"
+      "output/tables",
+      claim_completion_model
     ),
     pattern = map(assessment, nli_ready_evidence_parquet, key_messages_parquet),
     format = "file"
@@ -436,9 +438,10 @@ list(
     bm_split_report_html,
     {
       # Referenced only to establish the DAG dependency -- the qmd itself
-      # re-reads bm_split_report_table's actual value via tar_read_raw() at
-      # render time, same convention as IPBES_Label_Funnel_Report.qmd.
-      bm_split_report_table
+      # re-reads bm_split_report_highlighted's actual value via
+      # tar_read_raw() at render time, same convention as
+      # IPBES_Label_Funnel_Report.qmd.
+      bm_split_report_highlighted
       out <- paste0("QA_BM_Split_Report_", assessment$id, granularity_suffix(granularity), ".html")
       # Renders next to the input (input/reports/), regardless of
       # execute_dir -- see td_doc_html's comment for why. file.rename()
@@ -454,7 +457,14 @@ list(
       file.path("output/reports", out)
     },
     pattern = map(assessment),
-    format = "file"
+    format = "file",
+    # Same reasoning as report_refutes_funnel_html/report_supports_funnel_html:
+    # avoids concurrent quarto_render() calls against the same source .qmd
+    # racing on separate crew workers -- without this, the GA1 and IAS
+    # branches rendering QA_BM_Split_Report.qmd at the same time can
+    # cross-contaminate each other's output (caught directly: GA1's .html
+    # ended up containing IAS's rendered content).
+    deployment = "main"
   ),
 
   # Target 2h (NLI): NLI alignement scores — classify each citing work against
