@@ -112,8 +112,8 @@ build_nli_ready_parquet <- function(
       dplyr::rename(work_id = id) |>
       dplyr::mutate(
         premise = trimws(paste(
-          vapply(title,    clean_title,    character(1L)),
-          vapply(abstract, clean_abstract, character(1L))
+          dplyr::coalesce(vapply(title,    clean_title,    character(1L)), ""),
+          dplyr::coalesce(vapply(abstract, clean_abstract, character(1L)), "")
         ))
       ) |>
       dplyr::select(work_id, premise)

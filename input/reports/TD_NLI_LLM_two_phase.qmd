@@ -77,15 +77,23 @@ that combined rule was built from break down as:
 | `nli_labels` | `nli_certainty` | pairs (of 3,547,231 scored) | ~cost (gpt-4o-mini) |
 |---|---|---|---|
 | `REFUTES` | `certain` | 26,861 | ~$4 |
+| `SUPPORTS` | `certain` | 52,061 | ~$7.75 |
 | `REFUTES` | `uncertain` | 403,400 | ~$60 |
 | `SUPPORTS` | `uncertain` | 388,554 | ~$58 |
 | `NOT_ENOUGH_INFO` | `uncertain` | 1,538,903 | ~$231 |
 
-**`REFUTES` + `certain`** is the current first step (all four shipped
-configs route it) — the smallest, cheapest, and highest-signal bucket:
-cases where NLI was *confident* a paper contradicts the claim. The other
-three buckets stay available to route later, by defining additional configs
-or widening these two fields on existing ones — nothing else in the
+**`REFUTES` + `certain`** was the original first step; **`SUPPORTS` +
+`certain`** was added once the REFUTES funnel report
+(`IPBES_Label_Funnel_Report.qmd`) was generalized to a SUPPORTS
+counterpart — all four shipped configs now route both (`nli_labels:
+[REFUTES, SUPPORTS]`), 78,922 pairs combined, ~$11.75 at `gpt-4o-mini`
+rates. `SUPPORTS` is nearly 2x the size of `REFUTES` at the same
+certainty band (52,061 vs. 26,861) — GA1's NLI scores skew SUPPORTS-heavy
+overall (37,371 of the 52,061 SUPPORTS-certain pairs are GA1's), consistent
+with what the main report's own "AI Based Interpretation" section already
+says about GA1's KM D. The remaining two `uncertain` buckets and
+`NOT_ENOUGH_INFO` stay available to route later, by defining additional
+configs or widening these two fields on existing ones — nothing else in the
 pipeline needs to change to pick them up.
 
 ---
@@ -244,7 +252,7 @@ llm_verification:
       max_active: 24
       max_retries: 2
       subset: all
-      nli_labels: [REFUTES]
+      nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
     openrouter_cheap_sm:
@@ -254,7 +262,7 @@ llm_verification:
       max_active: 24
       max_retries: 2
       subset: sm
-      nli_labels: [REFUTES]
+      nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
     openrouter_midtier:
@@ -264,7 +272,7 @@ llm_verification:
       max_active: 24
       max_retries: 2
       subset: all
-      nli_labels: [REFUTES]
+      nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
     openrouter_toptier_gpt5:
@@ -274,7 +282,7 @@ llm_verification:
       max_active: 24
       max_retries: 2
       subset: all
-      nli_labels: [REFUTES]
+      nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 ```
 
@@ -285,8 +293,10 @@ those two specifically were kept rather than re-derived). `subset` and
 `nli_labels`/`nli_certainty` are new here — see [Candidate
 scoping](#candidate-scoping) above and [Routing after Phase
 1](#phase-1-nli-all-pairs) for what they do; all four configs currently
-route the same `REFUTES` + `certain` bucket (the confirmed first step), and
-differ only in model/subset.
+route both `REFUTES` + `certain` (the original first step) and `SUPPORTS` +
+`certain` (added once the REFUTES funnel report was generalized to a
+SUPPORTS counterpart — see `IPBES_Label_Funnel_Report.qmd`), and differ
+only in model/subset.
 
 | Config | Model | Subset | Notes |
 |---|---|---|---|
@@ -412,17 +422,20 @@ evidence-scored corpus (3,547,231 pairs total):
 
 | Bucket | Pairs | `gpt-4o-mini` | `gpt-5`-tier |
 |---|---|---|---|
-| `REFUTES` + `certain` (**current default, all 4 configs**) | 26,861 | ~$4 | ~$65 |
+| `REFUTES` + `certain` (original first step) | 26,861 | ~$4 | ~$65 |
+| `SUPPORTS` + `certain` (added alongside the SUPPORTS funnel report) | 52,061 | ~$7.75 | ~$126 |
+| **`REFUTES` + `SUPPORTS`, `certain` (current default, all 4 configs)** | **78,922** | **~$11.75** | **~$191** |
 | `REFUTES` + `uncertain` | 403,400 | ~$60 | ~$960 |
 | `SUPPORTS` + `uncertain` | 388,554 | ~$58 | ~$925 |
 | `NOT_ENOUGH_INFO` + `uncertain` | 1,538,903 | ~$231 | ~$3,660 |
-| All four combined (the original fixed-rule design) | 2,357,718 (66.5% of scored) | ~$375 | ~$5,900+ |
+| All labels, both certainty bands (the original fixed-rule design) | 2,357,718 (66.5% of scored) | ~$375 | ~$5,900+ |
 | `sm`-narrowed variant of the combined set | 1,792,007 (24% smaller) | ~$269 | ~$4,480 |
 
 `openrouter_cheap` (`gpt-4o-mini`) is the configured default, currently
-routing `REFUTES` + `certain` only across all four shipped configs — the
-smallest, cheapest, highest-signal bucket, and the confirmed first step. The
-other buckets stay available by defining additional configs or widening
+routing `REFUTES` + `SUPPORTS`, both `certain`, across all four shipped
+configs — the smallest, cheapest, highest-signal bucket for each label, and
+the confirmed first step. The remaining `uncertain`/`NOT_ENOUGH_INFO`
+buckets stay available by defining additional configs or widening
 `nli_labels`/`nli_certainty` on existing ones. The resumable per-pair cache
 means cost is paid once per `(prompt hash, pair)`, not once per
 `tar_make()` — and a pair's cached answer is valid under any combination of
@@ -433,38 +446,60 @@ routing/subset that happens to select it again later.
 ## Where this sits in the pipeline
 
 `llm_verification_parquet` and `llm_candidate_scope_parquet` are both live,
-active targets (not commented out) — `tar_make()` runs them. Neither is
-deliberately a dependency of `report_fact_checker`, so rendering the report
-never forces an OpenRouter call: run Phase 2 explicitly with
-`targets::tar_make(names = "llm_verification_parquet")`, or let a bare
-`tar_make()` pick it up alongside everything else.
+active targets (not commented out) — `tar_make()` runs them.
 `llm_candidate_scope_parquet` is always computed regardless of which
 `llm_verification` config is active — it makes no paid API calls of its own
 (pure local joins over already-downloaded parquet), so `subset: "all"`
 configs simply never read its output rather than the target being
-conditionally skipped. Phase 2's output is not yet consumed by the report's
-tables/figures or by `nli_overview_data` — that merge (`llm_label`
-overriding `nli_label` where available) is a deliberate next step, not an
+conditionally skipped.
+
+**`report_fact_checker` is no longer safe to render blind.** Originally
+neither Phase 2 target was a dependency of it, so rendering the report
+never forced an OpenRouter call. That changed once the label funnel
+reports (`refutes_funnel_data`/`supports_funnel_data` →
+`report_refutes_funnel_html`/`report_supports_funnel_html`, both folded
+into `report_fact_checker`'s dependency list) started reading
+`llm_verification_parquet` directly — a plain `tar_make()` or
+`tar_make(names = "report_fact_checker")` will now rebuild
+`llm_verification_parquet` first if it's outdated, which means real
+OpenRouter spend can happen as a side effect of "just rendering the
+report." This is exactly what happened when `SUPPORTS` was added to
+`nli_labels`: that edit alone makes `llm_verification_parquet` outdated, so
+the next non-`shortcut` `tar_make()` touching `report_fact_checker` would
+try to review the new ~52,061-pair `SUPPORTS`-certain backlog (~$7.75 at
+`gpt-4o-mini` rates) automatically. To render the report (or the funnel
+reports) against **currently on-disk** Phase 2 data without triggering a
+fresh Phase 2 run, use `targets::tar_make(names = ..., shortcut = TRUE)` —
+it uses stored metadata for upstream targets instead of re-checking them.
+Run Phase 2 explicitly and deliberately with
+`targets::tar_make(names = "llm_verification_parquet")` when you actually
+want to spend the money. Phase 2's output is not yet consumed by the
+report's own overview tables/figures or by `nli_overview_data` — that
+merge (`llm_label` overriding `nli_label` where available) is a deliberate
+next step, not an
 oversight; see [Recommended Workflow](#recommended-workflow).
 
 ## Recommended Workflow {#recommended-workflow}
 
 1. Run `nli_scores_by_claim_evidence` (Phase 1) — existing pipeline
-2. Run `llm_verification_parquet` (Phase 2) — reviews whichever bucket the active config's `nli_labels`/`nli_certainty` select (currently `REFUTES` + `certain` on every shipped config)
-3. Widen coverage incrementally: define or switch to a config targeting the next bucket (`REFUTES`+`uncertain`, then `SUPPORTS`/`NOT_ENOUGH_INFO`+`uncertain`) once the first is reviewed
+2. Run `llm_verification_parquet` (Phase 2) — reviews whichever bucket(s) the active config's `nli_labels`/`nli_certainty` select (currently `REFUTES` + `SUPPORTS`, both `certain`, on every shipped config)
+3. Widen coverage incrementally: define or switch to a config targeting the next bucket (`REFUTES`/`SUPPORTS` + `uncertain`, then `NOT_ENOUGH_INFO` + `uncertain`) once the current one is reviewed
 4. Merge: use `llm_label` where available, fall back to `nli_label` elsewhere — **not yet wired into `nli_overview_data`/the report**
 5. Human expert review of all `REFUTES` calls regardless of source — still a manual step
 6. Optionally: use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
 
-A downstream, read-only **funnel view** of this data already exists —
-[IPBES_REFUTES_Report.qmd](IPBES_REFUTES_Report_GA1.html) counts how many
-distinct citing works survive `nli_label == "REFUTES" & !uncertain`, then
-`llm_agrees == TRUE`, per BM. It's a three-line filter composition over the
-columns documented above, not a new design — see
-`R/build_refutes_funnel_data.R`. There is deliberately no further
-"+ `sufficient_evidence`" level: per the required-evidence-gate design
-above, `llm_label` can only be `SUPPORTS`/`REFUTES` when `sufficient_evidence
-== TRUE`, so `llm_agrees == TRUE` already implies it for every row.
+A downstream, read-only **funnel view** of this data already exists, for
+both labels — [IPBES_Label_Funnel_Report.qmd](IPBES_REFUTES_Report_GA1.html)
+counts how many distinct citing works survive `nli_label == target_label &
+!uncertain`, then `llm_agrees == TRUE`, per BM (`target_label` is `REFUTES`
+or `SUPPORTS`, rendered as two separate reports per assessment —
+`IPBES_REFUTES_Report_<id>.html` and `IPBES_SUPPORTS_Report_<id>.html`).
+It's a three-line filter composition over the columns documented above,
+not a new design — see `R/build_label_funnel_data.R`. There is deliberately
+no further "+ `sufficient_evidence`" level: per the required-evidence-gate
+design above, `llm_label` can only be `SUPPORTS`/`REFUTES` when
+`sufficient_evidence == TRUE`, so `llm_agrees == TRUE` already implies it
+for every row.
 
 ---
 

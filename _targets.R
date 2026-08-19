@@ -116,6 +116,51 @@ list(
     nli <- yaml::read_yaml(config_file)[["nli"]]
     nli[["configs"]][[nli[["active"]]]]
   }),
+  # The active config's own claim-granularity setting ("naive_bm" default /
+  # "complete_bm") -- drives nli_ready_evidence_parquet/
+  # nli_scores_by_claim_evidence's own output_root (they run against
+  # whichever granularity is actually active). Deliberately reads
+  # config_file directly rather than depending on nli_config (the whole
+  # active block: host/port/max_length/... bundled together) -- granularity
+  # is the ONLY field of the active NLI config that nli_ready_evidence_parquet
+  # actually needs, so routing through the full nli_config blob would mean
+  # any unrelated field edit (e.g. a host list) forces this target to be
+  # rechecked too. Not the same as nli_granularities below, which the
+  # reporting layer uses to enumerate BOTH values regardless of which one
+  # is active.
+  tar_target(
+    granularity,
+    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["granularity"]] %||% "naive_bm"
+  ),
+  # Same reasoning as granularity just above: build_nli_claim_units() only
+  # ever reads max_length off the config it's handed (to filter which rows
+  # count toward the largest-first scoring order) -- nothing else in it
+  # touches host/port/scheme/uncertain_threshold/etc. Reading it directly
+  # here means nli_claim_units/nli_claim_units_evidence no longer get
+  # rechecked on an unrelated nli_config field edit.
+  tar_target(
+    max_length,
+    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["max_length"]]
+  ),
+  # Fixed, not read from config: the reporting layer (nli_overview_data,
+  # the label funnel reports, etc.) renders one output per (assessment,
+  # granularity) combination via cross() so both are always visible,
+  # falling back to an empty state for whichever hasn't been scored yet.
+  tar_target(nli_granularities, c("naive_bm", "complete_bm", "atomic_bm")),
+  # granularity: atomic_bm's own model choice for LLM-completing elliptical
+  # fragments (R/build_claim_completion.R). Same active/configs shape as
+  # nli:/llm_verification: below, and same fine-grained-target reasoning as
+  # granularity/max_length above: reads straight through to the one field
+  # (model) this needs rather than depending on a coarse blob. Falls back
+  # to complete_bm_fragments()'s own default (not duplicated here) if
+  # input/config.yaml ever has no claim_completion: section.
+  tar_target(
+    claim_completion_model,
+    {
+      cc <- yaml::read_yaml(config_file)[["nli"]][["claim_completion"]]
+      cc[["configs"]][[cc[["active"]]]][["model"]]
+    }
+  ),
   tar_target(
     assessments_list,
     lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
@@ -331,9 +376,13 @@ list(
 
   # Target 2g' (NLI-ready, SECOND approach): identical to nli_ready_parquet but
   # BM text is cut into EVIDENCE-DELIMITED claims (split at braces that end a
-  # sentence, {5.4.1, 5.4.2}) rather than per sentence. Same column schema and
-  # separate output root (output/nli_ready_evidence), so the same claim-unit
-  # and scoring machinery consumes it unchanged. See NEXT_STEPS.md.
+  # sentence, {5.4.1, 5.4.2}) rather than per sentence -- or, under a
+  # granularity: complete_bm NLI config, not split at all (whole
+  # bm_description/bm_label as one claim each). Same column schema either
+  # way; output root is hive-partitioned by granularity=<value>/ so naive_bm
+  # (the default, byte-identical path to before this partition was added --
+  # existing data was migrated under granularity=naive_bm/ rather than
+  # recomputed) and complete_bm never collide. See NEXT_STEPS.md.
   tar_target(
     nli_ready_evidence_parquet,
     build_nli_ready_evidence_parquet(
@@ -341,7 +390,9 @@ list(
       key_messages_parquet,
       works_citing_parquet,
       workers,
-      "output/nli_ready_evidence"
+      file.path("output/nli_ready_evidence", paste0("granularity=", granularity)),
+      granularity,
+      claim_completion_model
     ),
     pattern = map(assessment, key_messages_parquet, works_citing_parquet),
     format = "file",
@@ -351,6 +402,59 @@ list(
     # layers of parallelism on the pipeline's biggest in-memory data.
     deployment = "main",
     garbage_collection = TRUE
+  ),
+
+  # QA report: how nli_ready_evidence_parquet actually split each BM into
+  # claims, one table per assessment, reflecting whichever granularity is
+  # currently active (naive_bm/atomic_bm show the extracted confidence
+  # column; complete_bm gracefully has none). Deliberately downstream of
+  # nli_ready_evidence_parquet itself (reads its real on-disk output,
+  # distinct()-ed back to one row per claim) rather than a separate
+  # pre-scoring computation, so it can never drift from what was actually
+  # produced. Not a TD_ design doc -- a QA artifact, same self-contained
+  # `format: html` convention as the other reports.
+  tar_target(
+    bm_split_report_table,
+    build_bm_split_report_table(
+      assessment,
+      nli_ready_evidence_parquet,
+      key_messages_parquet,
+      granularity,
+      "output/tables"
+    ),
+    pattern = map(assessment, nli_ready_evidence_parquet, key_messages_parquet),
+    format = "file"
+  ),
+
+  tar_target(
+    bm_split_report_qmd,
+    "input/reports/QA_BM_Split_Report.qmd",
+    format = "file"
+  ),
+
+  tar_target(
+    bm_split_report_html,
+    {
+      # Referenced only to establish the DAG dependency -- the qmd itself
+      # re-reads bm_split_report_table's actual value via tar_read_raw() at
+      # render time, same convention as IPBES_Label_Funnel_Report.qmd.
+      bm_split_report_table
+      out <- paste0("QA_BM_Split_Report_", assessment$id, granularity_suffix(granularity), ".html")
+      # Renders next to the input (input/reports/), regardless of
+      # execute_dir -- see td_doc_html's comment for why. file.rename()
+      # is the whole relocation step.
+      quarto::quarto_render(
+        bm_split_report_qmd,
+        output_file = out,
+        execute_dir = getwd(),
+        execute_params = list(assessment_id = assessment$id, granularity = granularity)
+      )
+      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
+      file.rename(file.path("input/reports", out), file.path("output/reports", out))
+      file.path("output/reports", out)
+    },
+    pattern = map(assessment),
+    format = "file"
   ),
 
   # Target 2h (NLI): NLI alignement scores — classify each citing work against
@@ -385,7 +489,7 @@ list(
   # Target 2h1: Claim-units to score, per assessment.
   tar_target(
     nli_claim_units,
-    build_nli_claim_units(assessment, nli_ready_parquet, nli_config),
+    build_nli_claim_units(assessment, nli_ready_parquet, max_length),
     pattern = map(assessment, nli_ready_parquet),
     iteration = "list"
   ),
@@ -425,7 +529,7 @@ list(
   # two approaches never hit one host concurrently if run together.
   tar_target(
     nli_claim_units_evidence,
-    build_nli_claim_units(assessment, nli_ready_evidence_parquet, nli_config),
+    build_nli_claim_units(assessment, nli_ready_evidence_parquet, max_length),
     pattern = map(assessment, nli_ready_evidence_parquet),
     iteration = "list"
   ),
@@ -441,12 +545,36 @@ list(
       nli_config,
       nli_active,
       nli_pool_health,
-      output_root = "output/nli_scores_evidence"
+      output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity))
     ),
     pattern = map(nli_claim_units_evidence_flat),
     format = "file",
     error = "continue"
   ),
+
+  # Cleanup: score_one_claim()'s per-host dispatch locks (output/nli_scores/
+  # .locks_temp/host_NN.lock) are real files on disk for as long as any
+  # claim branch might still try to acquire one -- deleting one mid-run
+  # (e.g. inside score_one_claim() itself, right after unlock()) would race
+  # with another branch's in-flight filelock::lock() on the same path: POSIX
+  # lets a third branch create a fresh file there and lock IT while the
+  # second branch still holds a valid lock on the now-unlinked original,
+  # breaking the one-claim-per-host guarantee these locks exist for. So
+  # cleanup only happens here, in a target that depends on the WHOLE
+  # nli_scores_by_claim_evidence pattern (referenced only to establish that
+  # DAG dependency) -- targets doesn't run this until every branch has
+  # actually returned (success or error = "continue" failure), so nothing
+  # can still be waiting on a lock by the time it fires. Naturally
+  # self-limiting too: if nli_scores_by_claim_evidence is fully up to date
+  # (nothing left to score), this target is too, and cleanup is skipped
+  # rather than re-deleting an already-empty directory every tar_make().
+  tar_target(nli_host_locks_cleanup, {
+    nli_scores_by_claim_evidence
+    lock_dir <- "output/nli_scores/.locks_temp"
+    n <- length(list.files(lock_dir, pattern = "\\.lock$"))
+    unlink(lock_dir, recursive = TRUE, force = TRUE)
+    sprintf("removed %d lock file(s) from %s", n, lock_dir)
+  }),
 
   # Target 2h4: NLI overview data — per-assessment label/confidence/alignment
   # summary tables, for the report and its BM explorer. Deliberately wired to
@@ -470,15 +598,17 @@ list(
       assessment,
       file.path(
         "output/nli_scores_evidence",
+        paste0("granularity=", nli_granularities),
         paste0("nli_config=", nli_active),
         paste0("assessment=", assessment$id)
       ),
       nli_active,
       works_citing_parquet,
       "output/tables",
-      nli_scores_by_claim_evidence
+      nli_scores_by_claim_evidence,
+      nli_granularities
     ),
-    pattern = map(assessment, works_citing_parquet),
+    pattern = cross(map(assessment, works_citing_parquet), nli_granularities),
     format = "file",
     # collect()s the entire per-assessment nli_scores_evidence table (every
     # row, not just REFUTES/uncertain) to build the summary tables — for GA1
@@ -512,7 +642,8 @@ list(
       works_parquet,
       snowball_parquet,
       nli_ready_evidence_parquet,
-      "output/llm_candidate_scope"
+      "output/llm_candidate_scope",
+      granularity
     ),
     pattern = map(
       assessment, key_messages_parquet, refs_parquet, works_parquet,
@@ -582,27 +713,38 @@ list(
     format = "file"
   ),
 
-  # Target 2h6: REFUTES funnel — a 4-level sieve of distinct citing works per
-  # (km, bm): snowball corpus -> NLI REFUTES-certain -> LLM-confirmed REFUTES
-  # -> + sufficient evidence, each a subset of the previous. Pure local
+  # Target 2h6: label funnels (REFUTES and SUPPORTS) — a 3-level sieve of
+  # distinct citing works per (km, bm): snowball corpus -> NLI <label>-certain
+  # -> LLM-confirmed <label>, each a subset of the previous. Pure local
   # arrow/dplyr over already-scored parquet (no network/GPU calls); reads
   # llm_verification_parquet only as an already-built dependency, same
   # DAG-dependency-only convention as nli_scores_by_claim_evidence elsewhere.
-  # See R/build_refutes_funnel_data.R and IPBES_REFUTES_Report.qmd.
+  # One shared build_label_funnel_*() implementation, called once per label,
+  # rather than two near-identical copies. See R/build_label_funnel_data.R
+  # and IPBES_Label_Funnel_Report.qmd.
+  # Branches over BOTH assessment and nli_granularities (cross(), not map():
+  # granularity is an independent dimension, not zipped 1:1 with assessment)
+  # so both "naive_bm" and "complete_bm" get their own funnel view, regardless
+  # of which one is actually active in nli.configs.<active>.granularity --
+  # a combination with no scored data yet renders the existing empty state.
   tar_target(
     refutes_funnel_data,
-    build_refutes_funnel_data(
+    build_label_funnel_data(
       assessment,
+      "REFUTES",
       works_citing_parquet,
       file.path(
         "output/nli_scores_evidence",
+        paste0("granularity=", nli_granularities),
         paste0("nli_config=", nli_active),
         paste0("assessment=", assessment$id)
       ),
       llm_verification_parquet,
-      "output/tables"
+      "output/tables",
+      nli_granularities,
+      nli_active
     ),
-    pattern = map(assessment, works_citing_parquet, llm_verification_parquet),
+    pattern = cross(map(assessment, works_citing_parquet, llm_verification_parquet), nli_granularities),
     format = "file",
     # collect()s a full per-assessment nli_scores_evidence table, same OOM
     # caution as nli_overview_data.
@@ -611,56 +753,134 @@ list(
   ),
 
   tar_target(
+    supports_funnel_data,
+    build_label_funnel_data(
+      assessment,
+      "SUPPORTS",
+      works_citing_parquet,
+      file.path(
+        "output/nli_scores_evidence",
+        paste0("granularity=", nli_granularities),
+        paste0("nli_config=", nli_active),
+        paste0("assessment=", assessment$id)
+      ),
+      llm_verification_parquet,
+      "output/tables",
+      nli_granularities,
+      nli_active
+    ),
+    pattern = cross(map(assessment, works_citing_parquet, llm_verification_parquet), nli_granularities),
+    format = "file",
+    deployment = "main",
+    garbage_collection = TRUE
+  ),
+
+  tar_target(
     refutes_funnel_figures,
-    build_refutes_funnel_figures(refutes_funnel_data, "output/figures"),
+    build_label_funnel_figures(refutes_funnel_data, "output/figures"),
     pattern = map(refutes_funnel_data),
+    format = "file"
+  ),
+
+  tar_target(
+    supports_funnel_figures,
+    build_label_funnel_figures(supports_funnel_data, "output/figures"),
+    pattern = map(supports_funnel_data),
     format = "file"
   ),
 
   tar_target(
     refutes_funnel_tables,
-    build_refutes_funnel_tables(refutes_funnel_data, "output/tables"),
+    build_label_funnel_tables(refutes_funnel_data, "output/tables"),
     pattern = map(refutes_funnel_data),
     format = "file"
   ),
 
   tar_target(
-    qmd_refutes_funnel,
-    "IPBES_REFUTES_Report.qmd",
+    supports_funnel_tables,
+    build_label_funnel_tables(supports_funnel_data, "output/tables"),
+    pattern = map(supports_funnel_data),
     format = "file"
   ),
 
-  # Rendered once per assessment via Quarto's params:/execute_params=
-  # mechanism (this project's first use of it — every other multi-output
-  # render, td_doc_html, branches over distinct source files instead of one
-  # file rendered N times). deployment = "main" avoids two quarto_render()
-  # calls against the same source .qmd racing on separate crew workers.
+  tar_target(
+    qmd_label_funnel_report,
+    "input/reports/IPBES_Label_Funnel_Report.qmd",
+    format = "file"
+  ),
+
+  # Rendered once per (assessment, label) combination via Quarto's
+  # params:/execute_params= mechanism (this project's first use of it —
+  # every other multi-output render, td_doc_html, branches over distinct
+  # source files instead of one file rendered N times). deployment = "main"
+  # avoids concurrent quarto_render() calls against the same source .qmd
+  # racing on separate crew workers.
+  # assessment is deliberately NOT in this pattern -- refutes_funnel_data's
+  # own cross(assessment, nli_granularities) branching already has 4
+  # branches (2 assessments x 2 granularities), so a plain map() over the
+  # 2-branch assessment target here would mismatch lengths. assessment_id/
+  # granularity are read back out of the funnel data rds itself instead
+  # (both already stored there), which naturally stays aligned with
+  # whichever branch of refutes_funnel_data/_figures/_tables this is.
   tar_target(
     report_refutes_funnel_html,
     {
       # Bare references only to establish DAG edges — the qmd re-reads
-      # everything via tar_read()/readRDS(); quarto_render() re-reads the
-      # qmd from disk.
-      qmd_refutes_funnel
-      refutes_funnel_data
+      # everything via tar_read_raw()/readRDS(); quarto_render() re-reads
+      # the qmd from disk.
+      qmd_label_funnel_report
       refutes_funnel_figures
       refutes_funnel_tables
-      out <- paste0("IPBES_REFUTES_Report_", assessment$id, ".html")
+      x <- readRDS(refutes_funnel_data)
+      gran <- x$granularity %||% "naive_bm"
+      model <- x$nli_active %||% "deberta_zeroshot"
+      out <- paste0("IPBES_REFUTES_Report_", x$assessment, nli_model_suffix(model), granularity_suffix(gran), ".html")
+      # Renders next to the input (input/reports/), regardless of
+      # execute_dir -- see td_doc_html's comment for why. file.rename()
+      # is the whole relocation step.
       quarto::quarto_render(
-        "IPBES_REFUTES_Report.qmd",
+        "input/reports/IPBES_Label_Funnel_Report.qmd",
         output_file = out,
-        execute_params = list(assessment_id = assessment$id)
+        execute_dir = getwd(),
+        execute_params = list(assessment_id = x$assessment, label = "REFUTES", granularity = gran, nli_active = model)
       )
-      out
+      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
+      file.rename(file.path("input/reports", out), file.path("output/reports", out))
+      file.path("output/reports", out)
     },
-    pattern = map(assessment, refutes_funnel_data, refutes_funnel_figures, refutes_funnel_tables),
+    pattern = map(refutes_funnel_data, refutes_funnel_figures, refutes_funnel_tables),
+    format = "file",
+    deployment = "main"
+  ),
+
+  tar_target(
+    report_supports_funnel_html,
+    {
+      qmd_label_funnel_report
+      supports_funnel_figures
+      supports_funnel_tables
+      x <- readRDS(supports_funnel_data)
+      gran <- x$granularity %||% "naive_bm"
+      model <- x$nli_active %||% "deberta_zeroshot"
+      out <- paste0("IPBES_SUPPORTS_Report_", x$assessment, nli_model_suffix(model), granularity_suffix(gran), ".html")
+      quarto::quarto_render(
+        "input/reports/IPBES_Label_Funnel_Report.qmd",
+        output_file = out,
+        execute_dir = getwd(),
+        execute_params = list(assessment_id = x$assessment, label = "SUPPORTS", granularity = gran, nli_active = model)
+      )
+      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
+      file.rename(file.path("input/reports", out), file.path("output/reports", out))
+      file.path("output/reports", out)
+    },
+    pattern = map(supports_funnel_data, supports_funnel_figures, supports_funnel_tables),
     format = "file",
     deployment = "main"
   ),
 
   tar_target(
     qmd_fact_checker,
-    "IPBES_Fact_Checker.qmd",
+    "input/reports/IPBES_Fact_Checker.qmd",
     format = "file"
   ),
 
@@ -690,7 +910,7 @@ list(
 
   tar_target(
     td_doc_qmd,
-    paste0(td_doc_names, ".qmd"),
+    paste0("input/reports/", td_doc_names, ".qmd"),
     pattern = map(td_doc_names),
     format = "file"
   ),
@@ -706,8 +926,19 @@ list(
       # mapped), since only one of the several TD docs actually uses them.
       diagram_workflow_nli
       diagram_pipeline_nli
-      quarto::quarto_render(td_doc_qmd)
-      sub("\\.qmd$", ".html", td_doc_qmd)
+      # embed-resources: true means Quarto's own rendered .html is the
+      # ONLY artifact it produces (no native _files/ sidecar) -- it lands
+      # next to the input (input/reports/), regardless of execute_dir,
+      # which only affects code-execution cwd, not output placement
+      # (verified directly before this design was adopted). The
+      # file.rename() below is the entire relocation step; nothing is
+      # left behind in input/reports/ once this target finishes.
+      out_html <- sub("\\.qmd$", ".html", td_doc_qmd)
+      quarto::quarto_render(td_doc_qmd, execute_dir = getwd())
+      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
+      final <- file.path("output/reports", basename(out_html))
+      file.rename(out_html, final)
+      final
     },
     pattern = map(td_doc_qmd),
     format = "file"
@@ -720,34 +951,43 @@ list(
       # deps by static-scanning this expression) — the qmd itself re-reads
       # nli_bm_explorer_html's and td_doc_html's actual values via
       # tar_read(), and quarto_render() re-reads the qmd from disk by path.
-      # Without nli_bm_explorer_html/td_doc_html/report_refutes_funnel_html,
-      # tar_make() would happily render the report against stale/missing
-      # dependents rather than building them first. Without qmd_fact_checker
-      # (file-hash tracked), targets has no visibility into the qmd's own
-      # content — editing the qmd (prose, code chunks, or YAML header, e.g.
+      # Without nli_bm_explorer_html/td_doc_html/report_refutes_funnel_html/
+      # report_supports_funnel_html/bm_split_report_html, tar_make() would
+      # happily render the report against stale/missing dependents rather
+      # than building them first. Without qmd_fact_checker (file-hash
+      # tracked), targets has no visibility into the qmd's own content —
+      # editing the qmd (prose, code chunks, or YAML header, e.g.
       # embed-resources) would silently NOT invalidate this target.
       nli_bm_explorer_html
       report_refutes_funnel_html
+      report_supports_funnel_html
+      bm_split_report_html
       qmd_fact_checker
       td_doc_html
-      quarto::quarto_render("IPBES_Fact_Checker.qmd")
-      "IPBES_Fact_Checker.html"
+      # See td_doc_html's own comment: embed-resources: true means the
+      # rendered .html is Quarto's only output artifact (lands next to
+      # the input regardless of execute_dir), so file.rename() is the
+      # whole relocation step.
+      quarto::quarto_render("input/reports/IPBES_Fact_Checker.qmd", execute_dir = getwd())
+      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
+      file.rename("input/reports/IPBES_Fact_Checker.html", "output/reports/IPBES_Fact_Checker.html")
+      "output/reports/IPBES_Fact_Checker.html"
     },
     format = "file"
   ),
 
   # Deployable copy: the report + every TD doc + every per-assessment
-  # REFUTES funnel report, each with its _files/ sidecar if it has one, plus
-  # CLAUDE.md (TD_targets.qmd links to it by a plain relative path),
-  # collected into one self-contained directory. deploy-pages.yml publishes
-  # this directory's contents verbatim to the gh-pages branch — it doesn't
-  # need its own logic to find which htmls exist or pair them with a
-  # _files/ folder.
+  # label funnel report (REFUTES and SUPPORTS), each with its _files/
+  # sidecar if it has one, plus CLAUDE.md (TD_targets.qmd links to it by a
+  # plain relative path), collected into one self-contained directory.
+  # deploy-pages.yml publishes this directory's contents verbatim to the
+  # gh-pages branch — it doesn't need its own logic to find which htmls
+  # exist or pair them with a _files/ folder.
   tar_target(
     report_output_dir,
     build_report_output_dir(
       report_fact_checker,
-      c(td_doc_html, report_refutes_funnel_html),
+      c(td_doc_html, report_refutes_funnel_html, report_supports_funnel_html, bm_split_report_html),
       claude_md,
       "output/reports"
     ),

@@ -5,9 +5,8 @@
 # nli_ready_parquet at claim-scoring time (via partition-pruned filtering)
 # so this target's cached branch values stay small regardless of how many
 # works a claim has.
-build_nli_claim_units <- function(assessment, nli_ready_path, nli_config) {
+build_nli_claim_units <- function(assessment, nli_ready_path, max_length) {
   assessment_id <- assessment$id
-  max_length <- nli_cfg_get(nli_config, "max_length", NULL)
   filter_limit <- if (!is.null(max_length)) as.integer(max_length) else 512L
 
   ready <- arrow::open_dataset(nli_ready_path) |>

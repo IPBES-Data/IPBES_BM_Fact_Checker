@@ -2218,6 +2218,7 @@ vertical-align: -.125em;
   <li><a href="#the-nli-task" id="toc-the-nli-task" class="nav-link" data-scroll-target="#the-nli-task">The NLI Task</a></li>
   <li><a href="#recommended-model" id="toc-recommended-model" class="nav-link" data-scroll-target="#recommended-model">Recommended Model</a></li>
   <li><a href="#context-length-considerations" id="toc-context-length-considerations" class="nav-link" data-scroll-target="#context-length-considerations">Context Length Considerations</a></li>
+  <li><a href="#claim-granularity-sub_bm-vs.-complete_bm" id="toc-claim-granularity-sub_bm-vs.-complete_bm" class="nav-link" data-scroll-target="#claim-granularity-sub_bm-vs.-complete_bm">Claim Granularity: <code>sub_bm</code> vs. <code>complete_bm</code></a></li>
   <li><a href="#compute-estimates" id="toc-compute-estimates" class="nav-link" data-scroll-target="#compute-estimates">Compute Estimates</a>
   <ul>
   <li><a href="#throughput-by-hardware" id="toc-throughput-by-hardware" class="nav-link" data-scroll-target="#throughput-by-hardware">Throughput by hardware</a></li>
@@ -2367,6 +2368,71 @@ vertical-align: -.125em;
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">n_over_400    =</span> <span class="fu">sum</span>(n_tokens <span class="sc">&gt;</span> <span class="dv">400</span>)</span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>For abstracts exceeding ~400 tokens, truncate from the end (the claim is typically stated early). Do not truncate mid-sentence.</p>
+<hr>
+</section>
+<section id="claim-granularity-sub_bm-vs.-complete_bm" class="level2">
+<h2 class="anchored" data-anchor-id="claim-granularity-sub_bm-vs.-complete_bm">Claim Granularity: <code>sub_bm</code> vs. <code>complete_bm</code></h2>
+<p>The implemented pipeline (<code>R/build_nli_ready_evidence_parquet.R</code>) doesn’t score a whole BM against a paper in one pair — it first cuts each BM’s <code>bm_description</code>/<code>bm_label</code> into smaller claims. <code>input/config.yaml</code>’s per-NLI-config <code>granularity</code> field picks how:</p>
+<ul>
+<li><strong><code>sub_bm</code></strong> (default, the active approach) — <code>segment_bm_by_evidence()</code> splits at brace evidence-references (<code>{5.4.1, 5.4.2}</code>) that end a sentence, producing 2-17 claims per BM. Each claim is short (measured: 62-86 tokens average, max 229-328), comfortably inside the 512-token headroom discussed above.</li>
+<li><strong><code>complete_bm</code></strong> — <code>segment_bm_whole()</code> takes each field whole, unsegmented: 2 claims per BM (<code>bm_description</code> + <code>bm_label</code>), or 1 if the two are identical text after whitespace normalization (checked against all 88 declared BMs across both assessments: currently 0 are identical, so this collapses nothing today, but the rule exists for correctness).</li>
+</ul>
+<p><strong>Measured claim/pair reduction</strong>, from the real on-disk <code>sub_bm</code> data:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Assessment</th>
+<th>BMs</th>
+<th><code>sub_bm</code> claims (mean/BM)</th>
+<th><code>sub_bm</code> (claim,work) pairs</th>
+<th><code>complete_bm</code> claims</th>
+<th>Projected pairs</th>
+<th>Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GA1</td>
+<td>30</td>
+<td>171 (5.7)</td>
+<td>1,887,289</td>
+<td>60</td>
+<td>~662,382</td>
+<td>~65%</td>
+</tr>
+<tr class="even">
+<td>IAS</td>
+<td>49</td>
+<td>429 (8.76)</td>
+<td>1,695,040</td>
+<td>98</td>
+<td>~387,190</td>
+<td>~77%</td>
+</tr>
+<tr class="odd">
+<td>Combined</td>
+<td>79</td>
+<td>600</td>
+<td>3,582,329</td>
+<td>158</td>
+<td>~1,049,572</td>
+<td>~71%</td>
+</tr>
+</tbody>
+</table>
+<p>Phase 2 (LLM verification) volume would shrink by roughly the same factor <em>if</em> the REFUTES/SUPPORTS-certain rate per pair holds under the much longer hypothesis text <code>complete_bm</code> produces — genuinely uncertain, not a rounding caveat (see below).</p>
+<p><strong>Why <code>complete_bm</code> isn’t just a free win — the token-limit problem is worse than the “headroom” framing above suggests.</strong> A whole <code>bm_description</code>/<code>bm_label</code> averages <strong>~245-271 tokens</strong> (median 120-155, <strong>up to 733-885</strong> at the extreme) — 3-10x longer than a <code>sub_bm</code> claim. <code>max_length: 512</code> in <code>input/config.yaml</code> looks like a conservative, raisable setting; it is not. Fetched <code>MoritzLaurer/deberta-v3-large-zeroshot-v2.0</code>’s real <code>config.json</code> directly from Hugging Face and confirmed <code>max_position_embeddings: 512</code> — a hard architectural limit of the model itself (its position-embedding table has exactly 512 slots), already matching <code>input/config.yaml</code>’s setting exactly. <code>external/runpod/docker/nli-runpod/server.py</code>’s tokenizer call truncates the <strong>combined</strong> premise+hypothesis pair (<code>truncation=&quot;longest_first&quot;</code>), so for any BM whose <code>complete_bm</code> claim already exceeds ~512 tokens on its own, the <strong>hypothesis itself</strong> gets cut — not just the premise’s tail, which is the only thing that ever truncates under <code>sub_bm</code>. Treat <code>complete_bm</code> results for the largest BMs with real skepticism until truncation is actually measured against a run, not as a minor footnote.</p>
+<p><strong>The mitigation is a different model, not a bigger <code>max_length</code>.</strong> <code>input/config.yaml</code> ships a second config, <code>bge_m3_zeroshot</code> (<code>MoritzLaurer/bge-m3-zeroshot-v2.0-c</code>, <code>max_position_embeddings: 8194</code> — also confirmed against its real <code>config.json</code>), meant to pair with <code>granularity: complete_bm</code>. It needed to be multilingual, not just long-context: the <em>hypothesis</em> (BM claim) is always English, but the <em>premise</em> (citing-paper title+abstract, from OpenAlex) can be in whatever language the source paper was published in, so an English-only long-context alternative (<code>MoritzLaurer/ModernBERT-large-zeroshot-v2.0</code>, also 8192 tokens, considered first) would still fail on non-English premises. <code>bge_m3_zeroshot</code> and the currently-deployed <code>deberta_zeroshot</code> use the <strong>same 2-class</strong> <code>entailment</code>/<code>not_entailment</code> head (both real <code>config.json</code>s checked) — MoritzLaurer’s “v2.0” series reformulates zero-shot as one entailment-vs-not_entailment pass per candidate label, not classic 3-way MNLI — so <code>server.py</code>’s already-dynamic <code>_entailment_id()</code> (derived from <code>_model.config.label2id</code>, not hardcoded) needs no changes to serve either model; only a different <code>NLI_MODEL</code> build arg (<code>external/runpod/docker/nli-runpod/Dockerfile</code>) and a new image tag, <code>ghcr.io/rkrug/nli-runpod-bge-m3</code> (see <code>input/nli_pods_bge_m3.conf</code>).</p>
+<p>Not yet built, provisioned, or run — <code>bge_m3_zeroshot</code>’s <code>uncertain_threshold: 0.60</code> is carried over unverified from <code>deberta_zeroshot</code> as a starting point, not a calibrated value for this different model. See <code>TODO.md</code>.</p>
 <hr>
 </section>
 <section id="compute-estimates" class="level2">

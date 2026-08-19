@@ -24,7 +24,7 @@ score_one_claim <- function(
   nli_config,
   nli_active,
   nli_model,
-  lock_dir = "output/nli_scores/.locks",
+  lock_dir = "output/nli_scores/.locks_temp",
   output_root = "output/nli_scores"
 ) {
   cfg <- if (is.null(nli_config)) list() else nli_config

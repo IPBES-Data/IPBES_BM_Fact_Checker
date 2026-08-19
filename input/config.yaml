@@ -23,35 +23,158 @@ assessments:
 # NLI alignment backend. The pipeline POSTs (premise, hypothesis) pairs to a
 # zero-shot NLI server (see external/runpod/docker/nli-runpod/). Switch models by changing
 # `active` to a key under `configs`. Use `~` to disable.
+#
+# bge_m3_zeroshot is now the sole production config -- deberta_zeroshot/
+# deberta_zeroshot_v3 are RETIRED (see their own comments below), not just
+# dormant. Switched over because, once actually measured on real GPU pods
+# (not the emulated-CPU numbers first assumed), bge-m3-zeroshot-v2.0-c came
+# out strictly ahead for this project's use case: ~2.7x faster per pod than
+# deberta-v3-large-zeroshot-v2.0 on an identical 256-premise batch (33.6 vs
+# 12.5 pairs/sec -- DeBERTa's disentangled-attention mechanism is heavier
+# per token despite fewer params), genuinely multilingual (citing-paper
+# premises can be in any language; deberta-v3-large-zeroshot-v2.0 is
+# English-only), and a ~8194-token ceiling vs. deberta's hard 512. A n=350
+# spot-check (150 pairs deberta had called REFUTES-certain + 200 general
+# random pairs, scored live against the real bge-m3 pod) found its overall
+# confidence distribution closely matches deberta's own full-corpus shape
+# (median ~0.50 vs ~0.51; both flag ~71-75% of pairs "uncertain" at 0.60) --
+# not a rigorous calibration, but enough to not fly blind. See
+# TD_BM_NLI_approach.qmd for the full writeup. All prior deberta-scored
+# output (output/nli_scores_evidence/, output/llm_verification/) has since
+# been deleted (disk space) and was not migrated -- there is nothing left to
+# reconcile against, which is what made a clean full switch straightforward.
+#
+# granularity: how a BM's bm_description/bm_label text is cut into claims --
+#   "naive_bm" (default) -- evidence-delimited sub-claims (segment_bm_by_evidence(),
+#     2-17 per BM). Currently active (bge_m3_zeroshot.granularity below);
+#     output partitioned under output/nli_ready_evidence/granularity=naive_bm/
+#     and output/nli_scores_evidence/granularity=naive_bm/.
+#   "complete_bm" -- each field taken whole, un-segmented (segment_bm_whole()):
+#     2 claims per BM (bm_description + bm_label), or 1 if the two fields are
+#     identical after whitespace normalization. Measured ~71% fewer NLI pairs
+#     combined across GA1+IAS (3,582,329 -> ~1,049,572) -- see
+#     TD_BM_NLI_approach.qmd for the full table and an important caveat: a
+#     complete-BM claim can exceed a model's own max_position_embeddings (512
+#     for deberta-v3-large-zeroshot-v2.0 -- a real architectural limit, not a
+#     raisable config value), truncating the CLAIM itself, not just the
+#     premise -- not a concern for bge_m3_zeroshot's own ~8194-token ceiling.
+#     Output partitioned under .../granularity=complete_bm/.
 nli:
-  active: deberta_zeroshot   # which entry under configs: is active
+  # granularity: atomic_bm's LLM-completion step (R/build_claim_completion.R):
+  # resolves elliptical fragments from segment_bm_atomic()'s per-brace split
+  # into self-contained claims. Tiny volume -- 656 real fragments actually
+  # need a call (computed directly against all 88 BMs across both
+  # assessments; single-fragment BM fields skip the LLM entirely), so this
+  # is picked for completion quality/instruction-following on a strict
+  # "never invent new content, only restore grammar" rewriting task, not
+  # cost -- every real candidate model priced out under $1 total for the
+  # whole one-time job. claude-haiku-4.5 chosen for its strong track record
+  # on precise, constrained rewriting instructions; not empirically
+  # A/B-tested against alternatives the way gpt-oss-20b was for Phase 2
+  # verification earlier -- swap `active` below if that's ever done.
+  claim_completion:
+    active: haiku_completion   # which entry under configs: is active
+
+    configs:
+      haiku_completion:
+        model: "anthropic/claude-haiku-4.5"
+
+
+  active: bge_m3_zeroshot_naive_bm   # which entry under configs: is active -- the only config with running pods
 
   configs:
-    deberta_zeroshot:
-      scheme: https
-      host: ["93k88733biunbu-8080.proxy.runpod.net", "8ynqkgqdxvkyn7-8080.proxy.runpod.net", "mrvuiqje7g8990-8080.proxy.runpod.net", "7y462hj3j0h5gj-8080.proxy.runpod.net", "709moshubtrr3d-8080.proxy.runpod.net", "5954f9w11l930f-8080.proxy.runpod.net", "gvbxu946iom8qi-8080.proxy.runpod.net"]
-      port: null                              # null → scheme://host (RunPod proxy)
-      auth_token_keyring: null                # optional keyring entry for a bearer token
-      model: MoritzLaurer/deberta-v3-large-zeroshot-v2.0   # label only; actual model is read from /health and recorded as nli_model. Warns on mismatch.
-      candidate_labels: ["supports", "refutes", "is not relevant to"]
-      hypothesis_template: "This paper {} the following claim: %s"
-      batch_size: 128
-      max_length: 512        # max tokens per (premise, hypothesis) pair; null → server default (512)
-      uncertain_threshold: 0.60
-      nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
+    # RETIRED -- superseded by bge_m3_zeroshot below (faster per-pod,
+    # multilingual, longer context; see the comment above nli:). Its scored
+    # output (output/nli_scores_evidence/, output/llm_verification/) has
+    # been deleted and was not migrated, so there is nothing left this
+    # config's data needs to stay consistent with. The 7 RunPod pods listed
+    # in `host` are stopped (idle watchdog) and not intended to be
+    # restarted; kept here only as a historical/rollback reference, not
+    # meant to be reactivated casually -- `active` should not point back
+    # here without a real reason.
+    # deberta_zeroshot:
+    #   scheme: https
+    #   host: ["93k88733biunbu-8080.proxy.runpod.net", "8ynqkgqdxvkyn7-8080.proxy.runpod.net", "mrvuiqje7g8990-8080.proxy.runpod.net", "7y462hj3j0h5gj-8080.proxy.runpod.net", "709moshubtrr3d-8080.proxy.runpod.net", "5954f9w11l930f-8080.proxy.runpod.net", "gvbxu946iom8qi-8080.proxy.runpod.net"]
+    #   port: null                              # null → scheme://host (RunPod proxy)
+    #   auth_token_keyring: null                # optional keyring entry for a bearer token
+    #   model: MoritzLaurer/deberta-v3-large-zeroshot-v2.0   # label only; actual model is read from /health and recorded as nli_model. Warns on mismatch.
+    #   candidate_labels: ["supports", "refutes", "is not relevant to"]
+    #   hypothesis_template: "This paper {} the following claim: %s"
+    #   batch_size: 128
+    #   max_length: 512        # max tokens per (premise, hypothesis) pair; null → server default (512). This IS the model's own max_position_embeddings -- not raisable.
+    #   uncertain_threshold: 0.60
+    #   nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
+    #   granularity: naive_bm
 
-    deberta_zeroshot_v3:
+    # RETIRED -- same reasoning as deberta_zeroshot above. Never actually
+    # provisioned/scored against (host was still a placeholder), so nothing
+    # of this config's own was lost.
+    # deberta_zeroshot_v3:
+    #   scheme: https
+    #   host: 0p28ccn78phd50-8080.proxy.runpod.net    # fill in after the base-model pod boots
+    #   port: null                              # null → scheme://host (RunPod proxy)
+    #   auth_token_keyring: null                # optional keyring entry for a bearer token
+    #   model: MoritzLaurer/deberta-v3-base-zeroshot-v2.0   # label only; verified against /health
+    #   candidate_labels: ["supports", "refutes", "is not relevant to"]
+    #   hypothesis_template: "This paper {} the following claim: %s"
+    #   batch_size: 128
+    #   max_length: 512        # base model is cheap enough to keep the full window
+    #   uncertain_threshold: 0.60
+    #   nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
+    #   granularity: naive_bm
+
+    # ACTIVE -- the sole production NLI config (see the comment above nli:
+    # for the full rationale: faster per-pod than deberta_zeroshot once
+    # actually measured, genuinely multilingual, and a ~8194-token ceiling).
+    # Originally added for granularity: complete_bm's long-context need
+    # specifically -- premises (citing-paper title+abstract) can be in any
+    # language the source paper was published in, even though the
+    # hypothesis (BM claim) is always English, so this needs cross-lingual
+    # entailment, not just a longer-context English model -- but that
+    # cross-lingual need applies regardless of granularity, which is why
+    # this config now also covers naive_bm (see granularity: below).
+    # Image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.1.0 (see TD_BM_NLI_approach.qmd).
+    bge_m3_zeroshot_complete_bm:
       scheme: https
-      host: 0p28ccn78phd50-8080.proxy.runpod.net    # fill in after the base-model pod boots
-      port: null                              # null → scheme://host (RunPod proxy)
-      auth_token_keyring: null                # optional keyring entry for a bearer token
-      model: MoritzLaurer/deberta-v3-base-zeroshot-v2.0   # label only; verified against /health
+      host: ["d78ew5xa898onb-8080.proxy.runpod.net", "k3d0ojjo3r34gn-8080.proxy.runpod.net", "imxudxy1q07w93-8080.proxy.runpod.net", "2yjh0c3crclwg2-8080.proxy.runpod.net", "qzv2pwdj8gccmj-8080.proxy.runpod.net", "6dbdypmy7ttlqe-8080.proxy.runpod.net", "tkmmt2u8s8xoy0-8080.proxy.runpod.net"]
+      port: null
+      auth_token_keyring: null
+      model: MoritzLaurer/bge-m3-zeroshot-v2.0-c   # label only; verified against /health. max_position_embeddings ~8194 (real limit, not this project's choice)
       candidate_labels: ["supports", "refutes", "is not relevant to"]
       hypothesis_template: "This paper {} the following claim: %s"
-      batch_size: 128
-      max_length: 512        # base model is cheap enough to keep the full window
-      uncertain_threshold: 0.60
-      nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
+      batch_size: 64          # measured: 33.6 pairs/sec on one L4 pod at this setting (256-premise real batch) -- ~2.7x deberta_zeroshot's 12.5 pairs/sec at batch_size 128 on the same batch
+      max_length: 2048        # comfortably covers complete_bm's largest measured claim (~885 tokens) + a full premise, well under the ~8194 ceiling
+      uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
+      nei_threshold: 0.90
+      granularity: complete_bm    #  naive_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
+
+    bge_m3_zeroshot_atomic_bm:
+      scheme: https
+      host: ["d78ew5xa898onb-8080.proxy.runpod.net", "k3d0ojjo3r34gn-8080.proxy.runpod.net", "imxudxy1q07w93-8080.proxy.runpod.net", "2yjh0c3crclwg2-8080.proxy.runpod.net", "qzv2pwdj8gccmj-8080.proxy.runpod.net", "6dbdypmy7ttlqe-8080.proxy.runpod.net", "tkmmt2u8s8xoy0-8080.proxy.runpod.net"]
+      port: null
+      auth_token_keyring: null
+      model: MoritzLaurer/bge-m3-zeroshot-v2.0-c   # label only; verified against /health. max_position_embeddings ~8194 (real limit, not this project's choice)
+      candidate_labels: ["supports", "refutes", "is not relevant to"]
+      hypothesis_template: "This paper {} the following claim: %s"
+      batch_size: 64          # measured: 33.6 pairs/sec on one L4 pod at this setting (256-premise real batch) -- ~2.7x deberta_zeroshot's 12.5 pairs/sec at batch_size 128 on the same batch
+      max_length: 2048        # comfortably covers complete_bm's largest measured claim (~885 tokens) + a full premise, well under the ~8194 ceiling
+      uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
+      nei_threshold: 0.90
+      granularity: atomic_bm    #  naive_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
+
+    bge_m3_zeroshot_naive_bm:
+      scheme: https
+      host: ["d78ew5xa898onb-8080.proxy.runpod.net", "k3d0ojjo3r34gn-8080.proxy.runpod.net", "imxudxy1q07w93-8080.proxy.runpod.net", "2yjh0c3crclwg2-8080.proxy.runpod.net", "qzv2pwdj8gccmj-8080.proxy.runpod.net", "6dbdypmy7ttlqe-8080.proxy.runpod.net", "tkmmt2u8s8xoy0-8080.proxy.runpod.net"]
+      port: null
+      auth_token_keyring: null
+      model: MoritzLaurer/bge-m3-zeroshot-v2.0-c   # label only; verified against /health. max_position_embeddings ~8194 (real limit, not this project's choice)
+      candidate_labels: ["supports", "refutes", "is not relevant to"]
+      hypothesis_template: "This paper {} the following claim: %s"
+      batch_size: 64          # measured: 33.6 pairs/sec on one L4 pod at this setting (256-premise real batch) -- ~2.7x deberta_zeroshot's 12.5 pairs/sec at batch_size 128 on the same batch
+      max_length: 2048        # comfortably covers complete_bm's largest measured claim (~885 tokens) + a full premise, well under the ~8194 ceiling
+      uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
+      nei_threshold: 0.90
+      granularity:  naive_bm   # complete_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
 
     # deberta_finetuned:
     #   scheme: https
@@ -90,12 +213,16 @@ nli:
 # nli_certainty: which confidence band(s) -- null/omitted (any), or one/more
 #   of "certain" (uncertain == FALSE) / "uncertain" (uncertain == TRUE), e.g.
 #   certain, or [certain, uncertain] (equivalent to null, spelled out).
-# Combined with AND: nli_labels: [REFUTES], nli_certainty: certain routes
-# only high-confidence REFUTES pairs (measured: 26,861 of 3,547,231 scored
-# pairs, ~$4 at gpt-4o-mini rates) -- the current first step. Broader sets
-# (REFUTES at any confidence: 430,261 pairs; adding SUPPORTS/NOT_ENOUGH_INFO
-# when uncertain: 2,357,718 pairs) are left for later by widening either
-# field or defining additional configs. Output is hive-partitioned by
+# Combined with AND: nli_labels: [REFUTES, SUPPORTS], nli_certainty: certain
+# routes every high-confidence REFUTES or SUPPORTS pair (measured: 26,861
+# REFUTES-certain + 52,061 SUPPORTS-certain = 78,922 of 3,547,231 scored
+# pairs, ~$11.75 combined at gpt-4o-mini rates) -- REFUTES-certain alone was
+# the original first step; SUPPORTS-certain was added once the REFUTES
+# funnel report (IPBES_Label_Funnel_Report.qmd) was generalized to cover
+# both labels. Broader sets (either label at any confidence, or adding
+# NOT_ENOUGH_INFO when uncertain: 2,357,718 pairs for the original
+# REFUTES-only design) are left for later by widening either field or
+# defining additional configs. Output is hive-partitioned by
 # nli_route=<LABEL>-<certainty> too -- but that value is derived PER ROW
 # from its own actual label/uncertain outcome, not from these filter
 # fields, so a config listing several labels or certainties still splits
@@ -126,7 +253,7 @@ llm_verification:
       max_active: 24
       max_retries: 2
       subset: all
-      nli_labels: [REFUTES]
+      nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
     # Same model/settings as openrouter_cheap, narrowed to the sm-derived
@@ -139,7 +266,7 @@ llm_verification:
       max_active: 24
       max_retries: 2
       subset: sm
-      nli_labels: [REFUTES]
+      nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
     # Step up when the cheap model is topic-matching rather than actually
@@ -151,7 +278,7 @@ llm_verification:
       max_active: 24
       max_retries: 2
       subset: all
-      nli_labels: [REFUTES]
+      nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
     # For a final, citable verification pass. Reasoning model -- see the
@@ -164,5 +291,5 @@ llm_verification:
       max_active: 24
       max_retries: 2
       subset: all
-      nli_labels: [REFUTES]
+      nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain

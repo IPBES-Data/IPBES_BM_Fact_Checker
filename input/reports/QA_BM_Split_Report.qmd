@@ -1,0 +1,105 @@
+---
+title: QA BM Split Report
+subtitle: QA check for how each Background Message was split into claims
+date: today
+params:
+  assessment_id: "GA1"
+  granularity: "naive_bm"
+format:
+    html:
+        toc: true
+        toc-depth: 3
+        embed-resources: true
+        code-fold: true
+        code-summary: 'Show the code'
+        keep-md: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(dplyr)
+
+# Self-contained-report helper, same idiom as IPBES_Label_Funnel_Report.qmd's
+# setup chunk -- report_files_dir built from params$assessment_id/
+# params$granularity, not knitr::current_input(), since this qmd is rendered
+# once per assessment via quarto::quarto_render(output_file=, execute_params=).
+#
+# Inlined rather than sourced from R/branch_helpers.R's granularity_suffix():
+# quarto::quarto_render() runs this file in its own fresh R session, which
+# doesn't inherit _targets.R's lapply(source) of R/*.R -- this qmd has never
+# sourced project R/ helpers (only library() calls), so a one-line inline
+# copy is more consistent than introducing that pattern here.
+gran_suffix <- paste0("_", params$granularity)
+# file.path("output/reports", ...) rather than a bare name: the qmd source
+# lives in input/reports/, but the rendered .html gets moved to
+# output/reports/ by the _targets.R target after this chunk runs (Quarto
+# renders next to the input regardless of execute_dir) -- writing the
+# sidecar directly into its final home means it's already correctly a
+# sibling of the .html once that move happens.
+report_files_dir <- file.path("output/reports", paste0("QA_BM_Split_Report_", params$assessment_id, gran_suffix, "_files"))
+unlink(report_files_dir, recursive = TRUE, force = TRUE)
+dir.create(report_files_dir, recursive = TRUE, showWarnings = FALSE)
+copy_into_report_files <- function(paths) {
+  file.copy(paths, report_files_dir, overwrite = TRUE)
+  file.path(basename(report_files_dir), basename(paths))
+}
+
+expected_name <- function(ext) sprintf("bm_split_report_table_%s%s.%s", params$assessment_id, gran_suffix, ext)
+
+data_path <- targets::tar_read_raw("bm_split_report_table") |>
+  (\(x) x[basename(x) == expected_name("rds")])()
+x <- readRDS(data_path)
+
+table_path <- copy_into_report_files(
+  targets::tar_read_raw("bm_split_report_table") |>
+    (\(x) x[basename(x) == expected_name("html")])()
+)
+
+n_bm <- x$data |> distinct(km, bm) |> nrow()
+n_claims <- nrow(x$data)
+has_confidence <- "confidence" %in% names(x$data)
+pct_with_confidence <- if (has_confidence) round(100 * mean(!is.na(x$data$confidence)), 1) else NA
+```
+
+# `r params$assessment_id` -- granularity: `r params$granularity`
+
+## Methodology
+
+Every Background Message (BM) in this assessment is split into claims by
+`nli_ready_evidence_parquet` under the currently active `granularity`
+setting (`input/config.yaml`'s `nli.active` config). This report is a
+**QA check on that split, not a scoring result** — it shows, for every
+claim actually produced, the original `bm_description`/`bm_label` text it
+came from, so the segmentation can be sanity-checked by eye before any
+NLI/LLM scoring is run against it. See `TD_BM_NLI_approach.qmd` for the
+full design rationale behind each granularity option (`naive_bm` /
+`complete_bm` / `atomic_bm`).
+
+```{r}
+#| label: summary
+#| results: asis
+cat(sprintf("- **%d** distinct BMs, **%d** resulting claims\n", n_bm, n_claims))
+if (has_confidence) {
+  cat(sprintf(
+    "- **%.1f%%** of claims had an IPBES confidence qualifier (\"well established\" / \"established but incomplete\" / \"unresolved\" / \"inconclusive\") extracted out of the claim text into its own column\n",
+    pct_with_confidence
+  ))
+} else {
+  cat("- This granularity's claims carry no separate confidence-qualifier column (whole-field claims, `complete_bm` only).\n")
+}
+```
+
+## Original BM vs. resulting claims
+
+Use the filter row below the header to narrow to one KM/BM/source field.
+
+```{r}
+#| label: split-table
+#| results: asis
+cat(sprintf(
+  '<iframe src="%s" width="100%%" height="800px" style="border:none;"></iframe>\n\n',
+  table_path
+))
+```

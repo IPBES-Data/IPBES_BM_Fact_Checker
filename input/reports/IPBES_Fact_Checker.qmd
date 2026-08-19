@@ -63,8 +63,18 @@ library(tictoc)
 # IPBES_Fact_Checker.html + IPBES_Fact_Checker_files/ — not a separate
 # output/tables/ directory (or the TD_*.html files) alongside it. Returns
 # the report-relative link/iframe-src path(s).
-report_files_dir <- paste0(
-  tools::file_path_sans_ext(knitr::current_input()), "_files"
+#
+# Deliberately file.path("output/reports", ...) rather than a bare
+# knitr::current_input()-derived name: the qmd source lives in
+# input/reports/, but the rendered .html itself gets moved to
+# output/reports/ by the _targets.R target AFTER this chunk runs (Quarto
+# renders next to the input regardless of execute_dir) -- writing the
+# sidecar directly into its final home means it's already a correct
+# sibling of the .html once that move happens, no second relocation step
+# needed for this directory.
+report_files_dir <- file.path(
+  "output/reports",
+  paste0(tools::file_path_sans_ext(knitr::current_input()), "_files")
 )
 dir.create(report_files_dir, recursive = TRUE, showWarnings = FALSE)
 copy_into_report_files <- function(paths) {
@@ -326,12 +336,23 @@ nli_bm_explorer_paths <- copy_into_report_files(targets::tar_read(
 
 for (data_path in nli_overview_data_paths) {
   x <- readRDS(data_path)
-  cat(sprintf("\n### %s\n\n", x$assessment))
+  nli_active_this <- x$nli_active %||% "deberta_zeroshot"
+  gran_this <- x$granularity %||% "naive_bm"
+  cat(sprintf("\n### %s (%s, %s)\n\n", x$assessment, nli_active_this, gran_this))
 
   if (isTRUE(x$empty)) {
-    cat("No NLI scores available yet for this assessment.\n\n")
+    cat("No NLI scores available yet for this assessment/model/granularity combination.\n\n")
     next
   }
+
+  # Exact suffix match (not a loose substring grepl) -- filenames now carry
+  # both a model suffix ("" for deberta_zeroshot, "_<nli_active>" otherwise)
+  # and a granularity suffix (always "_<granularity>", explicit for every
+  # value including naive_bm), so a bare "_<assessment>\\.png$" anchor
+  # would silently only ever match one branch and miss the others.
+  model_suffix_this <- if (identical(nli_active_this, "deberta_zeroshot")) "" else paste0("_", nli_active_this)
+  gran_suffix_this <- paste0("_", gran_this)
+  suffix_this <- paste0(model_suffix_this, gran_suffix_this)
 
   cat(sprintf(
     "- **%s** works scored\n- **%d** background messages\n- **%d** key messages\n- **%s%%** uncertain (confidence < 0.60)\n\n",
@@ -342,7 +363,7 @@ for (data_path in nli_overview_data_paths) {
   ))
 
   fig_this <- nli_overview_figures_paths[
-    grepl(paste0("_", x$assessment, "\\.png$"), nli_overview_figures_paths)
+    grepl(paste0("_", x$assessment, suffix_this, "\\.png$"), nli_overview_figures_paths)
   ]
   plot_overall <- fig_this[grepl("plot_overall", fig_this)]
   plot_km <- fig_this[grepl("plot_km", fig_this)]
@@ -393,7 +414,7 @@ for (data_path in nli_overview_data_paths) {
     "and BM as explicit columns.\n\n"
   )
   explorer_this <- nli_bm_explorer_paths[
-    grepl(paste0("_", x$assessment, "\\.html$"), nli_bm_explorer_paths)
+    grepl(paste0("_", x$assessment, suffix_this, "\\.html$"), nli_bm_explorer_paths)
   ]
   if (length(explorer_this)) {
     cat(sprintf(
@@ -571,14 +592,14 @@ The BMs with the widest REFUTES-over-SUPPORTS gap — the same zero-shot failure
 }
 ```
 
-# REFUTES Funnel
+# Funnel Reports
 
-A companion per-assessment report narrows REFUTES-labelled citing works
-down through NLI certainty and LLM re-verification. See each report's own
-Methodology section for the full 3-level sieve definition.
+Companion per-assessment reports narrow REFUTES- and SUPPORTS-labelled
+citing works down through NLI certainty and LLM re-verification. See each
+report's own Methodology section for the full 3-level sieve definition.
 
 ```{r}
-#| label: refutes_funnel_links
+#| label: label_funnel_links
 #| results: asis
 
 # Plain relative links, not iframes/copy_into_report_files(): each funnel
@@ -586,10 +607,62 @@ Methodology section for the full 3-level sieve definition.
 # it and this report sit as flat siblings both in the project root and in
 # output/reports/ (build_report_output_dir()), so a relative link resolves
 # in both places with no copying needed here.
-refutes_funnel_html_paths <- targets::tar_read(report_refutes_funnel_html)
-for (p in refutes_funnel_html_paths) {
-  id <- sub("^IPBES_REFUTES_Report_(.*)\\.html$", "\\1", basename(p))
-  cat(sprintf("- [%s REFUTES Funnel Report](%s)\n", id, basename(p)))
+label_funnel_html_paths <- c(
+  targets::tar_read(report_refutes_funnel_html),
+  targets::tar_read(report_supports_funnel_html)
+)
+# Assessment ids are alphanumeric (GA1, IAS); the trailing blob is
+# "_<model>" (optional -- omitted only for the deberta_zeroshot default)
+# and "_<granularity>" (always present -- every granularity, including
+# naive_bm, is explicit now). Both segments can contain underscores
+# themselves, so the combined trailing blob is split by checking whether it
+# ENDS in one of the fixed, known granularity values (same list
+# _targets.R's own nli_granularities uses) rather than a naive underscore
+# split, which would be ambiguous for e.g. "bge_m3_zeroshot_complete_bm".
+known_granularities <- c("naive_bm", "complete_bm", "atomic_bm")
+for (p in label_funnel_html_paths) {
+  m <- regmatches(
+    basename(p),
+    regexec("^IPBES_([A-Z]+)_Report_([A-Za-z0-9]+)(?:_(.+))?\\.html$", basename(p))
+  )[[1]]
+  label <- m[[2]]
+  id <- m[[3]]
+  suffix <- m[[4]]
+  gran <- "naive_bm"
+  model <- "deberta_zeroshot"
+  if (nzchar(suffix)) {
+    hit <- known_granularities[vapply(known_granularities, function(g) grepl(paste0("(^|_)", g, "$"), suffix), logical(1))]
+    if (length(hit)) {
+      gran <- hit[[1]]
+      suffix <- sub(paste0("_?", gran, "$"), "", suffix)
+    }
+    if (nzchar(suffix)) model <- suffix
+  }
+  cat(sprintf("- [%s %s Funnel Report (%s, %s)](%s)\n", id, label, model, gran, basename(p)))
+}
+```
+
+# QA Reports
+
+Per-assessment QA check for how `nli_ready_evidence_parquet` actually
+split each Background Message into claims under the currently active
+`granularity` setting — not a scoring result. See the report's own
+Methodology section for details.
+
+```{r}
+#| label: bm_split_report_links
+#| results: asis
+
+# Same plain-relative-link convention as the Funnel Reports section above.
+bm_split_html_paths <- targets::tar_read(bm_split_report_html)
+for (p in bm_split_html_paths) {
+  m <- regmatches(
+    basename(p),
+    regexec("^QA_BM_Split_Report_([A-Za-z0-9]+)(?:_(.+))?\\.html$", basename(p))
+  )[[1]]
+  id <- m[[2]]
+  gran <- if (nzchar(m[[3]])) m[[3]] else "naive_bm"
+  cat(sprintf("- [%s QA BM Split Report (%s)](%s)\n", id, gran, basename(p)))
 }
 ```
 

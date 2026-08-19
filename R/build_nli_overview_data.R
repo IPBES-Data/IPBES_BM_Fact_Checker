@@ -10,18 +10,26 @@ build_nli_overview_data <- function(
   nli_active,
   works_citing_path,
   output_root = "output/tables",
-  nli_scores_by_claim = NULL # unused — establishes the DAG dependency on scoring
+  nli_scores_by_claim = NULL, # unused — establishes the DAG dependency on scoring
+  granularity = "naive_bm"
 ) {
   assessment_id <- assessment$id
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
-  fn <- file.path(output_root, paste0("nli_overview_data_", assessment_id, ".rds"))
+  fn <- file.path(
+    output_root,
+    paste0(
+      "nli_overview_data_", assessment_id,
+      nli_model_suffix(nli_active), granularity_suffix(granularity), ".rds"
+    )
+  )
 
-  # Not every assessment has been scored yet (e.g. no host pool has run for
-  # it) — treat a missing directory the same as an empty dataset rather than
-  # erroring, so one un-scored assessment doesn't break the whole target.
+  # Not every assessment/granularity combination has been scored yet (e.g.
+  # no host pool has run for it, or a complete_bm config has never been
+  # active) — treat a missing directory the same as an empty dataset rather
+  # than erroring, so one un-scored combination doesn't break the whole target.
   if (!dir.exists(nli_scores_path)) {
     saveRDS(
-      list(assessment = assessment_id, nli_active = nli_active, empty = TRUE),
+      list(assessment = assessment_id, nli_active = nli_active, granularity = granularity, empty = TRUE),
       file = fn
     )
     return(fn)
@@ -47,7 +55,7 @@ build_nli_overview_data <- function(
 
   if (!nrow(d)) {
     saveRDS(
-      list(assessment = assessment_id, nli_active = nli_active, empty = TRUE),
+      list(assessment = assessment_id, nli_active = nli_active, granularity = granularity, empty = TRUE),
       file = fn
     )
     return(fn)
@@ -109,6 +117,7 @@ build_nli_overview_data <- function(
     list(
       assessment    = assessment_id,
       nli_active    = nli_active,
+      granularity   = granularity,
       empty         = FALSE,
       n_total       = nrow(d),
       n_bm          = dplyr::n_distinct(d$bm),

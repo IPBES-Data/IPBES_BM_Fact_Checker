@@ -149,7 +149,8 @@ build_llm_candidate_scope_parquet <- function(
                      # convention as build_nli_overview_data.R's nli_scores_path);
                      # establishes the DAG dependency only.
   nli_ready_evidence_parquet,
-  output_root = "output/llm_candidate_scope"
+  output_root = "output/llm_candidate_scope",
+  nli_granularity = "naive_bm"
 ) {
   assessment_id <- assessment$id
   output_path <- file.path(output_root, paste0("assessment=", assessment_id))
@@ -167,6 +168,15 @@ build_llm_candidate_scope_parquet <- function(
     ))
     dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
     output_path
+  }
+
+  # extract_claim_evidence_tokens() below duplicates segment_bm_by_evidence()
+  # (see file header) and has no complete_bm counterpart -- per-sub-claim
+  # evidence scoping isn't supported for complete_bm's whole-field claims,
+  # so fall back to the same "no restriction available" sentinel used
+  # elsewhere rather than silently producing wrong scope data.
+  if (identical(nli_granularity, "complete_bm")) {
+    return(empty_result("granularity is complete_bm -- per-sub-claim evidence scoping is not supported"))
   }
 
   # ---- 1. Per-claim evidence-reference tokens, derived directly from BM text

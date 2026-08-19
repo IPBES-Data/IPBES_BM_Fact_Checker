@@ -5,7 +5,9 @@ build_nli_overview_figures <- function(nli_overview_data_path, output_root = "ou
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(nli_overview_data_path)
   assessment_id <- x$assessment
-  stem <- function(name) file.path(output_root, sprintf("nli_overview_%s_%s.png", name, assessment_id))
+  gran_suffix <- granularity_suffix(x$granularity %||% "naive_bm")
+  model_suffix <- nli_model_suffix(x$nli_active %||% "deberta_zeroshot")
+  stem <- function(name) file.path(output_root, sprintf("nli_overview_%s_%s%s%s.png", name, assessment_id, model_suffix, gran_suffix))
 
   if (isTRUE(x$empty)) {
     return(character(0))

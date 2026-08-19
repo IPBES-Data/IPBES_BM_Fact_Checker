@@ -1,32 +1,50 @@
-# REFUTES-funnel counts for one assessment: a 3-level sieve of distinct
-# citing works per (km, bm) --
-#   1. snowball corpus       -- every citing work in works_citing
-#   2. NLI REFUTES-certain   -- label == "REFUTES" & uncertain == FALSE
-#   3. LLM-confirmed REFUTES -- of (2), llm_agrees == TRUE
+# Label funnel counts for one assessment: a 3-level sieve of distinct
+# citing works per (km, bm), for a given NLI label ("REFUTES" or
+# "SUPPORTS") --
+#   1. snowball corpus     -- every citing work in works_citing
+#   2. NLI <label>-certain -- label == target_label & uncertain == FALSE
+#   3. LLM-confirmed       -- of (2), llm_agrees == TRUE
 # Each level is a subset of the previous one. A fourth level, "+ sufficient
-# evidence" (sufficient_evidence == TRUE), was considered and dropped: Phase
-# 2's own parser forces llm_label to NOT_ENOUGH_INFO whenever
-# sufficient_evidence is FALSE (see select_llm_verification_candidates()'s
-# caller in build_llm_verification_parquet.R), so llm_agrees == TRUE already
-# implies sufficient_evidence == TRUE by construction -- a fourth level would
-# always be identical to the third, never narrowing anything further.
-# Consumed by build_refutes_funnel_figures()/build_refutes_funnel_tables()
-# and by IPBES_REFUTES_Report.qmd, mirroring build_nli_overview_data()'s
+# evidence" (sufficient_evidence == TRUE), was considered for the original
+# REFUTES-only version and dropped: Phase 2's own parser forces llm_label to
+# NOT_ENOUGH_INFO whenever sufficient_evidence is FALSE (see
+# select_llm_verification_candidates()'s caller in
+# build_llm_verification_parquet.R), so llm_agrees == TRUE already implies
+# sufficient_evidence == TRUE by construction -- a fourth level would always
+# be identical to the third, never narrowing anything further. Consumed by
+# build_label_funnel_figures()/build_label_funnel_tables() and by
+# IPBES_Label_Funnel_Report.qmd, mirroring build_nli_overview_data()'s
 # read-once-cache-everything shape so downstream targets never re-collect()
 # the raw parquet.
-build_refutes_funnel_data <- function(
+build_label_funnel_data <- function(
   assessment,
+  target_label,
   works_citing_path,
   nli_scores_evidence_path,
   llm_verification_path,
-  output_root = "output/tables"
+  output_root = "output/tables",
+  granularity = "naive_bm",
+  nli_active = "deberta_zeroshot"
 ) {
   assessment_id <- assessment$id
+  label_stem <- tolower(target_label)
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
-  fn <- file.path(output_root, paste0("refutes_funnel_data_", assessment_id, ".rds"))
+  fn <- file.path(
+    output_root,
+    sprintf(
+      "%s_funnel_data_%s%s%s.rds", label_stem, assessment_id,
+      nli_model_suffix(nli_active), granularity_suffix(granularity)
+    )
+  )
 
   empty_result <- function() {
-    saveRDS(list(assessment = assessment_id, empty = TRUE), file = fn)
+    saveRDS(
+      list(
+        assessment = assessment_id, label = target_label, granularity = granularity,
+        nli_active = nli_active, empty = TRUE
+      ),
+      file = fn
+    )
     fn
   }
 
@@ -47,17 +65,17 @@ build_refutes_funnel_data <- function(
 
   level2 <- arrow::open_dataset(nli_scores_evidence_path) |>
     dplyr::select(km, bm, work_id, label, uncertain) |>
-    dplyr::filter(label == "REFUTES", !uncertain) |>
+    dplyr::filter(label == .env$target_label, !uncertain) |>
     dplyr::distinct(km, bm, work_id) |>
     dplyr::collect()
 
-  # Defensive: llm_verification/scores currently contains only
-  # nli_route == "REFUTES-certain" rows because that's the only route the
-  # active config selects today, but a broader future config could add
-  # other routes to the same output tree -- filter explicitly rather than
-  # relying on it being the only value present.
+  # Defensive: llm_verification/scores may contain rows from several routes
+  # (e.g. REFUTES-certain and SUPPORTS-certain both present once both are
+  # routed) -- filter to this label's own route explicitly rather than
+  # assuming it's the only value present.
+  route <- paste0(target_label, "-certain")
   lv <- arrow::open_dataset(llm_verification_path) |>
-    dplyr::filter(nli_route == "REFUTES-certain") |>
+    dplyr::filter(nli_route == .env$route) |>
     dplyr::select(km, bm, work_id, claim_id, claim, nli_confidence, llm_agrees, quote, explanation) |>
     dplyr::collect()
 
@@ -80,7 +98,7 @@ build_refutes_funnel_data <- function(
   }
 
   # "Distinct citing works" is scoped to each (km, bm) group throughout, not
-  # deduped globally across BMs within the assessment -- a work refuting two
+  # deduped globally across BMs within the assessment -- a work matching two
   # different BMs is two findings, not one, matching how every other table
   # in this project (works_parquet, nli_overview_data's n_total) treats
   # (km, bm, work) as the natural row unit. funnel_overall's counts are
@@ -103,8 +121,8 @@ build_refutes_funnel_data <- function(
 
   level_labels <- c(
     level1 = "Snowball corpus",
-    level2 = "NLI REFUTES (certain)",
-    level3 = "LLM-confirmed REFUTES"
+    level2 = sprintf("NLI %s (certain)", target_label),
+    level3 = sprintf("LLM-confirmed %s", target_label)
   )
   funnel_overall <- tibble::tibble(
     level = names(level_labels),
@@ -115,6 +133,9 @@ build_refutes_funnel_data <- function(
   saveRDS(
     list(
       assessment = assessment_id,
+      label = target_label,
+      granularity = granularity,
+      nli_active = nli_active,
       empty = FALSE,
       funnel_overall = funnel_overall,
       funnel_by_bm = funnel_by_bm,

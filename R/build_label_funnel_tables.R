@@ -1,10 +1,11 @@
-# DT table for level 3 (LLM-confirmed REFUTES) of the REFUTES funnel, one
+# DT table for level 3 (LLM-confirmed <label>) of a label funnel, one
 # BM-filterable table per assessment. Reads the rds produced by
-# build_refutes_funnel_data() rather than re-collecting the raw parquet,
-# same convention as build_refutes_funnel_figures(). (A level-4 table,
-# "+ sufficient evidence", was dropped: Phase 2's own parser makes
-# sufficient_evidence == TRUE implied by llm_agrees == TRUE, so it was
-# always identical to level 3 -- see build_refutes_funnel_data.R.)
+# build_label_funnel_data() rather than re-collecting the raw parquet, same
+# convention as build_label_funnel_figures(). (A level-4 table,
+# "+ sufficient evidence", was dropped for the original REFUTES-only
+# version: Phase 2's own parser makes sufficient_evidence == TRUE implied
+# by llm_agrees == TRUE, so it was always identical to level 3 -- see
+# build_label_funnel_data.R.)
 #
 # Calls DT::datatable() directly instead of going through IPBES.R::table_dt()
 # -- that wrapper's `...` lands inside `options = list(...)`, but `filter` is
@@ -17,11 +18,14 @@
 # datatable() (a <select> for factor columns, incl. km/bm here), not just
 # the one column you want a dropdown for -- so the column set below is
 # deliberately curated down to only what's useful to filter/read per row,
-# rather than including every column build_refutes_funnel_data() carries.
-build_refutes_funnel_tables <- function(refutes_funnel_data_path, output_root = "output/tables") {
+# rather than including every column build_label_funnel_data() carries.
+build_label_funnel_tables <- function(label_funnel_data_path, output_root = "output/tables") {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
-  x <- readRDS(refutes_funnel_data_path)
+  x <- readRDS(label_funnel_data_path)
   assessment_id <- x$assessment
+  label_stem <- tolower(x$label)
+  gran_suffix <- granularity_suffix(x$granularity %||% "naive_bm")
+  model_suffix <- nli_model_suffix(x$nli_active %||% "deberta_zeroshot")
 
   if (isTRUE(x$empty)) {
     return(character(0))
@@ -39,7 +43,7 @@ build_refutes_funnel_tables <- function(refutes_funnel_data_path, output_root = 
     }
   }
 
-  refutes_funnel_datatable <- function(data, fn) {
+  label_funnel_datatable <- function(data, fn) {
     DT::datatable(
       data = data,
       extensions = c("Buttons", "FixedColumns", "Scroller"),
@@ -70,10 +74,10 @@ build_refutes_funnel_tables <- function(refutes_funnel_data_path, output_root = 
     ) |>
     dplyr::select(km, bm, work, claim, nli_confidence, quote, explanation)
 
-  fn_l3_rds <- file.path(output_root, paste0("refutes_funnel_table_l3_", assessment_id, ".rds"))
-  fn_l3_html <- file.path(output_root, paste0("refutes_funnel_table_l3_", assessment_id, ".html"))
+  fn_l3_rds <- file.path(output_root, sprintf("%s_funnel_table_l3_%s%s%s.rds", label_stem, assessment_id, model_suffix, gran_suffix))
+  fn_l3_html <- file.path(output_root, sprintf("%s_funnel_table_l3_%s%s%s.html", label_stem, assessment_id, model_suffix, gran_suffix))
   saveRDS(l3, file = fn_l3_rds)
-  refutes_funnel_datatable(l3, "refutes_funnel_l3") |>
+  label_funnel_datatable(l3, sprintf("%s_funnel_l3", label_stem)) |>
     htmlwidgets::saveWidget(file = fn_l3_html, selfcontained = TRUE)
 
   c(fn_l3_rds, fn_l3_html)

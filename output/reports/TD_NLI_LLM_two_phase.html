@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-18">
+<meta name="dcterms.date" content="2026-08-19">
 
 <title>Two-Phase Alignment Scoring: NLI → LLM</title>
 <style>
@@ -2249,7 +2249,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 18, 2026</p>
+      <p class="date">August 19, 2026</p>
     </div>
   </div>
   
@@ -2304,18 +2304,24 @@ vertical-align: -.125em;
 <td>~$4</td>
 </tr>
 <tr class="even">
+<td><code>SUPPORTS</code></td>
+<td><code>certain</code></td>
+<td>52,061</td>
+<td>~$7.75</td>
+</tr>
+<tr class="odd">
 <td><code>REFUTES</code></td>
 <td><code>uncertain</code></td>
 <td>403,400</td>
 <td>~$60</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>SUPPORTS</code></td>
 <td><code>uncertain</code></td>
 <td>388,554</td>
 <td>~$58</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>NOT_ENOUGH_INFO</code></td>
 <td><code>uncertain</code></td>
 <td>1,538,903</td>
@@ -2323,7 +2329,7 @@ vertical-align: -.125em;
 </tr>
 </tbody>
 </table>
-<p><strong><code>REFUTES</code> + <code>certain</code></strong> is the current first step (all four shipped configs route it) — the smallest, cheapest, and highest-signal bucket: cases where NLI was <em>confident</em> a paper contradicts the claim. The other three buckets stay available to route later, by defining additional configs or widening these two fields on existing ones — nothing else in the pipeline needs to change to pick them up.</p>
+<p><strong><code>REFUTES</code> + <code>certain</code></strong> was the original first step; <strong><code>SUPPORTS</code> + <code>certain</code></strong> was added once the REFUTES funnel report (<code>IPBES_Label_Funnel_Report.qmd</code>) was generalized to a SUPPORTS counterpart — all four shipped configs now route both (<code>nli_labels: [REFUTES, SUPPORTS]</code>), 78,922 pairs combined, ~$11.75 at <code>gpt-4o-mini</code> rates. <code>SUPPORTS</code> is nearly 2x the size of <code>REFUTES</code> at the same certainty band (52,061 vs. 26,861) — GA1’s NLI scores skew SUPPORTS-heavy overall (37,371 of the 52,061 SUPPORTS-certain pairs are GA1’s), consistent with what the main report’s own “AI Based Interpretation” section already says about GA1’s KM D. The remaining two <code>uncertain</code> buckets and <code>NOT_ENOUGH_INFO</code> stay available to route later, by defining additional configs or widening these two fields on existing ones — nothing else in the pipeline needs to change to pick them up.</p>
 <hr>
 </section>
 <section id="phase-2-llm-remainder-only" class="level2">
@@ -2426,7 +2432,7 @@ vertical-align: -.125em;
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">]</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
 <span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
 <span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_cheap_sm</span><span class="kw">:</span></span>
@@ -2436,7 +2442,7 @@ vertical-align: -.125em;
 <span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
 <span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
 <span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> sm</span></span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">]</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
 <span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
 <span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_midtier</span><span class="kw">:</span></span>
@@ -2446,7 +2452,7 @@ vertical-align: -.125em;
 <span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
 <span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
 <span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
-<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">]</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
 <span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
 <span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_toptier_gpt5</span><span class="kw">:</span></span>
@@ -2456,9 +2462,9 @@ vertical-align: -.125em;
 <span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
 <span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
 <span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
-<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">]</span></span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
 <span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>The model tiers are carried over directly from the sibling <code>Categorisation_Literature</code> project’s <code>epistemology:</code> config block (same model choices, same <code>max_active</code>/<code>max_tokens</code> values — see below for why those two specifically were kept rather than re-derived). <code>subset</code> and <code>nli_labels</code>/<code>nli_certainty</code> are new here — see <a href="#candidate-scoping">Candidate scoping</a> above and <a href="#phase-1-nli-all-pairs">Routing after Phase 1</a> for what they do; all four configs currently route the same <code>REFUTES</code> + <code>certain</code> bucket (the confirmed first step), and differ only in model/subset.</p>
+<p>The model tiers are carried over directly from the sibling <code>Categorisation_Literature</code> project’s <code>epistemology:</code> config block (same model choices, same <code>max_active</code>/<code>max_tokens</code> values — see below for why those two specifically were kept rather than re-derived). <code>subset</code> and <code>nli_labels</code>/<code>nli_certainty</code> are new here — see <a href="#candidate-scoping">Candidate scoping</a> above and <a href="#phase-1-nli-all-pairs">Routing after Phase 1</a> for what they do; all four configs currently route both <code>REFUTES</code> + <code>certain</code> (the original first step) and <code>SUPPORTS</code> + <code>certain</code> (added once the REFUTES funnel report was generalized to a SUPPORTS counterpart — see <code>IPBES_Label_Funnel_Report.qmd</code>), and differ only in model/subset.</p>
 <table class="caption-top table">
 <thead>
 <tr class="header">
@@ -2601,10 +2607,22 @@ vertical-align: -.125em;
 </thead>
 <tbody>
 <tr class="odd">
-<td><code>REFUTES</code> + <code>certain</code> (<strong>current default, all 4 configs</strong>)</td>
+<td><code>REFUTES</code> + <code>certain</code> (original first step)</td>
 <td>26,861</td>
 <td>~$4</td>
 <td>~$65</td>
+</tr>
+<tr class="even">
+<td><code>SUPPORTS</code> + <code>certain</code> (added alongside the SUPPORTS funnel report)</td>
+<td>52,061</td>
+<td>~$7.75</td>
+<td>~$126</td>
+</tr>
+<tr class="odd">
+<td><strong><code>REFUTES</code> + <code>SUPPORTS</code>, <code>certain</code> (current default, all 4 configs)</strong></td>
+<td><strong>78,922</strong></td>
+<td><strong>~$11.75</strong></td>
+<td><strong>~$191</strong></td>
 </tr>
 <tr class="even">
 <td><code>REFUTES</code> + <code>uncertain</code></td>
@@ -2625,7 +2643,7 @@ vertical-align: -.125em;
 <td>~$3,660</td>
 </tr>
 <tr class="odd">
-<td>All four combined (the original fixed-rule design)</td>
+<td>All labels, both certainty bands (the original fixed-rule design)</td>
 <td>2,357,718 (66.5% of scored)</td>
 <td>~$375</td>
 <td>~$5,900+</td>
@@ -2638,24 +2656,25 @@ vertical-align: -.125em;
 </tr>
 </tbody>
 </table>
-<p><code>openrouter_cheap</code> (<code>gpt-4o-mini</code>) is the configured default, currently routing <code>REFUTES</code> + <code>certain</code> only across all four shipped configs — the smallest, cheapest, highest-signal bucket, and the confirmed first step. The other buckets stay available by defining additional configs or widening <code>nli_labels</code>/<code>nli_certainty</code> on existing ones. The resumable per-pair cache means cost is paid once per <code>(prompt hash, pair)</code>, not once per <code>tar_make()</code> — and a pair’s cached answer is valid under any combination of routing/subset that happens to select it again later.</p>
+<p><code>openrouter_cheap</code> (<code>gpt-4o-mini</code>) is the configured default, currently routing <code>REFUTES</code> + <code>SUPPORTS</code>, both <code>certain</code>, across all four shipped configs — the smallest, cheapest, highest-signal bucket for each label, and the confirmed first step. The remaining <code>uncertain</code>/<code>NOT_ENOUGH_INFO</code> buckets stay available by defining additional configs or widening <code>nli_labels</code>/<code>nli_certainty</code> on existing ones. The resumable per-pair cache means cost is paid once per <code>(prompt hash, pair)</code>, not once per <code>tar_make()</code> — and a pair’s cached answer is valid under any combination of routing/subset that happens to select it again later.</p>
 <hr>
 </section>
 <section id="where-this-sits-in-the-pipeline" class="level2">
 <h2 class="anchored" data-anchor-id="where-this-sits-in-the-pipeline">Where this sits in the pipeline</h2>
-<p><code>llm_verification_parquet</code> and <code>llm_candidate_scope_parquet</code> are both live, active targets (not commented out) — <code>tar_make()</code> runs them. Neither is deliberately a dependency of <code>report_fact_checker</code>, so rendering the report never forces an OpenRouter call: run Phase 2 explicitly with <code>targets::tar_make(names = &quot;llm_verification_parquet&quot;)</code>, or let a bare <code>tar_make()</code> pick it up alongside everything else. <code>llm_candidate_scope_parquet</code> is always computed regardless of which <code>llm_verification</code> config is active — it makes no paid API calls of its own (pure local joins over already-downloaded parquet), so <code>subset: &quot;all&quot;</code> configs simply never read its output rather than the target being conditionally skipped. Phase 2’s output is not yet consumed by the report’s tables/figures or by <code>nli_overview_data</code> — that merge (<code>llm_label</code> overriding <code>nli_label</code> where available) is a deliberate next step, not an oversight; see <a href="#recommended-workflow">Recommended Workflow</a>.</p>
+<p><code>llm_verification_parquet</code> and <code>llm_candidate_scope_parquet</code> are both live, active targets (not commented out) — <code>tar_make()</code> runs them. <code>llm_candidate_scope_parquet</code> is always computed regardless of which <code>llm_verification</code> config is active — it makes no paid API calls of its own (pure local joins over already-downloaded parquet), so <code>subset: &quot;all&quot;</code> configs simply never read its output rather than the target being conditionally skipped.</p>
+<p><strong><code>report_fact_checker</code> is no longer safe to render blind.</strong> Originally neither Phase 2 target was a dependency of it, so rendering the report never forced an OpenRouter call. That changed once the label funnel reports (<code>refutes_funnel_data</code>/<code>supports_funnel_data</code> → <code>report_refutes_funnel_html</code>/<code>report_supports_funnel_html</code>, both folded into <code>report_fact_checker</code>’s dependency list) started reading <code>llm_verification_parquet</code> directly — a plain <code>tar_make()</code> or <code>tar_make(names = &quot;report_fact_checker&quot;)</code> will now rebuild <code>llm_verification_parquet</code> first if it’s outdated, which means real OpenRouter spend can happen as a side effect of “just rendering the report.” This is exactly what happened when <code>SUPPORTS</code> was added to <code>nli_labels</code>: that edit alone makes <code>llm_verification_parquet</code> outdated, so the next non-<code>shortcut</code> <code>tar_make()</code> touching <code>report_fact_checker</code> would try to review the new ~52,061-pair <code>SUPPORTS</code>-certain backlog (~$7.75 at <code>gpt-4o-mini</code> rates) automatically. To render the report (or the funnel reports) against <strong>currently on-disk</strong> Phase 2 data without triggering a fresh Phase 2 run, use <code>targets::tar_make(names = ..., shortcut = TRUE)</code> — it uses stored metadata for upstream targets instead of re-checking them. Run Phase 2 explicitly and deliberately with <code>targets::tar_make(names = &quot;llm_verification_parquet&quot;)</code> when you actually want to spend the money. Phase 2’s output is not yet consumed by the report’s own overview tables/figures or by <code>nli_overview_data</code> — that merge (<code>llm_label</code> overriding <code>nli_label</code> where available) is a deliberate next step, not an oversight; see <a href="#recommended-workflow">Recommended Workflow</a>.</p>
 </section>
 <section id="recommended-workflow" class="level2">
 <h2 class="anchored" data-anchor-id="recommended-workflow">Recommended Workflow</h2>
 <ol type="1">
 <li>Run <code>nli_scores_by_claim_evidence</code> (Phase 1) — existing pipeline</li>
-<li>Run <code>llm_verification_parquet</code> (Phase 2) — reviews whichever bucket the active config’s <code>nli_labels</code>/<code>nli_certainty</code> select (currently <code>REFUTES</code> + <code>certain</code> on every shipped config)</li>
-<li>Widen coverage incrementally: define or switch to a config targeting the next bucket (<code>REFUTES</code>+<code>uncertain</code>, then <code>SUPPORTS</code>/<code>NOT_ENOUGH_INFO</code>+<code>uncertain</code>) once the first is reviewed</li>
+<li>Run <code>llm_verification_parquet</code> (Phase 2) — reviews whichever bucket(s) the active config’s <code>nli_labels</code>/<code>nli_certainty</code> select (currently <code>REFUTES</code> + <code>SUPPORTS</code>, both <code>certain</code>, on every shipped config)</li>
+<li>Widen coverage incrementally: define or switch to a config targeting the next bucket (<code>REFUTES</code>/<code>SUPPORTS</code> + <code>uncertain</code>, then <code>NOT_ENOUGH_INFO</code> + <code>uncertain</code>) once the current one is reviewed</li>
 <li>Merge: use <code>llm_label</code> where available, fall back to <code>nli_label</code> elsewhere — <strong>not yet wired into <code>nli_overview_data</code>/the report</strong></li>
 <li>Human expert review of all <code>REFUTES</code> calls regardless of source — still a manual step</li>
 <li>Optionally: use <code>llm_agrees = FALSE</code> rows as training data for NLI fine-tuning</li>
 </ol>
-<p>A downstream, read-only <strong>funnel view</strong> of this data already exists — <a href="IPBES_REFUTES_Report_GA1.html">IPBES_REFUTES_Report.qmd</a> counts how many distinct citing works survive <code>nli_label == &quot;REFUTES&quot; &amp; !uncertain</code>, then <code>llm_agrees == TRUE</code>, per BM. It’s a three-line filter composition over the columns documented above, not a new design — see <code>R/build_refutes_funnel_data.R</code>. There is deliberately no further “+ <code>sufficient_evidence</code>” level: per the required-evidence-gate design above, <code>llm_label</code> can only be <code>SUPPORTS</code>/<code>REFUTES</code> when <code>sufficient_evidence == TRUE</code>, so <code>llm_agrees == TRUE</code> already implies it for every row.</p>
+<p>A downstream, read-only <strong>funnel view</strong> of this data already exists, for both labels — <a href="IPBES_REFUTES_Report_GA1.html">IPBES_Label_Funnel_Report.qmd</a> counts how many distinct citing works survive <code>nli_label == target_label &amp; !uncertain</code>, then <code>llm_agrees == TRUE</code>, per BM (<code>target_label</code> is <code>REFUTES</code> or <code>SUPPORTS</code>, rendered as two separate reports per assessment — <code>IPBES_REFUTES_Report_&lt;id&gt;.html</code> and <code>IPBES_SUPPORTS_Report_&lt;id&gt;.html</code>). It’s a three-line filter composition over the columns documented above, not a new design — see <code>R/build_label_funnel_data.R</code>. There is deliberately no further “+ <code>sufficient_evidence</code>” level: per the required-evidence-gate design above, <code>llm_label</code> can only be <code>SUPPORTS</code>/<code>REFUTES</code> when <code>sufficient_evidence == TRUE</code>, so <code>llm_agrees == TRUE</code> already implies it for every row.</p>
 <hr>
 </section>
 <section id="see-also" class="level2">

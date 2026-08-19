@@ -634,7 +634,14 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
 save_nli_bm_explorer <- function(nli_overview_data_path, output_root = "output/tables") {
   x <- readRDS(nli_overview_data_path)
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
-  fn <- file.path(output_root, paste0("nli_bm_explorer_", x$assessment, ".html"))
+  fn <- file.path(
+    output_root,
+    paste0(
+      "nli_bm_explorer_", x$assessment,
+      nli_model_suffix(x$nli_active %||% "deberta_zeroshot"),
+      granularity_suffix(x$granularity %||% "naive_bm"), ".html"
+    )
+  )
 
   if (isTRUE(x$empty)) {
     writeLines(

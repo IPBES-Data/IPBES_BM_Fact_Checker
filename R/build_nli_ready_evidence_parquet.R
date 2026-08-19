@@ -17,6 +17,51 @@
 # The existing sentence-based builder is deliberately left untouched so its
 # already-materialised target output and hash are not invalidated.
 
+# ── Confidence-qualifier extraction (shared) ────────────────────────────────
+#
+# IPBES's 4 standard confidence qualifiers -- "(well established)",
+# "(established but incomplete)", "(unresolved)", "(inconclusive)" -- appear
+# inline in the source text (e.g. "...clean water (well established)
+# {2.3.5.2}"). They're metadata about the claim's evidentiary strength, not
+# part of the assertion itself -- same reasoning evidence braces get
+# stripped rather than left in the hypothesis text. Extracted into their own
+# `confidence` column (checked against real data: exactly these terms occur
+# across both assessments, 598 qualifiers total in bm_description/bm_label)
+# rather than left in the claim text, so (a) NLI/LLM scoring never sees them
+# as if they were part of the claim to entail/refute, and (b)
+# complete_bm_fragments()'s LLM completion pass can't silently drop one
+# while rewording a fragment -- a real failure mode this fix was found to
+# prevent (see TD_BM_NLI_approach.qmd).
+segment_bm_confidence_pattern <- "\\((well established|established but incomplete|unresolved|inconclusive)\\)"
+
+# Extract every confidence qualifier occurring in `x` (a character vector,
+# one BM segment/fragment per element), pasted together if a segment
+# happens to bundle more than one (possible for segment_bm_by_evidence(),
+# whose segments can span several accumulated sentences); NA where none
+# found.
+extract_bm_confidence <- function(x) {
+  found <- stringr::str_extract_all(x, segment_bm_confidence_pattern)
+  vapply(found, function(m) {
+    if (!length(m)) {
+      return(NA_character_)
+    }
+    paste(stringr::str_remove_all(m, "[()]"), collapse = "; ")
+  }, character(1))
+}
+
+# Remove confidence qualifiers from claim text (companion to
+# extract_bm_confidence(), which pulls the same qualifiers OUT into their
+# own column) and tidy the whitespace/punctuation left behind -- removing
+# "(well established)" from "...clean water (well established); can..."
+# leaves a stray space before the semicolon that plain str_squish() doesn't
+# catch (it collapses runs of whitespace, but doesn't know to pull a space
+# in front of punctuation).
+strip_bm_confidence <- function(x) {
+  x <- stringr::str_remove_all(x, segment_bm_confidence_pattern)
+  x <- stringr::str_replace_all(x, "\\s+([,;.!?])", "\\1")
+  stringr::str_squish(x)
+}
+
 # ── Evidence-reference segmentation ─────────────────────────────────────────
 #
 # IPBES BM text carries inline evidence references to the backing
@@ -32,14 +77,22 @@
 #   2. Any trailing sentences with no terminal brace (e.g. a synthesising final
 #      sentence), and the whole text when it contains no braces at all, are
 #      emitted as one claim rather than dropped.
-#   3. Brace markers are stripped from the returned claim text (they are
-#      provenance, not part of the assertion).
+#   3. Brace markers AND confidence qualifiers are stripped from the returned
+#      claim text (they are provenance/metadata, not part of the assertion) --
+#      the qualifier is returned separately instead (see `confidence` above).
 #
-# Returns a character vector of claim strings (braces removed, squished),
-# empty-after-strip segments dropped.
+# Returns a tibble (claim, confidence): claim = braces + qualifier removed,
+# squished; confidence = whichever qualifier (if any) was found in that
+# segment, NA otherwise. Empty-after-strip segments dropped. naive_bm had
+# never been scored under any NLI config when this was added (checked
+# directly against disk), so it carried no risk of invalidating real
+# scored data. segment_bm_whole()/complete_bm got the identical treatment
+# later, once 949,334 real complete_bm pairs already existed -- that one
+# WAS a deliberate, accepted tradeoff (see that function's own comment).
 segment_bm_by_evidence <- function(text) {
+  empty <- dplyr::tibble(claim = character(0), confidence = character(0))
   if (is.na(text) || !nzchar(text)) {
-    return(character(0))
+    return(empty)
   }
 
   sentences <- stringr::str_squish(
@@ -47,7 +100,7 @@ segment_bm_by_evidence <- function(text) {
   )
   sentences <- sentences[nzchar(sentences)]
   if (!length(sentences)) {
-    return(character(0))
+    return(empty)
   }
 
   # A sentence is "terminal" when, ignoring trailing sentence punctuation and
@@ -71,12 +124,119 @@ segment_bm_by_evidence <- function(text) {
     segments <- c(segments, paste(buffer, collapse = " "))
   }
 
-  # Strip brace groups (and any whitespace they leave behind), then squish.
+  confidence <- extract_bm_confidence(segments)
+
+  # Strip brace groups and confidence qualifiers (and whitespace they leave
+  # behind), then squish.
   claims <- stringr::str_squish(
     stringr::str_remove_all(segments, "\\s*\\{[^}]*\\}")
   )
-  claims <- claims[nchar(claims) > 20L]
-  claims
+  claims <- strip_bm_confidence(claims)
+  keep <- nchar(claims) > 20L
+  dplyr::tibble(claim = claims[keep], confidence = confidence[keep])
+}
+
+# ── "complete BM" segmentation: no splitting at all ─────────────────────────
+#
+# For the granularity = "complete_bm" NLI config option: treat the whole
+# field (bm_description or bm_label) as a single claim, brace groups AND
+# confidence qualifiers stripped the same way segment_bm_by_evidence()/
+# segment_bm_atomic() do (see segment_bm_confidence_pattern's own comment),
+# but with no sentence-level splitting -- one claim per source field, not
+# one per evidence-delimited segment. A whole field can carry several
+# qualifiers (one per original clause); all of them are extracted and
+# joined into the one `confidence` value for this claim, same as
+# segment_bm_by_evidence() already does for its own multi-sentence
+# segments. Returns a tibble (claim, confidence), 0 rows if the
+# stripped text doesn't clear the same length floor the other two
+# segmenters use.
+#
+# NOTE: this changed complete_bm's claim text (confidence qualifiers no
+# longer inline) after 949,334 real pairs had already been scored against
+# the OLD text -- score_one_claim()'s resumability check is purely
+# directory-existence, so those existing scores are NOT automatically
+# redone and now reflect stale (pre-strip) claim text until a real rescore
+# is run. Deliberate, accepted tradeoff -- see git history/session notes
+# for the exact discussion.
+segment_bm_whole <- function(text) {
+  empty <- dplyr::tibble(claim = character(0), confidence = character(0))
+  if (is.na(text) || !nzchar(text)) {
+    return(empty)
+  }
+
+  confidence <- extract_bm_confidence(text)
+  claim <- stringr::str_squish(
+    stringr::str_remove_all(text, "\\s*\\{[^}]*\\}")
+  )
+  claim <- strip_bm_confidence(claim)
+  if (nchar(claim) <= 20L) {
+    return(empty)
+  }
+  dplyr::tibble(claim = claim, confidence = confidence)
+}
+
+# ── "atomic BM" segmentation: split at EVERY evidence brace ─────────────────
+#
+# For granularity = "atomic_bm": unlike segment_bm_by_evidence() (which only
+# splits at a brace that ends a SENTENCE, treating mid-sentence braces as
+# non-splitting inline citations), this splits at EVERY brace group,
+# including mid-sentence ones. Real data caught this session: a compound
+# clause like "Nature provides X {ref1}; can help Y {ref2}" carries a
+# DISTINCT evidence reference per semicolon-separated clause, so
+# segment_bm_by_evidence() bundling all of it into one claim (since none of
+# the braces end a full sentence) is the same compound-claim problem
+# segment_bm_whole() has, just at a smaller scale -- one BM's worth of
+# clauses instead of a whole BM. Splitting at every brace fixes that, at the
+# cost of routinely producing elliptical fragments (sharing a subject/verb
+# with an earlier fragment, e.g. "can help to regulate disease and the
+# immune system" has no subject of its own) -- that's expected, and handled
+# by a separate LLM completion pass (complete_bm_fragments(),
+# R/build_claim_completion.R), NOT here.
+#
+# Deliberately does NOT apply segment_bm_by_evidence()'s nchar > 20 floor --
+# a short fragment like "and for soil stabilization" is exactly the kind of
+# thing that only becomes a valid, complete claim after completion;
+# filtering it out here would silently drop a real claim before it gets the
+# chance. The length/validity floor for this granularity is applied AFTER
+# completion instead (see complete_bm_fragments()).
+#
+# Confidence qualifiers are extracted the same way as
+# segment_bm_by_evidence() -- see segment_bm_confidence_pattern's own
+# comment above for the full rationale.
+#
+# Returns a tibble (claim, confidence) of raw (uncompleted) claim
+# fragments -- braces AND confidence qualifiers stripped from `claim`,
+# whitespace squished, in original order; `confidence` holds whichever
+# qualifier (if any) was found in that fragment, NA otherwise. Empty
+# 0-row tibble if the text has no content at all.
+segment_bm_atomic <- function(text) {
+  empty <- dplyr::tibble(claim = character(0), confidence = character(0))
+  if (is.na(text) || !nzchar(text)) {
+    return(empty)
+  }
+
+  # Split right after every closing brace (a zero-width lookbehind keeps the
+  # brace, and everything before it, with the segment it closes). Any text
+  # after the LAST brace -- or the whole text, if there are no braces at all
+  # -- is naturally produced as the final/only element.
+  segments <- stringr::str_split(text, "(?<=\\})\\s*")[[1L]]
+  segments <- segments[nzchar(stringr::str_squish(segments))]
+
+  confidence <- extract_bm_confidence(segments)
+
+  claims <- stringr::str_squish(
+    stringr::str_remove_all(segments, "\\s*\\{[^}]*\\}")
+  )
+  claims <- strip_bm_confidence(claims)
+  # Splitting right after a brace leaves the delimiter that used to separate
+  # this clause from the next one (a semicolon, comma, or period) stranded
+  # at the START of the following fragment -- strip it. A fragment left with
+  # no actual word content (e.g. a lone "." after the final brace) is not a
+  # claim at all, just leftover punctuation -- drop it, not filtered by
+  # nzchar() alone since "." is one non-empty character.
+  claims <- stringr::str_remove(claims, "^[;,.]+\\s*")
+  keep <- stringr::str_detect(claims, "[[:alpha:]]")
+  dplyr::tibble(claim = claims[keep], confidence = confidence[keep])
 }
 
 build_nli_ready_evidence_parquet <- function(
@@ -84,12 +244,34 @@ build_nli_ready_evidence_parquet <- function(
   key_messages_parquet,
   works_citing_parquet,
   workers = 1L,
-  output_root = "output/nli_ready_evidence"
+  output_root = "output/nli_ready_evidence",
+  granularity = "naive_bm",
+  completion_model = NULL
 ) {
   assessment_id <- assessment$id
   now <- function() format(Sys.time(), "%H:%M:%S")
+  # Each granularity is handled via its own explicit branch below in the
+  # claims-building loop: naive_bm and atomic_bm both return a (claim,
+  # confidence) tibble (confidence-qualifier metadata extracted out of the
+  # claim text); complete_bm returns a bare character vector (unchanged --
+  # real scored data exists for it, so its segmentation stays untouched).
+  # atomic_bm only: LLM-complete elliptical fragments after the raw split
+  # (see segment_bm_atomic()'s own comment for why completion is a separate
+  # pass rather than folded into the splitter). Fetching the OpenRouter key
+  # only when actually needed keeps naive_bm/complete_bm callers free of any
+  # keyring dependency, same reasoning build_llm_verification_parquet() uses
+  # for its own api_key fetch.
+  completion_cfg <- NULL
+  completion_api_key <- NULL
+  if (identical(granularity, "atomic_bm")) {
+    completion_cfg <- list(model = completion_model %||% "openai/gpt-4o-mini")
+    completion_api_key <- Sys.getenv("API_openrouter")
+    if (!nzchar(completion_api_key)) {
+      stop("API_openrouter environment variable is required for granularity = \"atomic_bm\" (set from keyring in _targets.R)")
+    }
+  }
 
-  # ── 1. BM claims (evidence-segmented) for this assessment ────────────────
+  # ── 1. BM claims (evidence-segmented, or whole, for this assessment) ─────
   km_root <- unique(dirname(key_messages_parquet))[[1L]]
   bm_info <- arrow::open_dataset(km_root) |>
     dplyr::filter(assessment == assessment_id) |>
@@ -109,9 +291,59 @@ build_nli_ready_evidence_parquet <- function(
       return(NULL)
     }
 
+    # complete_bm only: a BM whose bm_label and bm_description are the same
+    # text (after whitespace normalization) should produce one claim, not a
+    # duplicate -- drop bm_label, keeping bm_description as the sole source.
+    # naive_bm is untouched: it already scores both fields independently
+    # regardless of whether they're identical.
+    if (identical(granularity, "complete_bm") && has_desc && has_label &&
+      identical(stringr::str_squish(row$bm_description), stringr::str_squish(row$bm_label))) {
+      sources[["bm_label"]] <- NULL
+    }
+
     dplyr::bind_rows(lapply(names(sources), function(src) {
-      segs <- segment_bm_by_evidence(sources[[src]])
-      if (!length(segs)) {
+      if (identical(granularity, "atomic_bm")) {
+        raw <- segment_bm_atomic(sources[[src]])
+        if (!nrow(raw)) {
+          return(NULL)
+        }
+        completed <- complete_bm_fragments(
+          raw$claim, completion_cfg, completion_api_key,
+          confidence = raw$confidence
+        )
+        if (!nrow(completed)) {
+          return(NULL)
+        }
+        return(dplyr::tibble(
+          km = row$km,
+          km_label = row$km_label,
+          bm = row$bm,
+          bm_label = row$bm_label,
+          sentence_source = src,
+          sentence_number = seq_len(nrow(completed)),
+          claim = completed$completed_claim,
+          confidence = completed$confidence
+        ))
+      }
+      if (identical(granularity, "naive_bm")) {
+        raw <- segment_bm_by_evidence(sources[[src]])
+        if (!nrow(raw)) {
+          return(NULL)
+        }
+        return(dplyr::tibble(
+          km = row$km,
+          km_label = row$km_label,
+          bm = row$bm,
+          bm_label = row$bm_label,
+          sentence_source = src,
+          sentence_number = seq_len(nrow(raw)),
+          claim = raw$claim,
+          confidence = raw$confidence
+        ))
+      }
+      # complete_bm
+      raw <- segment_bm_whole(sources[[src]])
+      if (!nrow(raw)) {
         return(NULL)
       }
       dplyr::tibble(
@@ -120,8 +352,9 @@ build_nli_ready_evidence_parquet <- function(
         bm = row$bm,
         bm_label = row$bm_label,
         sentence_source = src,
-        sentence_number = seq_along(segs),
-        claim = segs
+        sentence_number = seq_len(nrow(raw)),
+        claim = raw$claim,
+        confidence = raw$confidence
       )
     }))
   }))
@@ -179,14 +412,14 @@ build_nli_ready_evidence_parquet <- function(
       dplyr::rename(work_id = id) |>
       dplyr::mutate(
         premise = trimws(paste(
-          vapply(title, clean_title, character(1L)),
-          vapply(abstract, clean_abstract, character(1L))
+          dplyr::coalesce(vapply(title, clean_title, character(1L)), ""),
+          dplyr::coalesce(vapply(abstract, clean_abstract, character(1L)), "")
         ))
       ) |>
       dplyr::select(work_id, premise)
 
     out <- dplyr::cross_join(
-      sents_bm |> dplyr::select(sentence_source, sentence_number, claim),
+      sents_bm |> dplyr::select(sentence_source, sentence_number, claim, dplyr::any_of("confidence")),
       works
     ) |>
       dplyr::mutate(
@@ -197,10 +430,14 @@ build_nli_ready_evidence_parquet <- function(
         sentence_tokens = as.integer(round(nchar(claim) / 4)),
         approx_tokens = abstract_tokens + sentence_tokens + 3L
       ) |>
+      # confidence (atomic_bm only -- the extracted IPBES confidence
+      # qualifier, e.g. "well established", NA where none was found) is
+      # included via any_of() so naive_bm/complete_bm's output schema is
+      # completely unaffected -- their `sents_bm` never has this column.
       dplyr::select(
         km, bm, sentence_number, claim, sentence_source,
         work_id, premise, abstract_tokens, sentence_tokens, approx_tokens,
-        assessment
+        assessment, dplyr::any_of("confidence")
       )
 
     message(sprintf(
