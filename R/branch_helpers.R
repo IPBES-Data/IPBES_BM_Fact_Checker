@@ -45,6 +45,33 @@ nli_model_suffix <- function(nli_active) {
   if (identical(nli_active, "deberta_zeroshot")) "" else paste0("_", nli_active)
 }
 
+# Resolves, for each value in `granularities`, the nli.configs.<name> entry
+# that actually PRODUCED that granularity's scores -- i.e. whichever config
+# has a matching `granularity:` field -- rather than assuming it's whichever
+# config is currently `nli.active`. Needed because `active` is a single
+# global choice but naive_bm/complete_bm/atomic_bm are each scored under
+# their own dedicated config (bge_m3_zeroshot_naive_bm/_complete_bm/
+# _atomic_bm); without this, switching `active` makes the reporting layer
+# (nli_overview_data, the REFUTES/SUPPORTS funnel reports) look for a
+# not-currently-active granularity's data under the wrong nli_config=
+# subdirectory and silently report it as unscored, even when real scored
+# data for that granularity sits on disk under its own config's name.
+# Falls back to `fallback` (nli_active) for any granularity with no config
+# declaring it, so an unmapped/legacy setup degrades to the old
+# single-config behaviour instead of erroring.
+nli_config_for_granularity <- function(nli_configs, granularities, fallback) {
+  gran_of <- vapply(nli_configs, function(cfg) {
+    g <- cfg[["granularity"]]
+    if (is.null(g) || !nzchar(g)) NA_character_ else as.character(g)
+  }, character(1))
+  names(gran_of) <- names(nli_configs)
+
+  vapply(granularities, function(g) {
+    hit <- names(gran_of)[!is.na(gran_of) & gran_of == g]
+    if (length(hit)) hit[[1L]] else fallback
+  }, character(1))
+}
+
 sanitize_partition_value <- function(x) {
   x <- as.character(x)
   x <- gsub("[/\\\\]+", "__", x)

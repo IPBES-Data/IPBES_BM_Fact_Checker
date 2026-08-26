@@ -116,6 +116,16 @@ list(
     nli <- yaml::read_yaml(config_file)[["nli"]]
     nli[["configs"]][[nli[["active"]]]]
   }),
+  # ALL named nli configs (not just the active one) -- needed by
+  # nli_config_for_granularity() (R/branch_helpers.R) so the reporting layer
+  # can resolve which config actually produced a given granularity's scores,
+  # independent of whichever config `nli.active` currently points to. Read
+  # directly from config_file (not derived from nli_config) so an edit to
+  # the active config's own fields doesn't spuriously invalidate this.
+  tar_target(
+    nli_configs_all,
+    yaml::read_yaml(config_file)[["nli"]][["configs"]]
+  ),
   # The active config's own claim-granularity setting ("naive_bm" default /
   # "complete_bm") -- drives nli_ready_evidence_parquet/
   # nli_scores_by_claim_evidence's own output_root (they run against
@@ -609,10 +619,10 @@ list(
       file.path(
         "output/nli_scores_evidence",
         paste0("granularity=", nli_granularities),
-        paste0("nli_config=", nli_active),
+        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
         paste0("assessment=", assessment$id)
       ),
-      nli_active,
+      nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active),
       works_citing_parquet,
       "output/tables",
       nli_scores_by_claim_evidence,
@@ -734,9 +744,16 @@ list(
   # and IPBES_Label_Funnel_Report.qmd.
   # Branches over BOTH assessment and nli_granularities (cross(), not map():
   # granularity is an independent dimension, not zipped 1:1 with assessment)
-  # so both "naive_bm" and "complete_bm" get their own funnel view, regardless
-  # of which one is actually active in nli.configs.<active>.granularity --
-  # a combination with no scored data yet renders the existing empty state.
+  # so naive_bm/complete_bm/atomic_bm each get their own funnel view,
+  # regardless of which one is actually active in nli.active -- a
+  # combination with no scored data yet renders the existing empty state.
+  # The nli_config used to locate (and label) each granularity's data is
+  # resolved per-branch via nli_config_for_granularity() (R/branch_helpers.R)
+  # -- NOT nli_active directly -- since each granularity is normally scored
+  # under its own dedicated config (bge_m3_zeroshot_naive_bm/_complete_bm/
+  # _atomic_bm); substituting the single globally active config name for
+  # every branch would make an already-scored, non-active granularity look
+  # unscored the moment `nli.active` points elsewhere.
   tar_target(
     refutes_funnel_data,
     build_label_funnel_data(
@@ -746,13 +763,13 @@ list(
       file.path(
         "output/nli_scores_evidence",
         paste0("granularity=", nli_granularities),
-        paste0("nli_config=", nli_active),
+        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
         paste0("assessment=", assessment$id)
       ),
       llm_verification_parquet,
       "output/tables",
       nli_granularities,
-      nli_active
+      nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)
     ),
     pattern = cross(map(assessment, works_citing_parquet, llm_verification_parquet), nli_granularities),
     format = "file",
@@ -771,13 +788,13 @@ list(
       file.path(
         "output/nli_scores_evidence",
         paste0("granularity=", nli_granularities),
-        paste0("nli_config=", nli_active),
+        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
         paste0("assessment=", assessment$id)
       ),
       llm_verification_parquet,
       "output/tables",
       nli_granularities,
-      nli_active
+      nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)
     ),
     pattern = cross(map(assessment, works_citing_parquet, llm_verification_parquet), nli_granularities),
     format = "file",
@@ -826,8 +843,8 @@ list(
   # avoids concurrent quarto_render() calls against the same source .qmd
   # racing on separate crew workers.
   # assessment is deliberately NOT in this pattern -- refutes_funnel_data's
-  # own cross(assessment, nli_granularities) branching already has 4
-  # branches (2 assessments x 2 granularities), so a plain map() over the
+  # own cross(assessment, nli_granularities) branching already has 6
+  # branches (2 assessments x 3 granularities), so a plain map() over the
   # 2-branch assessment target here would mismatch lengths. assessment_id/
   # granularity are read back out of the funnel data rds itself instead
   # (both already stored there), which naturally stays aligned with

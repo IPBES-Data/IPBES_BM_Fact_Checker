@@ -11,7 +11,15 @@
 # (also lets targets' own branch caching skip re-running unchanged claims on
 # a subsequent tar_make(), but this on-disk check additionally recognizes
 # claims scored by an earlier run/system that targets itself has no cache
-# entry for).
+# entry for). The skip is guarded by a content check, not just presence:
+# `claim_id` is a structural key (sentence_source + sentence_number), not a
+# hash of the claim text, so the SAME claim_id can end up holding different
+# text across runs (a re-segmented boundary, a re-completed atomic_bm
+# fragment, ...). The cached output already stores the exact claim text it
+# was scored against (the `claim` column) — comparing that against the
+# current claim_unit$claim before trusting the skip means a content change
+# forces a rescore even when claim_id didn't change, instead of silently
+# serving scores for text that's no longer current.
 #
 # Failure isolation: this function does NOT catch-and-swallow errors from
 # the classify call — it lets them propagate. Combined with
@@ -39,11 +47,28 @@ score_one_claim <- function(
   )
 
   if (dir.exists(claim_dir) && length(list.files(claim_dir, pattern = "\\.parquet$"))) {
+    cached_claim <- tryCatch(
+      arrow::open_dataset(claim_dir) |>
+        dplyr::select(claim) |>
+        utils::head(1) |>
+        dplyr::collect() |>
+        dplyr::pull(claim),
+      error = function(e) NA_character_
+    )
+    cached_claim <- if (length(cached_claim)) cached_claim[[1L]] else NA_character_
+
+    if (identical(cached_claim, claim_unit$claim)) {
+      message(sprintf(
+        "[NLI %s] claim_id=%s (km=%s/bm=%s) already scored — skipping",
+        assessment_id, claim_unit$claim_id, claim_unit$km, claim_unit$bm
+      ))
+      return(claim_dir)
+    }
+
     message(sprintf(
-      "[NLI %s] claim_id=%s (km=%s/bm=%s) already scored — skipping",
+      "[NLI %s] claim_id=%s (km=%s/bm=%s): cached claim text differs from the current one — rescoring",
       assessment_id, claim_unit$claim_id, claim_unit$km, claim_unit$bm
     ))
-    return(claim_dir)
   }
 
   cw <- arrow::open_dataset(claim_unit$nli_ready_path) |>
