@@ -13,12 +13,9 @@ build_nli_overview_figures <- function(nli_overview_data_path, output_root = "ou
     return(character(0))
   }
 
-  label_levels <- c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
-  label_cols <- c(
-    SUPPORTS = "#2E6B4F",
-    NOT_ENOUGH_INFO = "#A8896A",
-    REFUTES = "#8B2E2E"
-  )
+  # Shared across every NLI-label figure -- see R/branch_helpers.R.
+  label_levels <- nli_label_levels
+  label_cols <- nli_label_colors
   raw <- x$raw |>
     dplyr::mutate(label = factor(label, levels = label_levels))
 

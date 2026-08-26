@@ -80,7 +80,7 @@ nli:
         model: "anthropic/claude-haiku-4.5"
 
 
-  active: bge_m3_zeroshot_atomic_bm   # which entry under configs: is active -- the only config with running pods
+  active: bge_m3_zeroshot_complete_bm   # which entry under configs: is active -- the only config with running pods
 
   configs:
     # RETIRED -- superseded by bge_m3_zeroshot below (faster per-pod,
@@ -136,7 +136,7 @@ nli:
     # Image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.1.0 (see TD_BM_NLI_approach.qmd).
     bge_m3_zeroshot_complete_bm:
       scheme: https
-      host: ["d78ew5xa898onb-8080.proxy.runpod.net", "k3d0ojjo3r34gn-8080.proxy.runpod.net", "imxudxy1q07w93-8080.proxy.runpod.net", "2yjh0c3crclwg2-8080.proxy.runpod.net", "qzv2pwdj8gccmj-8080.proxy.runpod.net", "6dbdypmy7ttlqe-8080.proxy.runpod.net", "tkmmt2u8s8xoy0-8080.proxy.runpod.net"]
+      host: ["orn81igh4swblu-8080.proxy.runpod.net", "x4iv6cr25xoown-8080.proxy.runpod.net", "55o5uwkw0ipgav-8080.proxy.runpod.net"]
       port: null
       auth_token_keyring: null
       model: MoritzLaurer/bge-m3-zeroshot-v2.0-c   # label only; verified against /health. max_position_embeddings ~8194 (real limit, not this project's choice)

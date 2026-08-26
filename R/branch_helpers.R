@@ -2,6 +2,25 @@ assessment_ids <- function(config) {
   vapply(config$assessments, `[[`, character(1), "id")
 }
 
+# Shared SUPPORTS/REFUTES/NOT_ENOUGH_INFO palette for every NLI-label figure
+# (ggplot2 and plotly alike) -- Okabe-Ito, the standard colorblind-safe
+# reference palette, chosen for high distinguishability between all three
+# colors, not just accessibility (the previous per-file muted-earth-tone
+# palette was hard to tell apart even for non-colorblind viewers). A single
+# shared definition, rather than one copy per figure file: before this,
+# build_nli_bm_explorer.R's own copy had already drifted to different hex
+# values than build_nli_overview_figures.R's, and
+# build_label_funnel_figures.R hardcoded the REFUTES color as its funnel
+# bar's fill regardless of which label that funnel was actually built for
+# (so a SUPPORTS funnel report rendered its bar in the REFUTES color) --
+# exactly the kind of drift a shared constant prevents.
+nli_label_levels <- c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
+nli_label_colors <- c(
+  SUPPORTS = "#009E73",         # bluish green
+  NOT_ENOUGH_INFO = "#0072B2",  # blue
+  REFUTES = "#D55E00"           # vermillion
+)
+
 # Per-assessment named-graph IRI. Single point of change if IPBES picks a
 # different convention for the shared SPARQL endpoint.
 assessment_graph_iri <- function(assessment_id) {

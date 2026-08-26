@@ -666,3 +666,38 @@ for (p in bm_split_html_paths) {
 }
 ```
 
+Per-(assessment, granularity) QA check on Phase 1 (zero-shot NLI) scoring
+itself — claims x citing works with title/abstract/DOI and label/
+confidence, plus a label x confidence-decile matrix. Not a scoring result;
+see the report's own Methodology section for details.
+
+```{r}
+#| label: nli_scores_qa_report_links
+#| results: asis
+
+# Same suffix-splitting logic as the Funnel Reports section above --
+# model_suffix and gran_suffix are both optional and concatenated in the
+# filename, so known_granularities (defined there) disambiguates them here
+# too.
+nli_scores_qa_html_paths <- targets::tar_read(nli_scores_qa_report_html)
+for (p in nli_scores_qa_html_paths) {
+  m <- regmatches(
+    basename(p),
+    regexec("^QA_NLI_Scores_Report_([A-Za-z0-9]+)(?:_(.+))?\\.html$", basename(p))
+  )[[1]]
+  id <- m[[2]]
+  suffix <- m[[3]]
+  gran <- "naive_bm"
+  model <- "deberta_zeroshot"
+  if (nzchar(suffix)) {
+    hit <- known_granularities[vapply(known_granularities, function(g) grepl(paste0("(^|_)", g, "$"), suffix), logical(1))]
+    if (length(hit)) {
+      gran <- hit[[1]]
+      suffix <- sub(paste0("_?", gran, "$"), "", suffix)
+    }
+    if (nzchar(suffix)) model <- suffix
+  }
+  cat(sprintf("- [%s QA NLI Scores Report (%s, %s)](%s)\n", id, model, gran, basename(p)))
+}
+```
+

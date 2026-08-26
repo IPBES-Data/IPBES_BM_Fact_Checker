@@ -58,10 +58,9 @@
 # data frame already produced by build_nli_overview_data() (its $raw
 # element) — no new target/data source required.
 build_nli_bm_explorer <- function(raw, assessment_id) {
-  label_levels <- c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
-  label_colors <- c(
-    SUPPORTS = "#2a9d5c", NOT_ENOUGH_INFO = "#9aa5b1", REFUTES = "#d1495b"
-  )
+  # Shared across every NLI-label figure -- see R/branch_helpers.R.
+  label_levels <- nli_label_levels
+  label_colors <- nli_label_colors
   conf_breaks <- seq(0, 1, by = 0.05)
   aln_breaks  <- seq(-1, 1, by = 0.1)
   hollow <- function(border_color) {

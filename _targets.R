@@ -640,6 +640,192 @@ list(
     garbage_collection = TRUE
   ),
 
+  # Target 2h3' (QA, key papers): scores the actual seed/reference papers
+  # IPBES cites as evidence for a BM (relation == "keypaper" in the
+  # snowball nodes -- same set as works_parquet, one row per (paper, km,
+  # bm) it's evidence for) against their OWN BM's claim text. Not part of
+  # the main scoring corpus -- a sanity check: a key paper IS the evidence
+  # a BM was written from, so it should overwhelmingly land in the
+  # SUPPORTS region; if it doesn't, that's a signal worth investigating; see
+  # the ternary figure in nli_scores_qa_figures, which overlays these
+  # points on the citing-works density. Mirrors nli_ready_evidence_parquet
+  # -> nli_claim_units_evidence -> ..._flat -> nli_scores_by_claim_evidence
+  # exactly (same reuse-build_nli_claim_units()/score_one_claim()-unchanged
+  # pattern that chain's own comment documents) -- only the premise source
+  # (R/build_nli_ready_evidence_keypaper_parquet.R, a separate file so as
+  # not to touch the delicate, already-scored citing-works builder) and the
+  # output roots differ, so this can never collide with or invalidate the
+  # existing citing-works chain. Single-active-granularity, same as that
+  # chain (not cross()'d over nli_granularities) -- nli_scores_qa_data
+  # below resolves whichever granularities actually have data the same way
+  # it already does for citing-works scores.
+  #
+  # NOT run as part of a bare tar_make() by design -- deliberately no bare
+  # reference to nli_scores_keypaper_evidence anywhere that would pull it
+  # into report_fact_checker's dependency chain. It calls the same live
+  # RunPod host pool as the citing-works chain; run it explicitly with
+  # tar_make(names = "nli_scores_keypaper_evidence") when ready.
+  tar_target(
+    nli_ready_evidence_keypaper_parquet,
+    build_nli_ready_evidence_keypaper_parquet(
+      assessment,
+      key_messages_parquet,
+      snowball_parquet,
+      workers,
+      file.path("output/nli_ready_evidence_keypaper", paste0("granularity=", granularity)),
+      granularity,
+      claim_completion_model
+    ),
+    pattern = map(assessment, key_messages_parquet, snowball_parquet),
+    format = "file",
+    deployment = "main",
+    garbage_collection = TRUE
+  ),
+  tar_target(
+    nli_claim_units_evidence_keypaper,
+    build_nli_claim_units(assessment, nli_ready_evidence_keypaper_parquet, max_length),
+    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
+    iteration = "list"
+  ),
+  tar_target(
+    nli_claim_units_evidence_keypaper_flat,
+    unlist(nli_claim_units_evidence_keypaper, recursive = FALSE),
+    iteration = "list"
+  ),
+  tar_target(
+    nli_scores_keypaper_evidence,
+    score_one_claim(
+      nli_claim_units_evidence_keypaper_flat,
+      nli_config,
+      nli_active,
+      nli_pool_health,
+      output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity))
+    ),
+    pattern = map(nli_claim_units_evidence_keypaper_flat),
+    format = "file",
+    error = "continue"
+  ),
+
+  # Target 2h4' (QA): Phase 1 scoring QA report data — sibling to
+  # bm_split_report_highlighted (which QAs the segmentation step); this
+  # QAs the scoring step itself: a capped, per-claim table of citing works
+  # (title/abstract/DOI joined in from works_citing_parquet -- Phase 1's
+  # own output only ever stores work_id) with their NLI label/confidence/
+  # class-probabilities, plus a label x confidence-decile matrix computed
+  # on the full (uncapped) data. Same cross(assessment, nli_granularities)
+  # scoping and nli_config_for_granularity() resolution as nli_overview_data
+  # just above, for the same reason (nli.active is a single global choice;
+  # each granularity is normally scored under its own dedicated config).
+  tar_target(
+    nli_scores_qa_data,
+    build_nli_scores_qa_data(
+      assessment,
+      file.path(
+        "output/nli_scores_evidence",
+        paste0("granularity=", nli_granularities),
+        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
+        paste0("assessment=", assessment$id)
+      ),
+      works_citing_parquet,
+      nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active),
+      nli_granularities,
+      "output/tables",
+      per_claim_cap = 50L,
+      # Resolved granularity's OWN uncertain_threshold -- not nli.active's --
+      # same fine-grained-config reasoning as nli_config_for_granularity()
+      # itself. Falls back to 0.60 (score_one_claim()'s own default) if the
+      # resolved config doesn't set one.
+      uncertain_threshold = nli_configs_all[[nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)]][["uncertain_threshold"]] %||% 0.60,
+      # Same granularity/nli_config resolution as the main nli_scores_path
+      # above, pointed at the SEPARATE key-paper scoring chain instead --
+      # empty/absent until that (RunPod-calling) chain has actually been
+      # run; build_nli_scores_qa_data() degrades to "no overlay" rather
+      # than erroring.
+      keypaper_scores_path = file.path(
+        "output/nli_scores_evidence_keypaper",
+        paste0("granularity=", nli_granularities),
+        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
+        paste0("assessment=", assessment$id)
+      )
+    ),
+    pattern = cross(map(assessment, works_citing_parquet), nli_granularities),
+    format = "file",
+    # Same OOM caution as nli_overview_data just above -- collect()s the
+    # full per-assessment scored table before capping.
+    deployment = "main",
+    garbage_collection = TRUE
+  ),
+
+  # Target 2h4'' (QA figure): prob_conf_curve as a static PNG -- three
+  # lines (SUPPORTS/REFUTES/NOT_ENOUGH_INFO), x = that label's own class
+  # probability (binned), y = mean confidence, dashed line at the resolved
+  # config's uncertain_threshold. Separate target from nli_scores_qa_data
+  # itself (same split as nli_overview_data -> nli_overview_figures) so
+  # replotting doesn't require recollecting the raw scored table.
+  tar_target(
+    nli_scores_qa_figures,
+    build_nli_scores_qa_figures(nli_scores_qa_data, "output/figures"),
+    pattern = map(nli_scores_qa_data),
+    format = "file"
+  ),
+
+  tar_target(
+    nli_scores_qa_report_qmd,
+    "input/reports/QA_NLI_Scores_Report.qmd",
+    format = "file"
+  ),
+
+  tar_target(
+    nli_scores_qa_report_html,
+    {
+      # Referenced only to establish the DAG dependency -- the qmd itself
+      # re-reads nli_scores_qa_data's actual value via tar_read_raw() at
+      # render time, same convention as the other parameterized reports.
+      #
+      # Known cold-build quirk (reproduced directly): if nli_scores_qa_data
+      # has NEVER been built before, building it and this target in the
+      # SAME tar_make() call can race -- a branch of this target can start
+      # rendering (and its qmd's own tar_read_raw("nli_scores_qa_data")
+      # call fail with "target nli_scores_qa_data not found") before
+      # nli_scores_qa_data's dynamic-branch pattern is fully finalized in
+      # _targets/meta/meta, even though every individual branch already
+      # completed. Simply re-running tar_make() fixes it -- by then
+      # nli_scores_qa_data is fully finalized and this target builds
+      # cleanly. Same risk likely applies to the pre-existing
+      # refutes_funnel_data/report_refutes_funnel_html pattern this mirrors,
+      # just never hit because those targets are rarely both cold in the
+      # same call in practice.
+      nli_scores_qa_report_qmd
+      nli_scores_qa_figures
+      x <- readRDS(nli_scores_qa_data)
+      out <- paste0(
+        "QA_NLI_Scores_Report_", x$assessment,
+        nli_model_suffix(x$nli_config), granularity_suffix(x$granularity), ".html"
+      )
+      # Renders next to the input (input/reports/), regardless of
+      # execute_dir -- see td_doc_html's comment for why. file.rename()
+      # is the whole relocation step.
+      quarto::quarto_render(
+        "input/reports/QA_NLI_Scores_Report.qmd",
+        output_file = out,
+        execute_dir = getwd(),
+        execute_params = list(
+          assessment_id = x$assessment, granularity = x$granularity, nli_config = x$nli_config
+        )
+      )
+      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
+      file.rename(file.path("input/reports", out), file.path("output/reports", out))
+      file.path("output/reports", out)
+    },
+    pattern = map(nli_scores_qa_data, nli_scores_qa_figures),
+    format = "file",
+    # Same concurrent-quarto_render() guard as bm_split_report_html/
+    # report_refutes_funnel_html/report_supports_funnel_html -- avoids two
+    # branches racing on the same source .qmd and cross-contaminating each
+    # other's output.
+    deployment = "main"
+  ),
+
   # Target 2h4a: Per-claim candidate scope for Phase 2's `subset: "sm"`
   # configs — see R/build_llm_candidate_scope_parquet.R and
   # TD_NLI_LLM_two_phase.qmd. Chains refs_parquet's `sm` (sub-chapter id) ->
@@ -979,16 +1165,18 @@ list(
       # nli_bm_explorer_html's and td_doc_html's actual values via
       # tar_read(), and quarto_render() re-reads the qmd from disk by path.
       # Without nli_bm_explorer_html/td_doc_html/report_refutes_funnel_html/
-      # report_supports_funnel_html/bm_split_report_html, tar_make() would
-      # happily render the report against stale/missing dependents rather
-      # than building them first. Without qmd_fact_checker (file-hash
-      # tracked), targets has no visibility into the qmd's own content —
-      # editing the qmd (prose, code chunks, or YAML header, e.g.
-      # embed-resources) would silently NOT invalidate this target.
+      # report_supports_funnel_html/bm_split_report_html/
+      # nli_scores_qa_report_html, tar_make() would happily render the
+      # report against stale/missing dependents rather than building them
+      # first. Without qmd_fact_checker (file-hash tracked), targets has no
+      # visibility into the qmd's own content — editing the qmd (prose,
+      # code chunks, or YAML header, e.g. embed-resources) would silently
+      # NOT invalidate this target.
       nli_bm_explorer_html
       report_refutes_funnel_html
       report_supports_funnel_html
       bm_split_report_html
+      nli_scores_qa_report_html
       qmd_fact_checker
       td_doc_html
       # See td_doc_html's own comment: embed-resources: true means the
@@ -1014,7 +1202,7 @@ list(
     report_output_dir,
     build_report_output_dir(
       report_fact_checker,
-      c(td_doc_html, report_refutes_funnel_html, report_supports_funnel_html, bm_split_report_html),
+      c(td_doc_html, report_refutes_funnel_html, report_supports_funnel_html, bm_split_report_html, nli_scores_qa_report_html),
       claude_md,
       "output/reports"
     ),

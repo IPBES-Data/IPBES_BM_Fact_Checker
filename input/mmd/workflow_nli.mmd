@@ -79,6 +79,7 @@ flowchart TD
     nli_scoring@{ shape: rect, label: "Classify each citing work vs one BM claim<br/>premise = clean(title + abstract)<br/>hypothesis = one evidence-segmented BM claim<br/>→ SUPPORTS / REFUTES / NEI<br/><tt>[nli_claim_units_evidence -> nli_claim_units_evidence_flat -> nli_scores_by_claim_evidence]</tt>" }
     nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores_evidence/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
     qa_bm_split@{ shape: doc, label: "QA report<br/><tt>[bm_split_report_html]</tt>" }
+    qa_nli_scores@{ shape: doc, label: "QA report<br/><tt>[nli_scores_qa_report_html]</tt>" }
 
     %% Edges
     nli_segment --> nli_ready_db
@@ -86,6 +87,7 @@ flowchart TD
     nli_server <--> nli_scoring
     nli_scoring --> nli_scores_db
     nli_ready_db --> qa_bm_split
+    nli_scores_db --> qa_nli_scores
   end
 
   %% Inputs to the NLI scoring step: BM text, segmented into claims first, +
@@ -145,16 +147,16 @@ flowchart TD
   classDef disabled    fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px,stroke-dasharray:4 3;
   classDef qa_report   fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:1.5px;
 
-  %% Hide the data → nli_assessment subgraph-level constraint edge (index 28).
-  %% Hide the nli_assessment → llm_verification one the same way (index 40,
+  %% Hide the data → nli_assessment subgraph-level constraint edge (index 29).
+  %% Hide the nli_assessment → llm_verification one the same way (index 41,
   %% last edge in the file). If you add or remove edges above either line,
   %% recount and bump both indices.
-  linkStyle 28 stroke:transparent,fill:none;
-  linkStyle 40 stroke:transparent,fill:none;
+  linkStyle 29 stroke:transparent,fill:none;
+  linkStyle 41 stroke:transparent,fill:none;
 
   class config_file input_file;
   class assessment_list,assessment_id,nli_active,llm_active config;
   class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db,nli_ready_db,nli_scores_db,llm_scope_db,llm_scores_db database;
   class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,nli_scoring,nli_segment,llm_scope,llm_verify processing;
   class sparql,zotero_api,openalex,nli_server,llm_server helper;
-  class qa_bm_split qa_report;
+  class qa_bm_split,qa_nli_scores qa_report;

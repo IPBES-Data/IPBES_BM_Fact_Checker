@@ -28,7 +28,10 @@ build_label_funnel_figures <- function(label_funnel_data_path, output_root = "ou
       pct = round(100 * n / n[level == "level1"], 1)
     ) |>
     ggplot2::ggplot(ggplot2::aes(x = n, y = label)) +
-    ggplot2::geom_col(fill = "#8B2E2E", width = 0.6) +
+    # nli_label_colors (R/branch_helpers.R) keyed by this funnel's own
+    # label -- previously hardcoded to the REFUTES color regardless of
+    # x$label, so a SUPPORTS funnel report's bar rendered in red too.
+    ggplot2::geom_col(fill = nli_label_colors[[x$label]], width = 0.6) +
     ggplot2::geom_text(
       ggplot2::aes(label = sprintf("%s (%s%%)", format(n, big.mark = ","), pct)),
       hjust = -0.05, size = 3.5
