@@ -173,7 +173,7 @@ long-context: the *hypothesis* (BM claim) is always English, but the
 language the source paper was published in, so an English-only long-context
 alternative (`MoritzLaurer/ModernBERT-large-zeroshot-v2.0`, also 8192
 tokens, considered first) would still fail on non-English premises.
-`bge_m3_zeroshot` and the currently-deployed `deberta_zeroshot` use the
+`bge_m3_zeroshot` and the (then-deployed, now-retired) `deberta_zeroshot` use the
 **same 2-class** `entailment`/`not_entailment` head (both real `config.json`s
 checked) — MoritzLaurer's "v2.0" series reformulates zero-shot as one
 entailment-vs-not_entailment pass per candidate label, not classic 3-way
@@ -183,10 +183,22 @@ model; only a different `NLI_MODEL` build arg
 (`external/runpod/docker/nli-runpod/Dockerfile`) and a new image tag,
 `ghcr.io/rkrug/nli-runpod-bge-m3` (see `input/nli_pods_bge_m3.conf`).
 
-Not yet built, provisioned, or run — `bge_m3_zeroshot`'s
-`uncertain_threshold: 0.60` is carried over unverified from `deberta_zeroshot`
-as a starting point, not a calibrated value for this different model. See
-`TODO.md`.
+Not yet built, provisioned, or run at the time this section was written —
+`bge_m3_zeroshot`'s `uncertain_threshold: 0.60` was carried over unverified
+from `deberta_zeroshot` as a starting point, not a calibrated value for
+this different model.
+
+**Status update:** `bge_m3_zeroshot` has since been built, provisioned, and
+run for real, and is now the **sole production NLI config** —
+`deberta_zeroshot`/`deberta_zeroshot_v3` are RETIRED (their scored output
+deleted, not migrated; see the `nli:` comment block in `input/config.yaml`
+for the measured throughput/quality comparison that motivated the full
+switch). `uncertain_threshold: 0.60` was left unchanged after a real,
+if not rigorous, spot-check (n=350) found `bge_m3_zeroshot`'s confidence
+distribution closely matches `deberta_zeroshot`'s own. The rest of this
+section's reasoning (why `complete_bm` needs a longer-context, multilingual
+model) is unaffected by the switch actually happening — kept as the
+original design record.
 
 ## A third granularity: `atomic_bm`
 

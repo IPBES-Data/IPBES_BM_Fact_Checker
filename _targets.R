@@ -660,11 +660,16 @@ list(
   # below resolves whichever granularities actually have data the same way
   # it already does for citing-works scores.
   #
-  # NOT run as part of a bare tar_make() by design -- deliberately no bare
-  # reference to nli_scores_keypaper_evidence anywhere that would pull it
-  # into report_fact_checker's dependency chain. It calls the same live
-  # RunPod host pool as the citing-works chain; run it explicitly with
-  # tar_make(names = "nli_scores_keypaper_evidence") when ready.
+  # RUNS AS PART OF A BARE tar_make() -- nli_scores_qa_data below takes
+  # nli_scores_keypaper_evidence as a bare (non-pattern) argument purely to
+  # establish the DAG dependency (same convention llm_verification_parquet
+  # already uses for nli_scores_by_claim_evidence), so it flows into the QA
+  # report automatically. This calls the same live RunPod host pool as the
+  # citing-works chain -- a plain tar_make()/tar_make(names="report_fact_checker")
+  # now dispatches real key-paper NLI classification calls too, not just the
+  # main citing-works corpus. Use tar_make(names = ..., shortcut = TRUE) to
+  # render against on-disk data without triggering a fresh run, same escape
+  # hatch documented for llm_verification_parquet.
   tar_target(
     nli_ready_evidence_keypaper_parquet,
     build_nli_ready_evidence_keypaper_parquet(
@@ -731,11 +736,6 @@ list(
       nli_granularities,
       "output/tables",
       per_claim_cap = 50L,
-      # Resolved granularity's OWN uncertain_threshold -- not nli.active's --
-      # same fine-grained-config reasoning as nli_config_for_granularity()
-      # itself. Falls back to 0.60 (score_one_claim()'s own default) if the
-      # resolved config doesn't set one.
-      uncertain_threshold = nli_configs_all[[nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)]][["uncertain_threshold"]] %||% 0.60,
       # Same granularity/nli_config resolution as the main nli_scores_path
       # above, pointed at the SEPARATE key-paper scoring chain instead --
       # empty/absent until that (RunPod-calling) chain has actually been
@@ -746,7 +746,15 @@ list(
         paste0("granularity=", nli_granularities),
         paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
         paste0("assessment=", assessment$id)
-      )
+      ),
+      # Bare reference, not part of the pattern below (incompatible branch
+      # shapes -- this is a per-claim dynamic branch, nli_scores_qa_data is
+      # per assessment x granularity) -- establishes the DAG dependency only,
+      # same convention build_llm_verification_parquet()'s own
+      # nli_scores_by_claim_evidence argument already uses. Makes the
+      # key-paper scoring chain run automatically as part of a bare
+      # tar_make(), instead of needing to be triggered explicitly.
+      nli_scores_keypaper_evidence = nli_scores_keypaper_evidence
     ),
     pattern = cross(map(assessment, works_citing_parquet), nli_granularities),
     format = "file",
@@ -756,10 +764,8 @@ list(
     garbage_collection = TRUE
   ),
 
-  # Target 2h4'' (QA figure): prob_conf_curve as a static PNG -- three
-  # lines (SUPPORTS/REFUTES/NOT_ENOUGH_INFO), x = that label's own class
-  # probability (binned), y = mean confidence, dashed line at the resolved
-  # config's uncertain_threshold. Separate target from nli_scores_qa_data
+  # Target 2h4'' (QA figure): the ternary (p_supports, p_refutes, p_nei)
+  # density plot as a static PNG. Separate target from nli_scores_qa_data
   # itself (same split as nli_overview_data -> nli_overview_figures) so
   # replotting doesn't require recollecting the raw scored table.
   tar_target(
@@ -826,19 +832,26 @@ list(
     deployment = "main"
   ),
 
-  # Target 2h4a: Per-claim candidate scope for Phase 2's `subset: "sm"`
-  # configs — see R/build_llm_candidate_scope_parquet.R and
-  # TD_NLI_LLM_two_phase.qmd. Chains refs_parquet's `sm` (sub-chapter id) ->
-  # seed doi -> seed OpenAlex work id -> citing work (via the existing
-  # snowball edges) to produce, per evidence-segmented claim, an allow-list
-  # of citing works actually tied to its own sub-chapter rather than the
-  # whole BM's. Reads only already-existing, unmodified targets
-  # (key_messages_parquet, refs_parquet, works_parquet, snowball_parquet,
-  # nli_ready_evidence_parquet) and makes no network/API calls of its own —
-  # adding it does not invalidate any of Phase 1's NLI chain or the
-  # download/snowball steps upstream of it. Always computed regardless of
-  # which llm_verification config is active; `subset: "all"` configs simply
-  # never read its output.
+  # Target 2h4a: Per-claim candidate scope for Phase 2's `subset: "default"`
+  # configs (this value used to be called "sm") — see
+  # R/build_llm_candidate_scope_parquet.R and TD_NLI_LLM_two_phase.qmd.
+  # Chains refs_parquet's `sm` (sub-chapter id) -> seed doi -> seed OpenAlex
+  # work id -> citing work (via the existing snowball edges) to produce, per
+  # evidence-segmented claim, an allow-list of citing works actually tied to
+  # its own sub-chapter rather than the whole BM's. Supported for
+  # naive_bm/atomic_bm; a no-op ("no restriction") sentinel for complete_bm,
+  # whose whole-field claims carry no per-sub-claim evidence tokens. Reads
+  # only already-existing, unmodified targets (key_messages_parquet,
+  # refs_parquet, works_parquet, snowball_parquet, nli_ready_evidence_parquet,
+  # claim_completion_model) — adding it does not invalidate any of Phase 1's
+  # NLI chain or the download/snowball steps upstream of it. Under
+  # granularity == "atomic_bm" it DOES make a real (normally cache-hit only)
+  # OpenRouter call via claim_completion_model/complete_bm_fragments(), to
+  # recover the same surviving-fragment order the real atomic_bm build
+  # produced (see extract_claim_evidence_tokens_atomic()'s own header) — a
+  # real atomic_bm nli_ready_evidence_parquet build is a precondition for
+  # this to be cheap. Always computed regardless of which llm_verification
+  # config is active; `subset: "all"` configs simply never read its output.
   tar_target(
     llm_candidate_scope_parquet,
     build_llm_candidate_scope_parquet(
@@ -849,7 +862,8 @@ list(
       snowball_parquet,
       nli_ready_evidence_parquet,
       "output/llm_candidate_scope",
-      granularity
+      granularity,
+      claim_completion_model
     ),
     pattern = map(
       assessment, key_messages_parquet, refs_parquet, works_parquet,

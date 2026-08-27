@@ -138,11 +138,14 @@ assessment loops over its own routed candidates internally.
 
 ### Candidate scoping (`subset`) {#candidate-scoping}
 
-**Status: parked.** This section describes a second, independent narrowing
-lever, orthogonal to the `nli_labels`/`nli_certainty` routing above — still
-implemented and tested, but not the active cost lever right now (the routing
-fields are doing that job instead, via `REFUTES` + `certain`). `subset: "sm"`
-remains available on any config whenever it's worth revisiting.
+**Status: implemented, not the active cost lever.** This section describes a
+second, independent narrowing lever, orthogonal to the
+`nli_labels`/`nli_certainty` routing above — the routing fields are doing the
+active cost-cutting job right now (via `REFUTES` + `certain`). `subset:
+"default"` remains available on any config whenever it's worth revisiting.
+(This value used to be called `"sm"` — renamed once the narrowing was
+extended to work across granularities, not just `naive_bm`, since "sm" no
+longer described what it actually selects.)
 
 The original combined routing rule (`REFUTES` at any confidence, OR any
 label if uncertain) alone left 66.5% of all NLI-scored pairs in scope for
@@ -189,12 +192,32 @@ cross-checks its own derived `claim_id`s against
 implementation that silently drifts out of sync gets caught rather than
 silently mis-attributing evidence.
 
+**Granularity coverage.** `naive_bm` was the only granularity this actually
+worked for at first. `atomic_bm` has a sibling extractor,
+`extract_claim_evidence_tokens_atomic()`, that duplicates
+`segment_bm_atomic()`'s splitting the same way — but atomic_bm's real
+`claim_id`/`sentence_number` assignment additionally depends on which raw
+fragments *survive* `complete_bm_fragments()` (a fragment can be dropped,
+never reordered, when the faithfulness check rejects a completion), so this
+extractor also re-runs completion and re-derives the surviving order via
+`bm_align_surviving_indices()` (the same alignment helper
+`build_bm_split_highlighted.R` already uses for its own atomic_bm
+highlighting) — relying on the resumable per-fragment completion cache
+(`output/claim_completion/raw/`) to make this a cache-hit-only call in
+practice, once a real atomic_bm `nli_ready_evidence_parquet` build has
+already populated it. `complete_bm` has **no** counterpart at all: its
+whole-field claims carry no per-sub-claim evidence tokens to scope by, so
+`build_llm_candidate_scope_parquet()` returns its "no restriction available"
+sentinel immediately for `complete_bm` — every claim falls back to
+unrestricted, i.e. `subset: "default"` behaves exactly like `subset: "all"`
+under `complete_bm`.
+
 Exposed per `llm_verification` config via `subset:`:
 
 | `subset` | Behavior |
 |---|---|
-| `"all"` | Every citing work found under the claim's BM (today's default; the 66.5%/2.36M figure above) |
-| `"sm"` | Only citing works tracing back to a seed reference whose `sm` matches the claim's own evidence sub-chapter(s) |
+| `"all"` | Every citing work found under the claim's BM, for every granularity (today's active choice; the 66.5%/2.36M figure above) |
+| `"default"` | `naive_bm`/`atomic_bm`: only citing works tracing back to a seed reference whose `sm` matches the claim's own evidence sub-chapter(s). `complete_bm`: identical to `"all"` — no per-sub-claim scoping exists for whole-field claims |
 
 Two policy decisions, made deliberately rather than defaulted into:
 
@@ -202,8 +225,9 @@ Two policy decisions, made deliberately rather than defaulted into:
   (keeps every one of its routed candidates) rather than being excluded —
   no claim is ever silently dropped from Phase 2 review just because it
   lacks a brace. The same fallback applies if the whole scope target found
-  nothing to write for an assessment (e.g. an unexpected data gap): absence
-  of scope data is never read as "review nothing."
+  nothing to write for an assessment (e.g. an unexpected data gap, or the
+  active granularity being `complete_bm`): absence of scope data is never
+  read as "review nothing."
 - **Sub-chapter token matching is prefix-based, not exact**, after
   normalizing (lowercase; strip `box`/`table`/`spm table` prefixes; strip
   `(...)` parenthetical annotations; split on comma/semicolon). The `sm`
@@ -214,7 +238,7 @@ Two policy decisions, made deliberately rather than defaulted into:
   `"5.4.2.1"` matches `"5.4.2.1.a"`, a bare `"4"` matches any `"4.x.y"` — but
   is deliberately not exhaustive; the malformed cases are an accepted,
   disclosed gap. `subset: "all"` remains available as the exhaustive
-  fallback whenever `"sm"`'s narrower recall is a concern for a given
+  fallback whenever `"default"`'s narrower recall is a concern for a given
   analysis.
 
 ### Prompt design
@@ -261,7 +285,7 @@ llm_verification:
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: sm
+      subset: default
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
@@ -301,7 +325,7 @@ only in model/subset.
 | Config | Model | Subset | Notes |
 |---|---|---|---|
 | `openrouter_cheap` | `openai/gpt-4o-mini` | `all` | Default; good balance of quality and cost for a first pass |
-| `openrouter_cheap_sm` | `openai/gpt-4o-mini` | `sm` | Same model, narrowed to the sm-derived candidate scope — parked (see [Candidate scoping](#candidate-scoping)) |
+| `openrouter_cheap_sm` | `openai/gpt-4o-mini` | `default` | Same model, narrowed to the per-claim evidence-derived candidate scope (naive_bm/atomic_bm only — see [Candidate scoping](#candidate-scoping)) |
 | `openrouter_midtier` | `google/gemini-2.5-flash` | `all` | Step up when the cheap tier is topic-matching rather than judging the claim — spot-check `quote`/`explanation` |
 | `openrouter_toptier_gpt5` | `openai/gpt-5` | `all` | For a final, citable verification pass; a reasoning model |
 
@@ -342,7 +366,7 @@ vary within it based on the data:
 ```r
 tibble(
   llm_config          = character(), # selected input/config.yaml llm_verification.configs entry name
-  subset              = character(), # "all" or "sm" -- which candidate scoping this config used
+  subset              = character(), # "all" or "default" -- which candidate scoping this config used
   nli_config          = character(), # NLI profile used in Phase 1
   assessment          = character(),
   nli_route           = character(), # this ROW's own outcome, e.g. "REFUTES-certain" -- see nli_route_label()
@@ -448,10 +472,13 @@ routing/subset that happens to select it again later.
 `llm_verification_parquet` and `llm_candidate_scope_parquet` are both live,
 active targets (not commented out) — `tar_make()` runs them.
 `llm_candidate_scope_parquet` is always computed regardless of which
-`llm_verification` config is active — it makes no paid API calls of its own
-(pure local joins over already-downloaded parquet), so `subset: "all"`
-configs simply never read its output rather than the target being
-conditionally skipped.
+`llm_verification` config is active, so `subset: "all"` configs simply never
+read its output rather than the target being conditionally skipped. Under
+`naive_bm`/`complete_bm` it makes no paid API calls of its own (pure local
+joins over already-downloaded parquet); under `atomic_bm` it re-runs
+`complete_bm_fragments()` to recover claim alignment, which should always
+hit the resumable completion cache rather than pay for a fresh call — see
+[Candidate scoping](#candidate-scoping).
 
 **`report_fact_checker` is no longer safe to render blind.** Originally
 neither Phase 2 target was a dependency of it, so rendering the report
@@ -513,6 +540,6 @@ for every row.
   used here
 - [R/score_one_claim.R](R/score_one_claim.R) — Phase 1 implementation
 - [R/build_llm_verification_parquet.R](R/build_llm_verification_parquet.R) — Phase 2 implementation
-- [R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) — `subset: "sm"` candidate scoping
+- [R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) — `subset: "default"` candidate scoping
 - `Categorisation_Literature/R/llm_epistemology.R` (sibling project) — the
   ported architecture's origin

@@ -18,10 +18,6 @@
 # This is a QA/spot-check view, not a full corpus browser (that's what
 # nli_bm_explorer_html already is).
 #
-# uncertain_threshold is the RESOLVED granularity's own config value (see
-# nli_config just above), not necessarily nli.active's -- passed in by the
-# caller rather than looked up here, same fine-grained-config reasoning as
-# elsewhere in this project.
 build_nli_scores_qa_data <- function(
   assessment,
   nli_scores_path,
@@ -30,8 +26,8 @@ build_nli_scores_qa_data <- function(
   granularity,
   output_root = "output/tables",
   per_claim_cap = 50L,
-  uncertain_threshold = 0.60,
-  keypaper_scores_path = NULL
+  keypaper_scores_path = NULL,
+  nli_scores_keypaper_evidence = NULL # unused -- establishes the DAG dependency on the key-paper scoring chain, same convention as build_llm_verification_parquet()'s own nli_scores_by_claim_evidence argument
 ) {
   assessment_id <- assessment$id
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
@@ -89,34 +85,6 @@ build_nli_scores_qa_data <- function(
     dplyr::select(label, dplyr::any_of(decile_levels)) |>
     dplyr::arrange(factor(label, levels = label_levels))
 
-  # Probability-vs-confidence curve: for each of p_supports/p_refutes/p_nei,
-  # bin its value into deciles (same scheme as the matrix above) and take
-  # the MEAN confidence of rows in that bin -- one line per probability
-  # column. Aggregation is required here, not optional: at ~594K rows for
-  # GA1 x complete_bm alone, a literal per-row (p_x, confidence) line would
-  # just render as unreadable noise, not 3 readable lines. Also carries `n`
-  # per bin so the figure/report can show how much each point is actually
-  # backed by.
-  prob_levels <- c(p_supports = "SUPPORTS", p_refutes = "REFUTES", p_nei = "NOT_ENOUGH_INFO")
-  prob_conf_curve <- d |>
-    dplyr::select(p_supports, p_refutes, p_nei, confidence) |>
-    tidyr::pivot_longer(
-      cols = c(p_supports, p_refutes, p_nei),
-      names_to = "prob_type", values_to = "prob_value"
-    ) |>
-    dplyr::mutate(
-      prob_type = factor(prob_levels[prob_type], levels = prob_levels),
-      decile = cut(
-        prob_value, breaks = seq(0, 1, 0.1), include.lowest = TRUE,
-        labels = decile_levels
-      )
-    ) |>
-    dplyr::group_by(prob_type, decile) |>
-    dplyr::summarise(mean_confidence = mean(confidence), n = dplyr::n(), .groups = "drop") |>
-    dplyr::mutate(
-      decile_mid = (as.integer(decile) - 1) * 0.1 + 0.05
-    )
-
   # Cap per (km, bm, claim_id) -- the claim is the natural QA unit here, so
   # capping at this level (rather than per BM) means one work-heavy claim
   # never crowds out every other claim's rows within the same BM. Keep the
@@ -167,12 +135,20 @@ build_nli_scores_qa_data <- function(
   # % of rows actually won by each label -- for the ternary figure's corner
   # labels (R/build_nli_scores_qa_figures.R). Computed here (label is already
   # in `d`) rather than re-derived from probs there, so it can never drift
-  # from the label column score_one_claim() itself assigned.
-  label_pct <- d |>
+  # from the label column score_one_claim() itself assigned. `label_n`
+  # (raw counts, same names) is kept alongside for the key-paper
+  # significance test below -- prop.test() needs counts, not percentages.
+  label_n <- d |>
     dplyr::count(label) |>
-    dplyr::mutate(pct = 100 * n / sum(n)) |>
-    dplyr::select(label, pct) |>
     tibble::deframe()
+  # Reindex to all 3 levels (a label with zero rows would otherwise be
+  # silently absent from deframe()'s output) so downstream code can always
+  # index label_n[[lab]] for any of nli_label_levels without an NA/missing
+  # surprise.
+  label_n <- label_n[nli_label_levels]
+  label_n[is.na(label_n)] <- 0L
+  names(label_n) <- nli_label_levels
+  label_pct <- 100 * label_n / sum(label_n)
 
   # Key papers (the actual seed/reference works IPBES cites as evidence for
   # a BM, scored against that same BM's claim -- see
@@ -218,6 +194,7 @@ build_nli_scores_qa_data <- function(
   # doesn't have to eyeball the figure to get the headline number.
   keypaper_summary <- NULL
   keypaper_label_pct <- NULL
+  keypaper_label_pvalue <- NULL
   if (!is.null(keypaper_points)) {
     keypaper_summary <- keypaper_points |>
       dplyr::summarise(
@@ -234,14 +211,39 @@ build_nli_scores_qa_data <- function(
     # on `keypaper_points` (it's an average across a paper's claims, not a
     # single scored row), so the winning label is the argmax of the
     # averaged probabilities directly.
-    keypaper_label_pct <- keypaper_points |>
+    keypaper_label_n <- keypaper_points |>
       dplyr::mutate(
         label = nli_label_levels[max.col(cbind(p_supports, p_nei, p_refutes), ties.method = "first")]
       ) |>
       dplyr::count(label) |>
-      dplyr::mutate(pct = 100 * n / sum(n)) |>
-      dplyr::select(label, pct) |>
       tibble::deframe()
+    # tibble::deframe() drops any label with zero key papers -- restore it as
+    # 0 so keypaper_label_pct/the significance test below always have an
+    # entry for all three labels, matching label_n's shape.
+    keypaper_label_n <- keypaper_label_n[nli_label_levels]
+    keypaper_label_n[is.na(keypaper_label_n)] <- 0L
+    names(keypaper_label_n) <- nli_label_levels
+    n_keypapers <- sum(keypaper_label_n)
+    keypaper_label_pct <- 100 * keypaper_label_n / n_keypapers
+
+    # Is the key-paper share in each corner significantly different from the
+    # full-corpus share, or could it plausibly be the same underlying rate
+    # just sampled at n=573? Two-proportion test (prop.test(), Yates
+    # continuity-corrected) per label: key-paper count/n_keypapers vs.
+    # full-corpus count/n_total. Full-corpus n so dwarfs n_keypapers that
+    # this is effectively "is the key-paper rate different from a fixed
+    # reference rate," which is exactly the comparison the ternary figure's
+    # bracketed corner percentages are already making visually.
+    keypaper_label_pvalue <- vapply(nli_label_levels, function(lab) {
+      tryCatch(
+        stats::prop.test(
+          x = c(keypaper_label_n[[lab]], label_n[[lab]]),
+          n = c(n_keypapers, sum(label_n))
+        )$p.value,
+        error = function(e) NA_real_
+      )
+    }, numeric(1))
+    names(keypaper_label_pvalue) <- nli_label_levels
   }
 
   saveRDS(
@@ -253,9 +255,7 @@ build_nli_scores_qa_data <- function(
       n_total        = nrow(d),
       n_shown        = nrow(capped),
       per_claim_cap  = per_claim_cap,
-      uncertain_threshold = uncertain_threshold,
       matrix         = matrix_tbl,
-      prob_conf_curve = prob_conf_curve,
       label_pct      = label_pct,
       # Raw class probabilities only (no text columns) -- kept for the
       # ternary density figure, which needs the full uncapped distribution,
@@ -265,6 +265,7 @@ build_nli_scores_qa_data <- function(
       keypaper_points = keypaper_points,
       keypaper_summary = keypaper_summary,
       keypaper_label_pct = keypaper_label_pct,
+      keypaper_label_pvalue = keypaper_label_pvalue,
       widget         = widget
     ),
     file = fn

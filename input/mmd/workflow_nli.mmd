@@ -23,16 +23,13 @@ flowchart TD
     %% Nodes
     sparql@{ shape: cloud, label: "IPBES SPARQL endpoint" }
     build_refs@{ shape: rect, label: "Extract references<br/>KM → BM → SM → SubChapter ← Reference<br/><tt>[refs_parquet]</tt>" }
-    build_sections@{ shape: rect, label: "Extract section content<br/>KM → BM → SM → SubChapter → Chapter<br/><tt>[sections_parquet]</tt>" }
     build_key_messages@{ shape: rect, label: "Extract Key/Background Messages<br/>KM → BM (with descriptions)<br/><tt>[key_messages_parquet]</tt>" }
 
     %% Edges
     sparql <--> build_refs
-    sparql <--> build_sections
     sparql <--> build_key_messages
   end
 
-  assessment_id --> build_sections
   assessment_id --> build_key_messages
 
   subgraph data["Retrieve and prepare data"]
@@ -40,7 +37,6 @@ flowchart TD
 
     %% Nodes
     refs_db@{ shape: lin-cyl, label: "References DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
-    sections_db@{ shape: lin-cyl, label: "Sections DB<br/><tt>output/sections/assessment=&lt;id&gt;/</tt>" }
     key_messages_db@{ shape: lin-cyl, label: "Key + Background Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
     zotero_api@{ shape: cloud, label: "Zotero API" }
     zotero_db@{ shape: lin-cyl, label: "Zotero DB<br/><tt>output/zotero/assessment=&lt;id&gt;/</tt>" }
@@ -49,11 +45,11 @@ flowchart TD
     citing_db@{ shape: lin-cyl, label: "Citing Works DB<br/><tt>output/works_citing/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
     download_zotero@{ shape: rect, label: "Download Zotero group items<br/>page by page via Zotero API<br/><tt>[zotero_parquet]</tt>" }
     download_works@{ shape: rect, label: "Query OpenAlex works by DOI<br/>via openalexPro<br/><tt>[works_parquet]</tt>" }
-    snowball@{ shape: rect, label: "Snowball search<br/>keypaper + citing<br/><tt>[snowball_parquet -> works_citing_parquet]</tt>" }
+    snowball@{ shape: rect, label: "Snowball search<br/>keypaper + citing<br/><tt>[snowball_parquet]</tt>" }
+    snowball_db@{ shape: lin-cyl, label: "Snowball DB (nodes / edges / keypaper)<br/><tt>output/snowball/{nodes,edges,keypaper}/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
     %% Edges
     build_refs        --> refs_db
-    build_sections    --> sections_db
     build_key_messages --> key_messages_db
 
     %% Download spine
@@ -66,7 +62,8 @@ flowchart TD
     download_works --> works_db
 
     works_db --> snowball
-    snowball --> citing_db
+    snowball --> snowball_db
+    snowball_db --> citing_db
   end
 
   subgraph nli_assessment["Assessment of the alignement of the BMs and the Citing Publications (NLI)"]
@@ -75,11 +72,13 @@ flowchart TD
     %% Nodes
     nli_segment@{ shape: rect, label: "Segment each BM into claims — per granularity:<br/>naive_bm: evidence-delimited, one claim per sentence-group ending in a {ref} (+ a separate bm_label claim) — 2-17 claims per BM<br/>complete_bm: whole bm_description/bm_label as one claim each — 2 per BM (1 if identical)<br/>atomic_bm: split at EVERY evidence brace, then LLM-complete elliptical fragments into self-contained claims (confidence qualifiers extracted to their own column, same as naive_bm)<br/><tt>[nli_ready_evidence_parquet]</tt> → QA report <tt>[bm_split_report_table -> bm_split_report_html]</tt>" }
     nli_ready_db@{ shape: lin-cyl, label: "NLI-Ready DB (claim × citing-work premise)<br/><tt>output/nli_ready_evidence/granularity=&lt;gran&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
-    nli_server@{ shape: cloud, label: "Zero-shot NLI server<br/>DeBERTa-v3-large-zeroshot<br/><tt>external/runpod/docker/nli-runpod/</tt>" }
+    nli_server@{ shape: cloud, label: "Zero-shot NLI server<br/>bge-m3-zeroshot-v2.0-c<br/><tt>external/runpod/docker/nli-runpod/</tt>" }
     nli_scoring@{ shape: rect, label: "Classify each citing work vs one BM claim<br/>premise = clean(title + abstract)<br/>hypothesis = one evidence-segmented BM claim<br/>→ SUPPORTS / REFUTES / NEI<br/><tt>[nli_claim_units_evidence -> nli_claim_units_evidence_flat -> nli_scores_by_claim_evidence]</tt>" }
     nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores_evidence/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
     qa_bm_split@{ shape: doc, label: "QA report<br/><tt>[bm_split_report_html]</tt>" }
     qa_nli_scores@{ shape: doc, label: "QA report<br/><tt>[nli_scores_qa_report_html]</tt>" }
+    nli_keypaper_scoring@{ shape: rect, label: "Score KEY/SEED papers vs. their own BM's claim<br/>QA sanity check, not the main corpus — same claims-building + scoring as above, applied to the keypaper snowball partition<br/><tt>[nli_ready_evidence_keypaper_parquet -> nli_scores_keypaper_evidence]</tt>" }
+    nli_scores_kp_db@{ shape: lin-cyl, label: "Key-paper NLI Scores DB<br/><tt>output/nli_scores_evidence_keypaper/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/</tt>" }
 
     %% Edges
     nli_segment --> nli_ready_db
@@ -88,12 +87,20 @@ flowchart TD
     nli_scoring --> nli_scores_db
     nli_ready_db --> qa_bm_split
     nli_scores_db --> qa_nli_scores
+    nli_server <--> nli_keypaper_scoring
+    nli_keypaper_scoring --> nli_scores_kp_db
+    nli_scores_kp_db --> qa_nli_scores
   end
 
   %% Inputs to the NLI scoring step: BM text, segmented into claims first, +
   %% citing works (premise) joined against every claim independently
   key_messages_db --> nli_segment
   citing_db --> nli_ready_db
+
+  %% Inputs to the key-paper QA scoring chain: same BM text as the main
+  %% flow, but the keypaper (not citing-work) snowball partition
+  key_messages_db --> nli_keypaper_scoring
+  snowball_db --> nli_keypaper_scoring
 
   %% Active NLI profile feeds scoring (determines model config + output partition)
   config_file --> nli_active
@@ -107,10 +114,10 @@ flowchart TD
     direction TB
 
     %% Nodes
-    llm_scope@{ shape: rect, label: "Narrow citing works per claim via evidence sub-chapter refs<br/>{5.4.1} → refs sm → seed dois → snowball edges → citing works<br/>(subset: sm only — subset: all skips this)<br/><tt>[llm_candidate_scope_parquet]</tt>" }
+    llm_scope@{ shape: rect, label: "Narrow citing works per claim via evidence sub-chapter refs<br/>{5.4.1} → refs sm → seed dois → snowball edges → citing works<br/>(subset: default only, naive_bm/atomic_bm — subset: all skips this, as does complete_bm)<br/><tt>[llm_candidate_scope_parquet]</tt>" }
     llm_scope_db@{ shape: lin-cyl, label: "Candidate Scope DB<br/><tt>output/llm_candidate_scope/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
     llm_server@{ shape: cloud, label: "OpenRouter LLM<br/>(gpt-4o-mini / gemini-2.5-flash / gpt-5)" }
-    llm_verify@{ shape: rect, label: "Route NLI-flagged pairs (label == REFUTES | uncertain), intersect with candidate scope (subset: sm)<br/>then call the LLM per (claim, work) — NLI label + confidence as prior<br/>→ SUPPORTS / REFUTES / NEI + verbatim quote<br/><tt>[llm_verification_parquet]</tt>" }
+    llm_verify@{ shape: rect, label: "Route NLI-scored pairs (label = REFUTES or SUPPORTS, certain only), intersect with candidate scope (subset: default)<br/>then call the LLM per (claim, work) — NLI label + confidence as prior<br/>→ SUPPORTS / REFUTES / NEI + verbatim quote<br/><tt>[llm_verification_parquet]</tt>" }
     llm_scores_db@{ shape: lin-cyl, label: "LLM Verification Scores DB<br/><tt>output/llm_verification/scores/llm_config=&lt;cfg&gt;/subset=&lt;subset&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
     %% Edges
@@ -132,7 +139,7 @@ flowchart TD
   key_messages_db --> llm_scope
   refs_db --> llm_scope
   works_db --> llm_scope
-  snowball --> llm_scope
+  snowball_db --> llm_scope
 
   %% Force `llm_verification` to sit below `nli_assessment` (subgraph-to-subgraph
   %% edge). Made invisible via linkStyle below so it doesn't add visual noise.
@@ -147,16 +154,18 @@ flowchart TD
   classDef disabled    fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px,stroke-dasharray:4 3;
   classDef qa_report   fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:1.5px;
 
-  %% Hide the data → nli_assessment subgraph-level constraint edge (index 29).
-  %% Hide the nli_assessment → llm_verification one the same way (index 41,
+  %% Hide the data → nli_assessment subgraph-level constraint edge (index 32,
+  %% after the key-paper QA chain's 5 edges + the snowball_db split's net +1
+  %% edge, minus the 3 removed with build_sections/sections_db, above).
+  %% Hide the nli_assessment → llm_verification one the same way (index 44,
   %% last edge in the file). If you add or remove edges above either line,
   %% recount and bump both indices.
-  linkStyle 29 stroke:transparent,fill:none;
-  linkStyle 41 stroke:transparent,fill:none;
+  linkStyle 32 stroke:transparent,fill:none;
+  linkStyle 44 stroke:transparent,fill:none;
 
   class config_file input_file;
   class assessment_list,assessment_id,nli_active,llm_active config;
-  class citing_db,refs_db,sections_db,key_messages_db,zotero_db,works_db,nli_ready_db,nli_scores_db,llm_scope_db,llm_scores_db database;
-  class build_refs,build_sections,build_key_messages,download_zotero,download_works,snowball,nli_scoring,nli_segment,llm_scope,llm_verify processing;
+  class citing_db,refs_db,key_messages_db,zotero_db,works_db,nli_ready_db,nli_scores_db,llm_scope_db,llm_scores_db,snowball_db,nli_scores_kp_db database;
+  class build_refs,build_key_messages,download_zotero,download_works,snowball,nli_scoring,nli_segment,nli_keypaper_scoring,llm_scope,llm_verify processing;
   class sparql,zotero_api,openalex,nli_server,llm_server helper;
   class qa_bm_split,qa_nli_scores qa_report;

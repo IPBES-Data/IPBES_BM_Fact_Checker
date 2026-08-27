@@ -42,18 +42,6 @@ expected_name <- function(ext) {
   )
 }
 
-# Matches build_nli_scores_qa_figures.R's own sprintf() pattern exactly
-# ("nli_scores_qa_prob_confidence_<id><suffixes>.png") -- deliberately NOT
-# reusing expected_name() above, which builds the DATA rds's name
-# ("nli_scores_qa_<id><suffixes>.rds"); the two differ by the
-# "prob_confidence_" segment.
-expected_fig_name <- function() {
-  sprintf(
-    "nli_scores_qa_prob_confidence_%s%s%s.png",
-    params$assessment_id, model_suffix, gran_suffix
-  )
-}
-
 data_path <- targets::tar_read_raw("nli_scores_qa_data") |>
   (\(x) x[basename(x) == expected_name("rds")])()
 x <- readRDS(data_path)
@@ -68,11 +56,9 @@ x <- readRDS(data_path)
 # rather than erroring loudly). Encoding to a data: URI ourselves sidesteps
 # that path-resolution step entirely, and needs no sidecar directory for a
 # single PNG.
-fig_path <- targets::tar_read_raw("nli_scores_qa_figures") |>
-  (\(x) x[basename(x) == expected_fig_name()])()
-
-# Same idiom as expected_fig_name() -- matches
-# build_nli_scores_qa_figures.R's "nli_scores_qa_ternary_<id><suffixes>.png".
+#
+# Matches build_nli_scores_qa_figures.R's own sprintf() pattern exactly
+# ("nli_scores_qa_ternary_<id><suffixes>.png").
 expected_ternary_name <- function() {
   sprintf(
     "nli_scores_qa_ternary_%s%s%s.png",
@@ -150,9 +136,14 @@ BM-level) — as a QA sanity check: a key paper *is* the evidence a BM was
 written from, so it should overwhelmingly land in the SUPPORTS region; if
 it doesn't, that's worth investigating, not a normal finding. Each
 corner's bracketed percentage is the key papers' own share for that label,
-next to the full-corpus share, so the two can be compared directly. This
-overlay needs a separate, deliberately-not-automatic scoring pass
-(`nli_scores_keypaper_evidence`) — it's absent here until that's been run.
+next to the full-corpus share, so the two can be compared directly, followed
+by the p-value from a two-proportion test (key-paper share vs. full-corpus
+share for that corner) — a small p-value means the key-paper share is
+genuinely different from the full-corpus one, not just sampling noise from
+the much smaller key-paper count. This overlay comes from a separate
+scoring pass (`nli_scores_keypaper_evidence`) that now runs automatically
+alongside the main citing-works scoring — it's absent here only on a cold
+first build, before that chain has produced anything yet.
 
 ```{r}
 #| label: ternary-figure
@@ -166,31 +157,6 @@ if (!is.null(x$keypaper_summary)) {
     "**Key paper validation:** of **%d** key papers, **%.1f%%** landed in SUPPORTS\n\n",
     r$n, r$pct_supports
   ))
-}
-```
-
-## Class probability vs. confidence
-
-For each of SUPPORTS/REFUTES/NOT_ENOUGH_INFO, this bins that label's own
-class probability (`p_supports`/`p_refutes`/`p_nei`) into deciles and
-plots the **mean confidence** of rows in that bin — one line per label,
-point size showing how many rows back each point. Since `confidence` is
-just the max of the three probabilities, this shows how each one relates
-to what actually ends up driving the final call. **Each line is not
-"confidence of rows classified as that label"** — it's the mean confidence
-of *every* row binned by that label's own probability value, regardless of
-which label actually won; a line can be high even where that label almost
-never wins (see the ternary plot above for the actual per-label
-breakdown). The dashed horizontal line marks this granularity's own
-`uncertain_threshold` (the certain/uncertain split) — not necessarily
-`nli.active`'s, since each granularity is normally scored under its own
-dedicated config.
-
-```{r}
-#| label: prob-confidence-figure
-#| results: asis
-if (length(fig_path)) {
-  cat(sprintf('<img src="%s" style="max-width:100%%;"><br><br>\n\n', xfun::base64_uri(fig_path)))
 }
 ```
 

@@ -1,10 +1,8 @@
-# Figure for build_nli_scores_qa_data()'s prob_conf_curve: three lines
-# (SUPPORTS/REFUTES/NOT_ENOUGH_INFO), x = that label's own class probability
-# (binned into deciles), y = mean confidence of rows in that bin, plus a
-# dashed horizontal line at the active config's own uncertain_threshold
-# marking the certain/uncertain split. Reads the rds produced by
-# build_nli_scores_qa_data() rather than re-collecting the raw parquet --
-# same convention as build_nli_overview_figures.R/build_label_funnel_figures.R.
+# Ternary (p_supports, p_refutes, p_nei) density figure for
+# build_nli_scores_qa_data()'s output, as a static PNG. Reads the rds
+# produced by build_nli_scores_qa_data() rather than re-collecting the raw
+# parquet -- same convention as
+# build_nli_overview_figures.R/build_label_funnel_figures.R.
 build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "output/figures") {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(nli_scores_qa_data_path)
@@ -12,40 +10,6 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
   if (isTRUE(x$empty)) {
     return(character(0))
   }
-
-  # Shared across every NLI-label figure -- see R/branch_helpers.R.
-  label_levels <- nli_label_levels
-  label_cols <- nli_label_colors
-
-  fig <- x$prob_conf_curve |>
-    dplyr::mutate(prob_type = factor(prob_type, levels = label_levels)) |>
-    ggplot2::ggplot(ggplot2::aes(x = decile_mid, y = mean_confidence, colour = prob_type)) +
-    ggplot2::geom_line(linewidth = 0.7) +
-    ggplot2::geom_point(ggplot2::aes(size = n), alpha = 0.7) +
-    ggplot2::geom_hline(yintercept = x$uncertain_threshold, linetype = "dashed", linewidth = 0.5) +
-    ggplot2::annotate(
-      "text", x = 0.02, y = x$uncertain_threshold, vjust = -0.6, hjust = 0,
-      label = sprintf("uncertain_threshold = %.2f", x$uncertain_threshold), size = 3
-    ) +
-    ggplot2::scale_colour_manual(values = label_cols) +
-    ggplot2::scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
-    ggplot2::scale_size_continuous(labels = scales::comma, guide = ggplot2::guide_legend(order = 2)) +
-    ggplot2::labs(
-      x = "class probability (binned, decile midpoint)",
-      y = "mean confidence of rows in that bin",
-      colour = NULL, size = "rows in bin"
-    ) +
-    ggplot2::theme_minimal(base_size = 11) +
-    ggplot2::theme(legend.position = "bottom", legend.box = "vertical")
-
-  fn <- file.path(
-    output_root,
-    sprintf(
-      "nli_scores_qa_prob_confidence_%s%s%s.png",
-      x$assessment, nli_model_suffix(x$nli_config), granularity_suffix(x$granularity)
-    )
-  )
-  ggplot2::ggsave(fn, fig, width = 7.5, height = 4.5)
 
   fn_ternary <- file.path(
     output_root,
@@ -56,11 +20,14 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
   )
   ggplot2::ggsave(
     fn_ternary,
-    nli_scores_qa_ternary_plot(x$probs, x$label_pct, x$keypaper_points, x$keypaper_label_pct),
+    nli_scores_qa_ternary_plot(
+      x$probs, x$label_pct, x$keypaper_points, x$keypaper_label_pct,
+      x$keypaper_label_pvalue
+    ),
     width = 8.2, height = 6.8, bg = "white"
   )
 
-  c(fn, fn_ternary)
+  fn_ternary
 }
 
 # Ternary (simplex) density plot of (p_supports, p_refutes, p_nei) -- each
@@ -103,7 +70,17 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
 #   adds the key papers' own % for that label in square brackets next to
 #   the full-corpus one already in each corner label (e.g. "REFUTES
 #   (12.3%) [8.0%]"), so the two can be compared at a glance.
-nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL, keypaper_label_pct = NULL) {
+# - `keypaper_label_pvalue` (optional, same availability) adds the p-value
+#   from a two-proportion test (key-paper share vs. full-corpus share for
+#   that label, stats::prop.test() in build_nli_scores_qa_data.R) right
+#   after the key-paper %, so a reader can tell whether a visually
+#   different bracketed share is actually statistically distinguishable
+#   from the full-corpus one or could plausibly be the same underlying rate
+#   sampled at n=~500-1000 key papers. Formatted "p<0.001" below that
+#   threshold, else "p=0.023" to 3 decimals -- not reduced to significance
+#   stars, so the reader sees the actual number rather than a threshold
+#   judgement call baked into the figure.
+nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL, keypaper_label_pct = NULL, keypaper_label_pvalue = NULL) {
   s3 <- sqrt(3)
   # Barycentric -> Cartesian. Vertices: NOT_ENOUGH_INFO=(0,0) bottom-left,
   # REFUTES=(1,0) bottom-right, SUPPORTS=(0.5, sqrt(3)/2) top.
@@ -153,12 +130,31 @@ nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL,
   lab_b <- data.frame(x = levels_pct, y = -0.045, label = levels_pct * 100)
   lab_c <- data.frame(x = 1 - 0.5 * (1 - levels_pct) + 0.06, y = (1 - levels_pct) * s3 / 2, label = rev(levels_pct * 100))
 
-  fmt_pct <- function(lab) {
-    main <- sprintf("%.1f%%", label_pct[[lab]] %||% 0)
+  fmt_pvalue <- function(p) {
+    if (is.na(p)) {
+      return("")
+    }
+    if (p < 0.001) {
+      return(", p<0.001")
+    }
+    sprintf(", p=%.3f", p)
+  }
+
+  # Full corner label, `lab (XX.X%)` on its own line and, when key-paper
+  # data is present, `[YY.Y%, p<0.001]` wrapped onto a SECOND line below it
+  # -- the p-value addition made the single-line version wide enough that
+  # the two bottom corners' labels visibly overlapped each other (confirmed
+  # directly: rendered and looked at the PNG before this fix). `lab` is
+  # both the lookup key into label_pct/keypaper_label_pct/
+  # keypaper_label_pvalue AND the display name shown (nli_label_levels'
+  # values already read as human labels, e.g. "SUPPORTS").
+  fmt_corner_label <- function(lab) {
+    main <- sprintf("%s (%.1f%%)", lab, label_pct[[lab]] %||% 0)
     if (is.null(keypaper_label_pct)) {
       return(main)
     }
-    sprintf("%s [%.1f%%]", main, keypaper_label_pct[[lab]] %||% 0)
+    pval <- if (!is.null(keypaper_label_pvalue)) fmt_pvalue(keypaper_label_pvalue[[lab]] %||% NA_real_) else ""
+    sprintf("%s\n[%.1f%%%s]", main, keypaper_label_pct[[lab]] %||% 0, pval)
   }
 
   has_keypapers <- !is.null(keypaper_points) && nrow(keypaper_points) > 0L
@@ -172,12 +168,12 @@ nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL,
     ggplot2::geom_text(data = lab_a, ggplot2::aes(x = x, y = y, label = label), size = 2.8, colour = "grey30") +
     ggplot2::geom_text(data = lab_b, ggplot2::aes(x = x, y = y, label = label), size = 2.8, colour = "grey30") +
     ggplot2::geom_text(data = lab_c, ggplot2::aes(x = x, y = y, label = label), size = 2.8, colour = "grey30") +
-    ggplot2::annotate("text", x = 0.5, y = s3 / 2 + 0.05, label = paste0("SUPPORTS (", fmt_pct("SUPPORTS"), ")"),
-                       fontface = "bold", colour = nli_label_colors[["SUPPORTS"]], size = 4.2) +
-    ggplot2::annotate("text", x = -0.09, y = -0.09, label = paste0("NOT_ENOUGH_INFO (", fmt_pct("NOT_ENOUGH_INFO"), ")"),
-                       fontface = "bold", colour = nli_label_colors[["NOT_ENOUGH_INFO"]], hjust = 0, size = 4.2) +
-    ggplot2::annotate("text", x = 1.09, y = -0.09, label = paste0("REFUTES (", fmt_pct("REFUTES"), ")"),
-                       fontface = "bold", colour = nli_label_colors[["REFUTES"]], hjust = 1, size = 4.2) +
+    ggplot2::annotate("text", x = 0.5, y = s3 / 2 + 0.05, label = fmt_corner_label("SUPPORTS"),
+                       fontface = "bold", colour = nli_label_colors[["SUPPORTS"]], size = 4.2, lineheight = 0.9) +
+    ggplot2::annotate("text", x = -0.09, y = -0.09, label = fmt_corner_label("NOT_ENOUGH_INFO"),
+                       fontface = "bold", colour = nli_label_colors[["NOT_ENOUGH_INFO"]], hjust = 0, vjust = 1, size = 4.2, lineheight = 0.9) +
+    ggplot2::annotate("text", x = 1.09, y = -0.09, label = fmt_corner_label("REFUTES"),
+                       fontface = "bold", colour = nli_label_colors[["REFUTES"]], hjust = 1, vjust = 1, size = 4.2, lineheight = 0.9) +
     ggplot2::scale_fill_viridis_d(name = "density", labels = function(v) {
       n <- length(v); out <- rep("", n); out[1] <- "low"; out[n] <- "high"; out
     }) +

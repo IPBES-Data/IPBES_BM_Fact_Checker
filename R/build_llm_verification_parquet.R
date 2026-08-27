@@ -207,13 +207,15 @@ nli_route_label <- function(label, uncertain) {
   paste(label, ifelse(uncertain, "uncertain", "certain"), sep = "-")
 }
 
-# Narrows `candidates` to the sm-derived candidate scope
+# Narrows `candidates` to the per-claim candidate scope
 # (llm_candidate_scope_parquet, see R/build_llm_candidate_scope_parquet.R),
-# for `subset: "sm"` configs. A claim with NO entries in the scope table --
-# because it had no evidence-reference braces at all, or because the scope
-# target itself found nothing to write for this assessment -- falls back to
-# unrestricted (keeps every one of that claim's routed candidates), rather
-# than being silently excluded. `subset: "all"` never calls this.
+# for `subset: "default"` configs (this value used to be called "sm"). A
+# claim with NO entries in the scope table -- because it had no
+# evidence-reference braces at all, because its granularity (complete_bm)
+# has no per-sub-claim scoping at all, or because the scope target itself
+# found nothing to write for this assessment -- falls back to unrestricted
+# (keeps every one of that claim's routed candidates), rather than being
+# silently excluded. `subset: "all"` never calls this.
 #
 # Matches on the full (km, bm, claim_id) key, NOT claim_id alone -- claim_id
 # is only unique WITHIN one BM (it's derived from sentence_source/number,
@@ -368,11 +370,11 @@ build_llm_verification_parquet <- function(
     nli_scores_path, nli_ready_path,
     nli_labels = cfg$nli_labels, nli_certainty = cfg$nli_certainty
   )
-  if (subset_val == "sm" && nrow(candidates)) {
+  if (subset_val == "default" && nrow(candidates)) {
     n_before <- nrow(candidates)
     candidates <- apply_candidate_scope(candidates, llm_candidate_scope_path)
     message(sprintf(
-      "[LLM verify %s] subset=sm: %d pair(s) after candidate-scope narrowing (was %d)",
+      "[LLM verify %s] subset=default: %d pair(s) after candidate-scope narrowing (was %d)",
       assessment_id, nrow(candidates), n_before
     ))
   }

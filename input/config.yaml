@@ -11,9 +11,9 @@ assessments:
   - id: GA1
     ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v09.ttl
     full_text: false
-  - id: IAS
-    ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Invasive%20Alien%20Species%20Assessment/IAS_v04.ttl
-    full_text: true
+  # - id: IAS
+  #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Invasive%20Alien%20Species%20Assessment/IAS_v04.ttl
+  #   full_text: true
 
   # Future assessments (uncomment when TTL files are available):
   # - id: VA
@@ -25,7 +25,7 @@ assessments:
 # `active` to a key under `configs`. Use `~` to disable.
 #
 # bge_m3_zeroshot is now the sole production config -- deberta_zeroshot/
-# deberta_zeroshot_v3 are RETIRED (see their own comments below), not just
+# deberta_zeroshot_v3 are RETIRED, not just
 # dormant. Switched over because, once actually measured on real GPU pods
 # (not the emulated-CPU numbers first assumed), bge-m3-zeroshot-v2.0-c came
 # out strictly ahead for this project's use case: ~2.7x faster per pod than
@@ -80,49 +80,9 @@ nli:
         model: "anthropic/claude-haiku-4.5"
 
 
-  active: bge_m3_zeroshot_complete_bm   # which entry under configs: is active -- the only config with running pods
+  active: bge_m3_zeroshot_atomic_bm   # which entry under configs: is active -- the only config with running pods
 
   configs:
-    # RETIRED -- superseded by bge_m3_zeroshot below (faster per-pod,
-    # multilingual, longer context; see the comment above nli:). Its scored
-    # output (output/nli_scores_evidence/, output/llm_verification/) has
-    # been deleted and was not migrated, so there is nothing left this
-    # config's data needs to stay consistent with. The 7 RunPod pods listed
-    # in `host` are stopped (idle watchdog) and not intended to be
-    # restarted; kept here only as a historical/rollback reference, not
-    # meant to be reactivated casually -- `active` should not point back
-    # here without a real reason.
-    # deberta_zeroshot:
-    #   scheme: https
-    #   host: ["93k88733biunbu-8080.proxy.runpod.net", "8ynqkgqdxvkyn7-8080.proxy.runpod.net", "mrvuiqje7g8990-8080.proxy.runpod.net", "7y462hj3j0h5gj-8080.proxy.runpod.net", "709moshubtrr3d-8080.proxy.runpod.net", "5954f9w11l930f-8080.proxy.runpod.net", "gvbxu946iom8qi-8080.proxy.runpod.net"]
-    #   port: null                              # null → scheme://host (RunPod proxy)
-    #   auth_token_keyring: null                # optional keyring entry for a bearer token
-    #   model: MoritzLaurer/deberta-v3-large-zeroshot-v2.0   # label only; actual model is read from /health and recorded as nli_model. Warns on mismatch.
-    #   candidate_labels: ["supports", "refutes", "is not relevant to"]
-    #   hypothesis_template: "This paper {} the following claim: %s"
-    #   batch_size: 128
-    #   max_length: 512        # max tokens per (premise, hypothesis) pair; null → server default (512). This IS the model's own max_position_embeddings -- not raisable.
-    #   uncertain_threshold: 0.60
-    #   nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
-    #   granularity: naive_bm
-
-    # RETIRED -- same reasoning as deberta_zeroshot above. Never actually
-    # provisioned/scored against (host was still a placeholder), so nothing
-    # of this config's own was lost.
-    # deberta_zeroshot_v3:
-    #   scheme: https
-    #   host: 0p28ccn78phd50-8080.proxy.runpod.net    # fill in after the base-model pod boots
-    #   port: null                              # null → scheme://host (RunPod proxy)
-    #   auth_token_keyring: null                # optional keyring entry for a bearer token
-    #   model: MoritzLaurer/deberta-v3-base-zeroshot-v2.0   # label only; verified against /health
-    #   candidate_labels: ["supports", "refutes", "is not relevant to"]
-    #   hypothesis_template: "This paper {} the following claim: %s"
-    #   batch_size: 128
-    #   max_length: 512        # base model is cheap enough to keep the full window
-    #   uncertain_threshold: 0.60
-    #   nei_threshold: 0.90    # reserved for downstream filtered views (not stored)
-    #   granularity: naive_bm
-
     # ACTIVE -- the sole production NLI config (see the comment above nli:
     # for the full rationale: faster per-pod than deberta_zeroshot once
     # actually measured, genuinely multilingual, and a ~8194-token ceiling).
@@ -150,8 +110,7 @@ nli:
 
     bge_m3_zeroshot_atomic_bm:
       scheme: https
-      host: ["d78ew5xa898onb-8080.proxy.runpod.net", "k3d0ojjo3r34gn-8080.proxy.runpod.net", "imxudxy1q07w93-8080.proxy.runpod.net", "2yjh0c3crclwg2-8080.proxy.runpod.net", "qzv2pwdj8gccmj-8080.proxy.runpod.net", "6dbdypmy7ttlqe-8080.proxy.runpod.net", "tkmmt2u8s8xoy0-8080.proxy.runpod.net"]
-      port: null
+      host: ["u72b26m0yivsz3-8080.proxy.runpod.net"]
       auth_token_keyring: null
       model: MoritzLaurer/bge-m3-zeroshot-v2.0-c   # label only; verified against /health. max_position_embeddings ~8194 (real limit, not this project's choice)
       candidate_labels: ["supports", "refutes", "is not relevant to"]
@@ -232,14 +191,18 @@ nli:
 #
 # subset: picks which citing-work candidates each config reviews, on top of
 # the nli_labels/nli_certainty routing above:
-#   "all" -- every citing work found anywhere under the claim's BM
-#   "sm"  -- only citing works tracing back to a seed reference whose
-#            refs_parquet `sm` matches the claim's OWN evidence-reference
-#            sub-chapter(s), via the llm_candidate_scope_parquet target (see
-#            TD_NLI_LLM_two_phase.qmd). A claim with no evidence braces at
-#            all falls back to unrestricted rather than being excluded.
-#            Parked for now -- not the active cost lever while nli_labels/
-#            nli_certainty are doing the narrowing instead.
+#   "all"     -- every citing work found anywhere under the claim's BM
+#   "default" -- (used to be called "sm") only citing works tracing back to a
+#                seed reference whose refs_parquet `sm` matches the claim's
+#                OWN evidence-reference sub-chapter(s), via the
+#                llm_candidate_scope_parquet target (see
+#                TD_NLI_LLM_two_phase.qmd). Real narrowing only under the
+#                naive_bm/atomic_bm granularities -- under complete_bm this
+#                is identical to "all" (no per-sub-claim evidence tokens
+#                exist for whole-field claims). A claim with no evidence
+#                braces at all falls back to unrestricted rather than being
+#                excluded. Not the active cost lever right now -- nli_labels/
+#                nli_certainty are doing the narrowing instead.
 llm_verification:
   active: openrouter_cheap   # which entry under configs: is active
 
@@ -252,20 +215,23 @@ llm_verification:
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: all
+      subset: default
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
-    # Same model/settings as openrouter_cheap, narrowed to the sm-derived
-    # candidate scope. Switch `active` to this to try the cost-reduced pass
-    # once the sm narrowing is un-parked.
+    # Same model/settings as openrouter_cheap, narrowed to the per-claim
+    # evidence-derived candidate scope (subset: "default" -- see
+    # R/build_llm_candidate_scope_parquet.R). Real narrowing only happens
+    # under naive_bm/atomic_bm granularity; under complete_bm this behaves
+    # identically to subset: "all" (complete_bm's whole-field claims carry
+    # no per-sub-claim evidence tokens to scope by).
     openrouter_cheap_sm:
       model: "openai/gpt-4o-mini"
       temperature: 0
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: sm
+      subset: default
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 

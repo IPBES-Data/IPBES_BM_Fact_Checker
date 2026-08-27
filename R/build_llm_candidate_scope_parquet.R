@@ -1,7 +1,8 @@
-# Per-claim candidate scope for Phase 2 LLM verification (`subset: "sm"` in
-# an `llm_verification` config — see TD_NLI_LLM_two_phase.qmd).
+# Per-claim candidate scope for Phase 2 LLM verification (`subset: "default"`
+# in an `llm_verification` config — see TD_NLI_LLM_two_phase.qmd; this value
+# used to be called "sm").
 #
-# NLI (and the `subset: "all"` Phase 2 default) treats every citing work
+# NLI (and the `subset: "all"` Phase 2 alternative) treats every citing work
 # found anywhere under a Background Message as a candidate for every claim
 # segmented out of that BM's text. This file derives a tighter, principled
 # scope instead: each evidence-segmented claim ends with a brace group like
@@ -11,6 +12,12 @@
 # OpenAlex work id -> citing work (via the existing snowball edges) gives,
 # per claim, an allow-list of citing works actually tied to its own
 # evidentiary basis rather than the whole BM's.
+#
+# Supported for `naive_bm` (evidence-segmented claims, via
+# extract_claim_evidence_tokens()) AND `atomic_bm` (per-fragment claims, via
+# extract_claim_evidence_tokens_atomic() below) -- NOT for `complete_bm`,
+# whose whole-field claims carry no per-sub-claim evidence tokens at all (see
+# the early return in build_llm_candidate_scope_parquet() below).
 #
 # Deliberately reads ONLY already-existing, unmodified targets
 # (key_messages_parquet, refs_parquet, works_parquet, the snowball edges
@@ -88,6 +95,76 @@ extract_claim_evidence_tokens <- function(text) {
   })
 }
 
+# Atomic-BM counterpart of extract_claim_evidence_tokens() above, for
+# nli_granularity == "atomic_bm". Deliberately duplicates
+# segment_bm_atomic()'s splitting logic (R/build_nli_ready_evidence_parquet.R)
+# for the same reason the naive-bm extractor above duplicates
+# segment_bm_by_evidence() rather than calling it (see file header) --
+# editing the original would otherwise mark nli_ready_evidence_parquet, and
+# everything downstream of it, outdated for no functional reason.
+#
+# Unlike naive_bm, atomic_bm's real claim_id/sentence_number assignment
+# depends on which raw fragments SURVIVE complete_bm_fragments() -- some can
+# be dropped (never reordered) when the faithfulness check rejects a
+# completion. So this function re-runs completion itself, relying on its
+# resumable per-fragment cache (output/claim_completion/raw/) to recover the
+# same surviving-fragment order/count the real nli_ready_evidence_parquet
+# build produced (seq_len(nrow(completed)) there matches seq_along() of this
+# function's return value here). That cache should always hit in practice --
+# a real atomic_bm build having already been run is a precondition for this
+# scope target to be useful at all -- but it does mean this function makes a
+# real (if normally cache-only) call, unlike the naive-bm extractor, which is
+# pure local text processing.
+#
+# bm_align_surviving_indices() (R/build_bm_split_highlighted.R) is called
+# directly, not duplicated -- it is a generic alignment helper, not one of
+# the three segmenters this file avoids calling, and it isn't part of
+# nli_ready_evidence_parquet's own build path, so depending on it here
+# doesn't risk spurious invalidation of that expensively-scored target.
+extract_claim_evidence_tokens_atomic <- function(text, completion_cfg, completion_api_key) {
+  if (is.na(text) || !nzchar(text)) {
+    return(list())
+  }
+
+  atomic_split_pattern <- paste0(
+    "(?<=\\})(?!\\s*", segment_bm_confidence_pattern, ")\\s*",
+    "|",
+    "(?<=", segment_bm_confidence_pattern, ")(?!\\s*\\{)\\s*"
+  )
+  raw_spans <- stringr::str_split(text, atomic_split_pattern)[[1L]]
+  raw_spans <- raw_spans[nzchar(stringr::str_squish(raw_spans))]
+  if (!length(raw_spans)) {
+    return(list())
+  }
+
+  confidence <- extract_bm_confidence(raw_spans)
+  claims <- stringr::str_squish(stringr::str_remove_all(raw_spans, "\\s*\\{[^}]*\\}"))
+  claims <- strip_bm_confidence(claims)
+  claims <- stringr::str_remove(claims, "^[;,.]+\\s*")
+  keep <- stringr::str_detect(claims, "[[:alpha:]]")
+  raw_spans <- raw_spans[keep]
+  claims <- claims[keep]
+  confidence <- confidence[keep]
+  if (!length(claims)) {
+    return(list())
+  }
+
+  completed <- complete_bm_fragments(claims, completion_cfg, completion_api_key, confidence = confidence)
+  if (!nrow(completed)) {
+    return(list())
+  }
+  idx <- bm_align_surviving_indices(claims, completed$original_fragment)
+  if (anyNA(idx)) {
+    return(list())
+  }
+  surviving_spans <- raw_spans[idx]
+
+  lapply(surviving_spans, function(seg) {
+    m <- stringr::str_match_all(seg, "\\{([^}]*)\\}")[[1L]]
+    if (!nrow(m)) character(0) else m[, 2L]
+  })
+}
+
 # ---- Sub-chapter token normalization / matching ----------------------------
 
 # The `sm` field (and brace content) is messy free text: comma- AND
@@ -150,7 +227,8 @@ build_llm_candidate_scope_parquet <- function(
                      # establishes the DAG dependency only.
   nli_ready_evidence_parquet,
   output_root = "output/llm_candidate_scope",
-  nli_granularity = "naive_bm"
+  nli_granularity = "naive_bm",
+  completion_model = NULL
 ) {
   assessment_id <- assessment$id
   output_path <- file.path(output_root, paste0("assessment=", assessment_id))
@@ -170,13 +248,28 @@ build_llm_candidate_scope_parquet <- function(
     output_path
   }
 
-  # extract_claim_evidence_tokens() below duplicates segment_bm_by_evidence()
-  # (see file header) and has no complete_bm counterpart -- per-sub-claim
-  # evidence scoping isn't supported for complete_bm's whole-field claims,
-  # so fall back to the same "no restriction available" sentinel used
-  # elsewhere rather than silently producing wrong scope data.
+  # complete_bm's whole-field claims carry no per-sub-claim evidence tokens
+  # at all -- neither extract_claim_evidence_tokens() nor its atomic-bm
+  # sibling below has a complete_bm counterpart, so fall back to the same
+  # "no restriction available" sentinel used elsewhere rather than silently
+  # producing wrong scope data.
   if (identical(nli_granularity, "complete_bm")) {
     return(empty_result("granularity is complete_bm -- per-sub-claim evidence scoping is not supported"))
+  }
+
+  # atomic_bm's claim_id/sentence_number depends on completion (see
+  # extract_claim_evidence_tokens_atomic()'s header) -- needs the same
+  # completion_cfg/api_key setup build_nli_ready_evidence_parquet.R and
+  # build_nli_ready_evidence_keypaper_parquet.R already use for their own
+  # atomic_bm passes.
+  completion_cfg <- NULL
+  completion_api_key <- NULL
+  if (identical(nli_granularity, "atomic_bm")) {
+    completion_cfg <- list(model = completion_model %||% "openai/gpt-4o-mini")
+    completion_api_key <- Sys.getenv("API_openrouter")
+    if (!nzchar(completion_api_key)) {
+      stop("API_openrouter environment variable is required for nli_granularity = \"atomic_bm\" (set from keyring in _targets.R)")
+    }
   }
 
   # ---- 1. Per-claim evidence-reference tokens, derived directly from BM text
@@ -197,7 +290,11 @@ build_llm_candidate_scope_parquet <- function(
     if (!length(sources)) return(NULL)
 
     dplyr::bind_rows(lapply(names(sources), function(src) {
-      per_segment <- extract_claim_evidence_tokens(sources[[src]])
+      per_segment <- if (identical(nli_granularity, "atomic_bm")) {
+        extract_claim_evidence_tokens_atomic(sources[[src]], completion_cfg, completion_api_key)
+      } else {
+        extract_claim_evidence_tokens(sources[[src]])
+      }
       if (!length(per_segment)) return(NULL)
       dplyr::bind_rows(lapply(seq_along(per_segment), function(sn) {
         toks <- unique(unlist(lapply(per_segment[[sn]], tokenize_evidence_field)))
@@ -311,14 +408,21 @@ build_llm_candidate_scope_parquet <- function(
   if (!is.null(actual_claim_ids)) {
     drifted <- setdiff(unique(claim_tokens$claim_id), actual_claim_ids)
     if (length(drifted)) {
+      real_segmenter <- if (identical(nli_granularity, "atomic_bm")) {
+        "segment_bm_atomic() (+ complete_bm_fragments()) in R/build_nli_ready_evidence_parquet.R / R/build_claim_completion.R"
+      } else {
+        "segment_bm_by_evidence() in R/build_nli_ready_evidence_parquet.R"
+      }
       warning(sprintf(
         paste(
           "[LLM scope %s] %d evidence-derived claim_id(s) (e.g. %s) do not appear in",
-          "nli_ready_evidence_parquet -- extract_claim_evidence_tokens() in",
+          "nli_ready_evidence_parquet -- extract_claim_evidence_tokens%s() in",
           "R/build_llm_candidate_scope_parquet.R may have drifted out of sync with",
-          "segment_bm_by_evidence() in R/build_nli_ready_evidence_parquet.R."
+          "%s."
         ),
-        assessment_id, length(drifted), paste(utils::head(drifted, 3), collapse = ", ")
+        assessment_id, length(drifted), paste(utils::head(drifted, 3), collapse = ", "),
+        if (identical(nli_granularity, "atomic_bm")) "_atomic" else "",
+        real_segmenter
       ), call. = FALSE)
     }
   }

@@ -17,6 +17,15 @@ format:
 
 ## Overview
 
+**Status note:** written while `MoritzLaurer/deberta-v3-large-zeroshot-v2.0`
+was the active zero-shot model. It has since been retired in favour of
+`MoritzLaurer/bge-m3-zeroshot-v2.0-c` (see `TD_BM_NLI_approach.qmd`'s
+"Status update" and the `nli:` comment in `input/config.yaml`) — this
+document's fine-tuning design was never executed against either model, and
+would need re-targeting to `bge-m3-zeroshot-v2.0-c` (a different base
+architecture) before being acted on. Kept as the original design record
+below, un-rewritten.
+
 The zero-shot NLI model (`MoritzLaurer/deberta-v3-large-zeroshot-v2.0`) works well
 out of the box, but its training data does not include biodiversity/IPBES language. A
 domain-adapted fine-tuned version should produce fewer borderline classifications and
