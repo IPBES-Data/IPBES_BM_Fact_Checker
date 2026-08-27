@@ -47,6 +47,8 @@ flowchart TD
     download_works@{ shape: rect, label: "Query OpenAlex works by DOI<br/>via openalexPro<br/><tt>[works_parquet]</tt>" }
     snowball@{ shape: rect, label: "Snowball search<br/>keypaper + citing<br/><tt>[snowball_parquet]</tt>" }
     snowball_db@{ shape: lin-cyl, label: "Snowball DB (nodes / edges / keypaper)<br/><tt>output/snowball/{nodes,edges,keypaper}/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    llm_scope@{ shape: rect, label: "Match citing works per claim via evidence sub-chapter refs<br/>{5.4.1} → refs sm → seed dois → snowball edges → citing works<br/>(naive_bm/atomic_bm only — complete_bm has no per-sub-claim tokens to match)<br/><tt>[llm_candidate_scope_parquet]</tt>" }
+    llm_scope_db@{ shape: lin-cyl, label: "Candidate Scope DB<br/><tt>output/llm_candidate_scope/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
     %% Edges
     build_refs        --> refs_db
@@ -64,6 +66,15 @@ flowchart TD
     works_db --> snowball
     snowball --> snowball_db
     snowball_db --> citing_db
+
+    %% Candidate-scope matching is pure LOD/derived data (no LLM call for
+    %% naive_bm/complete_bm) -- belongs here with the rest of data prep,
+    %% not in the Phase 2 LLM Verification subgraph it merely feeds.
+    key_messages_db --> llm_scope
+    refs_db --> llm_scope
+    works_db --> llm_scope
+    snowball_db --> llm_scope
+    llm_scope --> llm_scope_db
   end
 
   subgraph nli_assessment["Assessment of the alignement of the BMs and the Citing Publications (NLI)"]
@@ -114,32 +125,24 @@ flowchart TD
     direction TB
 
     %% Nodes
-    llm_scope@{ shape: rect, label: "Narrow citing works per claim via evidence sub-chapter refs<br/>{5.4.1} → refs sm → seed dois → snowball edges → citing works<br/>(subset: default only, naive_bm/atomic_bm — subset: all skips this, as does complete_bm)<br/><tt>[llm_candidate_scope_parquet]</tt>" }
-    llm_scope_db@{ shape: lin-cyl, label: "Candidate Scope DB<br/><tt>output/llm_candidate_scope/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
     llm_server@{ shape: cloud, label: "OpenRouter LLM<br/>(gpt-4o-mini / gemini-2.5-flash / gpt-5)" }
-    llm_verify@{ shape: rect, label: "Route NLI-scored pairs (label = REFUTES or SUPPORTS, certain only), intersect with candidate scope (subset: default)<br/>then call the LLM per (claim, work) — NLI label + confidence as prior<br/>→ SUPPORTS / REFUTES / NEI + verbatim quote<br/><tt>[llm_verification_parquet]</tt>" }
-    llm_scores_db@{ shape: lin-cyl, label: "LLM Verification Scores DB<br/><tt>output/llm_verification/scores/llm_config=&lt;cfg&gt;/subset=&lt;subset&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    llm_verify@{ shape: rect, label: "Route NLI-scored pairs (label = REFUTES or SUPPORTS, certain only), tag each with direct_evidence_match from the candidate scope above<br/>then call the LLM per (claim, work) — every routed pair reviewed, none filtered — NLI label + confidence as prior<br/>→ SUPPORTS / REFUTES / NEI + verbatim quote<br/><tt>[llm_verification_parquet]</tt>" }
+    llm_scores_db@{ shape: lin-cyl, label: "LLM Verification Scores DB<br/><tt>output/llm_verification/scores/llm_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
     %% Edges
-    llm_scope --> llm_scope_db
-    llm_scope_db --> llm_verify
     llm_server <--> llm_verify
     llm_verify --> llm_scores_db
   end
 
-  %% Active LLM verification profile (model + subset) feeds the verification call
+  %% Active LLM verification profile (model + routing) feeds the verification call
   llm_active@{ shape: rect, label: "Active LLM verification profile<br/><tt>llm_verification.active</tt>" }
   config_file --> llm_active
   llm_active --> llm_verify
 
-  %% Inputs to Phase 2: NLI's own flagged output, plus the data the scope
-  %% narrowing step needs (BM text for evidence tokens, refs for sm↔doi,
-  %% seed works for doi↔id, snowball for citing-work↔seed provenance)
+  %% Inputs to Phase 2: NLI's own flagged output, plus the candidate-scope
+  %% match set computed in the data-prep stage above (see llm_scope there)
   nli_scores_db --> llm_verify
-  key_messages_db --> llm_scope
-  refs_db --> llm_scope
-  works_db --> llm_scope
-  snowball_db --> llm_scope
+  llm_scope_db --> llm_verify
 
   %% Force `llm_verification` to sit below `nli_assessment` (subgraph-to-subgraph
   %% edge). Made invisible via linkStyle below so it doesn't add visual noise.
@@ -154,13 +157,15 @@ flowchart TD
   classDef disabled    fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px,stroke-dasharray:4 3;
   classDef qa_report   fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:1.5px;
 
-  %% Hide the data → nli_assessment subgraph-level constraint edge (index 32,
-  %% after the key-paper QA chain's 5 edges + the snowball_db split's net +1
-  %% edge, minus the 3 removed with build_sections/sections_db, above).
+  %% Hide the data → nli_assessment subgraph-level constraint edge (index 37).
   %% Hide the nli_assessment → llm_verification one the same way (index 44,
-  %% last edge in the file). If you add or remove edges above either line,
-  %% recount and bump both indices.
-  linkStyle 32 stroke:transparent,fill:none;
+  %% last edge in the file). Recomputed by hand-counting every edge in
+  %% source order after moving llm_scope/llm_scope_db (and their edges) into
+  %% the `data` subgraph -- pure LOD-derived matching, no LLM call for
+  %% naive_bm/complete_bm, so it belongs with the rest of data prep rather
+  %% than the Phase 2 LLM Verification subgraph it merely feeds. If you add
+  %% or remove edges above either line, recount and bump both indices.
+  linkStyle 37 stroke:transparent,fill:none;
   linkStyle 44 stroke:transparent,fill:none;
 
   class config_file input_file;

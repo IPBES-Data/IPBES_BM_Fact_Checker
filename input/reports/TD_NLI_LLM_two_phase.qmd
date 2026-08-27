@@ -136,30 +136,37 @@ shared multi-tenant endpoint — there is nothing to load-balance, so
 sufficient and no crew/file-lock machinery was needed. One target call per
 assessment loops over its own routed candidates internally.
 
-### Candidate scoping (`subset`) {#candidate-scoping}
+### Candidate matching (`direct_evidence_match`) {#candidate-scoping}
 
-**Status: implemented, not the active cost lever.** This section describes a
-second, independent narrowing lever, orthogonal to the
-`nli_labels`/`nli_certainty` routing above — the routing fields are doing the
-active cost-cutting job right now (via `REFUTES` + `certain`). `subset:
-"default"` remains available on any config whenever it's worth revisiting.
-(This value used to be called `"sm"` — renamed once the narrowing was
-extended to work across granularities, not just `naive_bm`, since "sm" no
-longer described what it actually selects.)
+**Status: retired as a filter, now a tag.** This section originally
+described a second, independent narrowing lever, orthogonal to the
+`nli_labels`/`nli_certainty` routing above: a `subset: "default"` config
+setting restricted which citing works under a claim's BM got reviewed in
+Phase 2 at all, based on IPBES's own evidence-reference structure (below).
+Measured against real GA1 atomic_bm data, that narrowing reduced routed
+pairs from 193,228 to 165,745 — only ~14% — which wasn't worth the
+matching/drift-check machinery, and more importantly wasn't worth the lost
+review coverage on the ~14% it excluded. The filter was removed: **every**
+routed candidate is now reviewed in Phase 2, unconditionally. The
+underlying matching computation described below is unchanged and still
+runs — it now tags each reviewed `(claim, work)` pair with a boolean
+column, `direct_evidence_match`, instead of gating which pairs get
+reviewed at all.
 
 The original combined routing rule (`REFUTES` at any confidence, OR any
 label if uncertain) alone left 66.5% of all NLI-scored pairs in scope for
-Phase 2 — far more than practical to run for real. This lever addresses that
-structurally rather than by tightening thresholds: **IPBES's own
-evidence-reference structure**.
+Phase 2 — far more than practical to run for real. The retired lever
+addressed that structurally rather than by tightening thresholds, via
+**IPBES's own evidence-reference structure**.
 Each evidence-segmented claim ends with a brace group like
 `{5.4.1, 5.4.2}` naming the specific sub-chapter(s) it draws on, and
 `refs_parquet`'s `sm` column already links specific references (dois) to
 those same sub-chapter identifiers. Chaining
 `sm -> seed doi -> seed OpenAlex work id -> citing work` (via the existing
-snowball edges) gives, per claim, an allow-list of citing works actually
-tied to *that claim's own* evidentiary basis, rather than every citing work
-found anywhere under the whole BM.
+snowball edges) gives, per claim, the set of citing works actually tied to
+*that claim's own* evidentiary basis, as distinct from every citing work
+found anywhere under the whole BM — this is what `direct_evidence_match`
+now records rather than restricts.
 
 This is implemented as its own target, `llm_candidate_scope_parquet`
 (`R/build_llm_candidate_scope_parquet.R`), feeding into
@@ -206,28 +213,26 @@ highlighting) — relying on the resumable per-fragment completion cache
 (`output/claim_completion/raw/`) to make this a cache-hit-only call in
 practice, once a real atomic_bm `nli_ready_evidence_parquet` build has
 already populated it. `complete_bm` has **no** counterpart at all: its
-whole-field claims carry no per-sub-claim evidence tokens to scope by, so
-`build_llm_candidate_scope_parquet()` returns its "no restriction available"
-sentinel immediately for `complete_bm` — every claim falls back to
-unrestricted, i.e. `subset: "default"` behaves exactly like `subset: "all"`
-under `complete_bm`.
+whole-field claims carry no per-sub-claim evidence tokens to match by, so
+`build_llm_candidate_scope_parquet()` returns its "no matches available"
+sentinel immediately for `complete_bm` — every one of its rows is tagged
+`direct_evidence_match = FALSE`.
 
-Exposed per `llm_verification` config via `subset:`:
+Every reviewed `(claim, work)` pair carries `direct_evidence_match`:
 
-| `subset` | Behavior |
+| Value | Meaning |
 |---|---|
-| `"all"` | Every citing work found under the claim's BM, for every granularity (today's active choice; the 66.5%/2.36M figure above) |
-| `"default"` | `naive_bm`/`atomic_bm`: only citing works tracing back to a seed reference whose `sm` matches the claim's own evidence sub-chapter(s). `complete_bm`: identical to `"all"` — no per-sub-claim scoping exists for whole-field claims |
+| `TRUE` | `naive_bm`/`atomic_bm` only: the citing work traces back to a seed reference whose `sm` matches the claim's own evidence sub-chapter(s) |
+| `FALSE` | No such match — covers every `complete_bm` row (no per-sub-claim matching exists for whole-field claims), every claim with no evidence braces at all, and every citing work that doesn't trace back to a matching seed reference |
 
 Two policy decisions, made deliberately rather than defaulted into:
 
-- **A claim with no evidence braces at all falls back to unrestricted**
-  (keeps every one of its routed candidates) rather than being excluded —
-  no claim is ever silently dropped from Phase 2 review just because it
-  lacks a brace. The same fallback applies if the whole scope target found
+- **A claim with no evidence braces at all is simply tagged FALSE
+  throughout** — it is never excluded from review, since there is no filter
+  left to exclude it from. The same applies if the whole scope target found
   nothing to write for an assessment (e.g. an unexpected data gap, or the
-  active granularity being `complete_bm`): absence of scope data is never
-  read as "review nothing."
+  active granularity being `complete_bm`): absence of scope data only ever
+  affects the tag, never whether a pair gets reviewed.
 - **Sub-chapter token matching is prefix-based, not exact**, after
   normalizing (lowercase; strip `box`/`table`/`spm table` prefixes; strip
   `(...)` parenthetical annotations; split on comma/semicolon). The `sm`
@@ -237,9 +242,9 @@ Two policy decisions, made deliberately rather than defaulted into:
   parentheses). Prefix matching handles the common cases cleanly —
   `"5.4.2.1"` matches `"5.4.2.1.a"`, a bare `"4"` matches any `"4.x.y"` — but
   is deliberately not exhaustive; the malformed cases are an accepted,
-  disclosed gap. `subset: "all"` remains available as the exhaustive
-  fallback whenever `"default"`'s narrower recall is a concern for a given
-  analysis.
+  disclosed gap. Now that nothing is filtered, this imprecision only
+  affects the tag's accuracy on a small number of pairs, never review
+  coverage.
 
 ### Prompt design
 
@@ -275,17 +280,6 @@ llm_verification:
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: all
-      nli_labels: [REFUTES, SUPPORTS]
-      nli_certainty: certain
-
-    openrouter_cheap_sm:
-      model: "openai/gpt-4o-mini"
-      temperature: 0
-      max_tokens: 8000
-      max_active: 24
-      max_retries: 2
-      subset: default
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
@@ -295,7 +289,6 @@ llm_verification:
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: all
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
@@ -305,7 +298,6 @@ llm_verification:
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: all
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 ```
@@ -313,21 +305,23 @@ llm_verification:
 The model tiers are carried over directly from the sibling
 `Categorisation_Literature` project's `epistemology:` config block (same
 model choices, same `max_active`/`max_tokens` values — see below for why
-those two specifically were kept rather than re-derived). `subset` and
-`nli_labels`/`nli_certainty` are new here — see [Candidate
-scoping](#candidate-scoping) above and [Routing after Phase
-1](#phase-1-nli-all-pairs) for what they do; all four configs currently
+those two specifically were kept rather than re-derived). `nli_labels`/
+`nli_certainty` are new here — see [Routing after Phase
+1](#phase-1-nli-all-pairs) for what they do; all three configs currently
 route both `REFUTES` + `certain` (the original first step) and `SUPPORTS` +
 `certain` (added once the REFUTES funnel report was generalized to a
 SUPPORTS counterpart — see `IPBES_Label_Funnel_Report.qmd`), and differ
-only in model/subset.
+only in model. There used to be a fourth config, `openrouter_cheap_sm`,
+identical to `openrouter_cheap` except for its `subset: "default"` setting
+— removed once `subset` itself was retired (see [Candidate
+matching](#candidate-scoping) above), since a config that differs from
+another only in a setting that no longer exists is redundant.
 
-| Config | Model | Subset | Notes |
-|---|---|---|---|
-| `openrouter_cheap` | `openai/gpt-4o-mini` | `all` | Default; good balance of quality and cost for a first pass |
-| `openrouter_cheap_sm` | `openai/gpt-4o-mini` | `default` | Same model, narrowed to the per-claim evidence-derived candidate scope (naive_bm/atomic_bm only — see [Candidate scoping](#candidate-scoping)) |
-| `openrouter_midtier` | `google/gemini-2.5-flash` | `all` | Step up when the cheap tier is topic-matching rather than judging the claim — spot-check `quote`/`explanation` |
-| `openrouter_toptier_gpt5` | `openai/gpt-5` | `all` | For a final, citable verification pass; a reasoning model |
+| Config | Model | Notes |
+|---|---|---|
+| `openrouter_cheap` | `openai/gpt-4o-mini` | Default; good balance of quality and cost for a first pass |
+| `openrouter_midtier` | `google/gemini-2.5-flash` | Step up when the cheap tier is topic-matching rather than judging the claim — spot-check `quote`/`explanation` |
+| `openrouter_toptier_gpt5` | `openai/gpt-5` | For a final, citable verification pass; a reasoning model |
 
 **`max_active: 24`** is the concurrency the sibling project actually ran at
 ~2,800-call scale against OpenRouter without hitting rate limits — kept as
@@ -351,22 +345,21 @@ settled on 8000 for every tier).
 ### Output schema {#output-schema}
 
 One row per LLM-reviewed pair, written to
-`output/llm_verification/scores/llm_config=<config>/subset=<subset>/assessment=<id>/nli_route=<route>/km=<km>/bm=<bm>/`.
+`output/llm_verification/scores/llm_config=<config>/assessment=<id>/nli_route=<route>/km=<km>/bm=<bm>/`.
 `<route>` is `nli_route_label()`'s hive-safe encoding of **that row's own**
 NLI outcome, e.g. `REFUTES-certain` or `SUPPORTS-uncertain` — not a single
 value per config call. So one `build_llm_verification_parquet()` call can
 write several `nli_route=` subdirectories under the same
-`llm_config/subset/assessment` (one per distinct label/certainty
+`llm_config/assessment` (one per distinct label/certainty
 combination actually present among its routed candidates), and any two
 configs that happen to route the same outcome land on the same `nli_route`
-value regardless of their own names. `llm_config`/`subset`/`assessment` are
+value regardless of their own names. `llm_config`/`assessment` are
 the fixed prefix fully deleted and rewritten on each call; `nli_route`/`km`/`bm`
 vary within it based on the data:
 
 ```r
 tibble(
   llm_config          = character(), # selected input/config.yaml llm_verification.configs entry name
-  subset              = character(), # "all" or "default" -- which candidate scoping this config used
   nli_config          = character(), # NLI profile used in Phase 1
   assessment          = character(),
   nli_route           = character(), # this ROW's own outcome, e.g. "REFUTES-certain" -- see nli_route_label()
@@ -381,6 +374,7 @@ tibble(
   p_supports          = double(),
   p_refutes           = double(),
   p_nei               = double(),
+  direct_evidence_match = logical(), # TRUE if this citing work traces back to a seed reference matching the claim's own evidence braces -- see Candidate matching above
   llm_model           = character(),
   llm_label           = character(),   # SUPPORTS / REFUTES / NOT_ENOUGH_INFO
   llm_agrees          = logical(),     # TRUE if llm_label == nli_label
@@ -448,22 +442,28 @@ evidence-scored corpus (3,547,231 pairs total):
 |---|---|---|---|
 | `REFUTES` + `certain` (original first step) | 26,861 | ~$4 | ~$65 |
 | `SUPPORTS` + `certain` (added alongside the SUPPORTS funnel report) | 52,061 | ~$7.75 | ~$126 |
-| **`REFUTES` + `SUPPORTS`, `certain` (current default, all 4 configs)** | **78,922** | **~$11.75** | **~$191** |
+| **`REFUTES` + `SUPPORTS`, `certain` (current default, all 3 configs)** | **78,922** | **~$11.75** | **~$191** |
 | `REFUTES` + `uncertain` | 403,400 | ~$60 | ~$960 |
 | `SUPPORTS` + `uncertain` | 388,554 | ~$58 | ~$925 |
 | `NOT_ENOUGH_INFO` + `uncertain` | 1,538,903 | ~$231 | ~$3,660 |
 | All labels, both certainty bands (the original fixed-rule design) | 2,357,718 (66.5% of scored) | ~$375 | ~$5,900+ |
-| `sm`-narrowed variant of the combined set | 1,792,007 (24% smaller) | ~$269 | ~$4,480 |
+
+The last row of this table used to have a `sm`-narrowed (later `subset:
+"default"`) variant showing a 24% reduction on this particular bucket —
+removed since that filter no longer exists; every bucket above is now
+reviewed in full regardless of `direct_evidence_match` (see [Candidate
+matching](#candidate-scoping) above for the separately-measured ~14%
+figure that motivated retiring it).
 
 `openrouter_cheap` (`gpt-4o-mini`) is the configured default, currently
-routing `REFUTES` + `SUPPORTS`, both `certain`, across all four shipped
+routing `REFUTES` + `SUPPORTS`, both `certain`, across all three shipped
 configs — the smallest, cheapest, highest-signal bucket for each label, and
 the confirmed first step. The remaining `uncertain`/`NOT_ENOUGH_INFO`
 buckets stay available by defining additional configs or widening
 `nli_labels`/`nli_certainty` on existing ones. The resumable per-pair cache
 means cost is paid once per `(prompt hash, pair)`, not once per
 `tar_make()` — and a pair's cached answer is valid under any combination of
-routing/subset that happens to select it again later.
+routing that happens to select it again later.
 
 ---
 
@@ -472,13 +472,13 @@ routing/subset that happens to select it again later.
 `llm_verification_parquet` and `llm_candidate_scope_parquet` are both live,
 active targets (not commented out) — `tar_make()` runs them.
 `llm_candidate_scope_parquet` is always computed regardless of which
-`llm_verification` config is active, so `subset: "all"` configs simply never
-read its output rather than the target being conditionally skipped. Under
+`llm_verification` config is active, since every config's output now
+carries the `direct_evidence_match` tag it produces. Under
 `naive_bm`/`complete_bm` it makes no paid API calls of its own (pure local
 joins over already-downloaded parquet); under `atomic_bm` it re-runs
 `complete_bm_fragments()` to recover claim alignment, which should always
 hit the resumable completion cache rather than pay for a fresh call — see
-[Candidate scoping](#candidate-scoping).
+[Candidate matching](#candidate-scoping).
 
 **`report_fact_checker` is no longer safe to render blind.** Originally
 neither Phase 2 target was a dependency of it, so rendering the report
@@ -540,6 +540,6 @@ for every row.
   used here
 - [R/score_one_claim.R](R/score_one_claim.R) — Phase 1 implementation
 - [R/build_llm_verification_parquet.R](R/build_llm_verification_parquet.R) — Phase 2 implementation
-- [R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) — `subset: "default"` candidate scoping
+- [R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) — the `direct_evidence_match` matching chain (formerly `subset: "default"` candidate scoping)
 - `Categorisation_Literature/R/llm_epistemology.R` (sibling project) — the
   ported architecture's origin

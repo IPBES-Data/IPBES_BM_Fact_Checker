@@ -838,26 +838,29 @@ list(
     deployment = "main"
   ),
 
-  # Target 2h4a: Per-claim candidate scope for Phase 2's `subset: "default"`
-  # configs (this value used to be called "sm") — see
-  # R/build_llm_candidate_scope_parquet.R and TD_NLI_LLM_two_phase.qmd.
-  # Chains refs_parquet's `sm` (sub-chapter id) -> seed doi -> seed OpenAlex
-  # work id -> citing work (via the existing snowball edges) to produce, per
-  # evidence-segmented claim, an allow-list of citing works actually tied to
-  # its own sub-chapter rather than the whole BM's. Supported for
-  # naive_bm/atomic_bm; a no-op ("no restriction") sentinel for complete_bm,
-  # whose whole-field claims carry no per-sub-claim evidence tokens. Reads
-  # only already-existing, unmodified targets (key_messages_parquet,
-  # refs_parquet, works_parquet, snowball_parquet, nli_ready_evidence_parquet,
-  # claim_completion_model) — adding it does not invalidate any of Phase 1's
-  # NLI chain or the download/snowball steps upstream of it. Under
-  # granularity == "atomic_bm" it DOES make a real (normally cache-hit only)
-  # OpenRouter call via claim_completion_model/complete_bm_fragments(), to
-  # recover the same surviving-fragment order the real atomic_bm build
-  # produced (see extract_claim_evidence_tokens_atomic()'s own header) — a
-  # real atomic_bm nli_ready_evidence_parquet build is a precondition for
-  # this to be cheap. Always computed regardless of which llm_verification
-  # config is active; `subset: "all"` configs simply never read its output.
+  # Target 2h4a: Per-claim evidence scope feeding Phase 2's
+  # `direct_evidence_match` tag (see R/build_llm_candidate_scope_parquet.R
+  # and TD_NLI_LLM_two_phase.qmd; this fed a candidate-narrowing FILTER
+  # before that was retired -- real measured reduction was only ~14% for
+  # GA1 atomic_bm, not worth the lost review coverage). Chains
+  # refs_parquet's `sm` (sub-chapter id) -> seed doi -> seed OpenAlex work
+  # id -> citing work (via the existing snowball edges) to produce, per
+  # evidence-segmented claim, the set of citing works actually tied to its
+  # own sub-chapter rather than the whole BM's. Supported for
+  # naive_bm/atomic_bm; a no-op ("no restriction", i.e. every row tags
+  # FALSE) sentinel for complete_bm, whose whole-field claims carry no
+  # per-sub-claim evidence tokens. Reads only already-existing, unmodified
+  # targets (key_messages_parquet, refs_parquet, works_parquet,
+  # snowball_parquet, nli_ready_evidence_parquet, claim_completion_model) —
+  # adding it does not invalidate any of Phase 1's NLI chain or the
+  # download/snowball steps upstream of it. Under granularity ==
+  # "atomic_bm" it DOES make a real (normally cache-hit only) OpenRouter
+  # call via claim_completion_model/complete_bm_fragments(), to recover the
+  # same surviving-fragment order the real atomic_bm build produced (see
+  # extract_claim_evidence_tokens_atomic()'s own header) — a real atomic_bm
+  # nli_ready_evidence_parquet build is a precondition for this to be
+  # cheap. Always computed regardless of which llm_verification config is
+  # active -- every config now reads its output to tag, not to filter.
   tar_target(
     llm_candidate_scope_parquet,
     build_llm_candidate_scope_parquet(

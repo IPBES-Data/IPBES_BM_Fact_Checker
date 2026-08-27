@@ -207,44 +207,44 @@ nli_route_label <- function(label, uncertain) {
   paste(label, ifelse(uncertain, "uncertain", "certain"), sep = "-")
 }
 
-# Narrows `candidates` to the per-claim candidate scope
-# (llm_candidate_scope_parquet, see R/build_llm_candidate_scope_parquet.R),
-# for `subset: "default"` configs (this value used to be called "sm"). A
-# claim with NO entries in the scope table -- because it had no
-# evidence-reference braces at all, because its granularity (complete_bm)
-# has no per-sub-claim scoping at all, or because the scope target itself
-# found nothing to write for this assessment -- falls back to unrestricted
-# (keeps every one of that claim's routed candidates), rather than being
-# silently excluded. `subset: "all"` never calls this.
+# Tags `candidates` with `direct_evidence_match` -- TRUE if that
+# (claim, work) pair also appears in the per-claim evidence scope
+# (llm_candidate_scope_parquet, see R/build_llm_candidate_scope_parquet.R:
+# the citing work traces back, via the snowball graph, to a seed reference
+# whose sub-chapter matches THIS claim's own evidence brace(s)), FALSE
+# otherwise -- including every row for a claim with no evidence-reference
+# braces at all, one under `complete_bm` (whose whole-field claims carry no
+# per-sub-claim scoping to match against), or when the scope target found
+# nothing to write for this assessment. Every candidate is still reviewed
+# either way -- this only tags, it never filters (retired: real measured
+# reduction from filtering was only ~14% for GA1 atomic_bm, not worth the
+# lost coverage).
 #
 # Matches on the full (km, bm, claim_id) key, NOT claim_id alone -- claim_id
 # is only unique WITHIN one BM (it's derived from sentence_source/number,
 # e.g. every BM's first bm_description claim is "bm_description-01"), and is
 # reused across 30-49 different (km, bm) pairs per assessment in practice.
-# An earlier version of this function matched on claim_id + work_id only,
-# which silently let one BM's scope entries authorize candidates for any
-# other BM sharing the same claim_id string -- a real over-inclusion bug
-# caught by comparing measured call counts against expectations.
-apply_candidate_scope <- function(candidates, scope_path) {
+# An earlier version of this function (when it filtered rather than tagged)
+# matched on claim_id + work_id only, which silently let one BM's scope
+# entries authorize candidates for any other BM sharing the same claim_id
+# string -- a real over-inclusion bug caught by comparing measured call
+# counts against expectations; the full-key join here avoids repeating it.
+tag_direct_evidence_match <- function(candidates, scope_path) {
   if (!dir.exists(scope_path) || !length(list.files(scope_path, pattern = "\\.parquet$", recursive = TRUE))) {
-    return(candidates)
+    return(dplyr::mutate(candidates, direct_evidence_match = FALSE))
   }
 
   scope <- arrow::open_dataset(scope_path) |>
     dplyr::select(km, bm, claim_id, work_id) |>
     dplyr::collect()
   if (!nrow(scope)) {
-    return(candidates)
+    return(dplyr::mutate(candidates, direct_evidence_match = FALSE))
   }
 
-  claims_with_scope <- dplyr::distinct(scope, km, bm, claim_id)
-  restricted <- candidates |>
-    dplyr::semi_join(claims_with_scope, by = c("km", "bm", "claim_id")) |>
-    dplyr::semi_join(scope, by = c("km", "bm", "claim_id", "work_id"))
-  unrestricted <- candidates |>
-    dplyr::anti_join(claims_with_scope, by = c("km", "bm", "claim_id"))
-
-  dplyr::bind_rows(restricted, unrestricted)
+  matched <- scope |> dplyr::mutate(direct_evidence_match = TRUE)
+  candidates |>
+    dplyr::left_join(matched, by = c("km", "bm", "claim_id", "work_id")) |>
+    dplyr::mutate(direct_evidence_match = !is.na(direct_evidence_match))
 }
 
 # Coerce whatever ellmer hands back for one pair into a one-row tibble, and
@@ -338,15 +338,13 @@ build_llm_verification_parquet <- function(
   output_root = "output/llm_verification/scores"
 ) {
   assessment_id <- assessment$id
-  subset_val <- as.character(cfg$subset %||% "all")
 
   # llm_config in the output path/columns is the SELECTED config's NAME
   # (e.g. "openrouter_cheap"), distinct from llm_model (the actual model
   # string) -- same distinction nli_config/nli_model make for Phase 1. Keeping
   # each named config's output on its own path means switching `active` in
   # input/config.yaml, or running two configs side by side for comparison,
-  # never overwrites another config's already-scored rows. `subset` gets the
-  # same treatment, nested deeper, for the same reason. `nli_route` (e.g.
+  # never overwrites another config's already-scored rows. `nli_route` (e.g.
   # "REFUTES-certain") is NOT part of this fixed prefix -- it's derived per
   # ROW from that row's own NLI outcome (see nli_route_label()), so a single
   # call can write several nli_route= subdirectories nested under this one
@@ -354,7 +352,7 @@ build_llm_verification_parquet <- function(
   # rewritten each call (below), and what's returned as this target's value.
   output_path <- file.path(
     output_root, paste0("llm_config=", llm_active),
-    paste0("subset=", subset_val), paste0("assessment=", assessment_id)
+    paste0("assessment=", assessment_id)
   )
 
   # Same reasoning as build_nli_overview_data.R: this path is reconstructed
@@ -370,12 +368,11 @@ build_llm_verification_parquet <- function(
     nli_scores_path, nli_ready_path,
     nli_labels = cfg$nli_labels, nli_certainty = cfg$nli_certainty
   )
-  if (subset_val == "default" && nrow(candidates)) {
-    n_before <- nrow(candidates)
-    candidates <- apply_candidate_scope(candidates, llm_candidate_scope_path)
+  if (nrow(candidates)) {
+    candidates <- tag_direct_evidence_match(candidates, llm_candidate_scope_path)
     message(sprintf(
-      "[LLM verify %s] subset=default: %d pair(s) after candidate-scope narrowing (was %d)",
-      assessment_id, nrow(candidates), n_before
+      "[LLM verify %s] %d pair(s) to review, %d direct_evidence_match",
+      assessment_id, nrow(candidates), sum(candidates$direct_evidence_match)
     ))
   }
   if (!nrow(candidates)) {
@@ -575,18 +572,20 @@ build_llm_verification_parquet <- function(
 
   out$llm_agrees <- out$llm_label == out$nli_label
   out$llm_config <- llm_active
-  # nli_route already exists on `out` -- computed per row inside
-  # select_llm_verification_candidates() from that row's own nli_label/
-  # uncertain, and carried through the inner_join with verdicts above.
-  out$subset <- subset_val
+  # nli_route and direct_evidence_match already exist on `out` -- nli_route
+  # computed per row inside select_llm_verification_candidates() from that
+  # row's own nli_label/uncertain, direct_evidence_match attached by
+  # tag_direct_evidence_match() above -- both carried through the
+  # inner_join with verdicts above.
   out$llm_model <- cfg$model
   out$nli_config <- nli_active
   out$assessment <- assessment_id
 
   out <- out |>
     dplyr::select(
-      llm_config, subset, nli_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
+      llm_config, nli_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
       nli_label, uncertain, nli_confidence, p_supports, p_refutes, p_nei,
+      direct_evidence_match,
       llm_model, llm_label, llm_agrees, sufficient_evidence,
       quote, quote_verbatim, explanation
     )
@@ -596,7 +595,7 @@ build_llm_verification_parquet <- function(
     dataset = out,
     path = output_root,
     format = "parquet",
-    partitioning = c("llm_config", "subset", "assessment", "nli_route", "km", "bm"),
+    partitioning = c("llm_config", "assessment", "nli_route", "km", "bm"),
     existing_data_behavior = "delete_matching"
   )
 

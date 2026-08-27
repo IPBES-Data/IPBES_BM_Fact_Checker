@@ -189,49 +189,31 @@ nli:
 # nli_labels: [REFUTES, SUPPORTS] produces nli_route=REFUTES-certain AND
 # nli_route=SUPPORTS-certain as separate partitions, not one merged one).
 #
-# subset: picks which citing-work candidates each config reviews, on top of
-# the nli_labels/nli_certainty routing above:
-#   "all"     -- every citing work found anywhere under the claim's BM
-#   "default" -- (used to be called "sm") only citing works tracing back to a
-#                seed reference whose refs_parquet `sm` matches the claim's
-#                OWN evidence-reference sub-chapter(s), via the
-#                llm_candidate_scope_parquet target (see
-#                TD_NLI_LLM_two_phase.qmd). Real narrowing only under the
-#                naive_bm/atomic_bm granularities -- under complete_bm this
-#                is identical to "all" (no per-sub-claim evidence tokens
-#                exist for whole-field claims). A claim with no evidence
-#                braces at all falls back to unrestricted rather than being
-#                excluded. Not the active cost lever right now -- nli_labels/
-#                nli_certainty are doing the narrowing instead.
+# Every config reviews ALL citing works found under the claim's BM -- there
+# is no candidate-narrowing lever anymore (retired: real measured reduction
+# was only ~14% for GA1 atomic_bm, not worth the matching/drift-check
+# machinery it cost to maintain). Instead, each scored row is TAGGED with
+# `direct_evidence_match` -- TRUE if that citing work traces back, via the
+# snowball citation graph, to a seed reference whose refs_parquet `sm`
+# matches THIS claim's own evidence-reference sub-chapter(s) (e.g. {5.4.1}),
+# FALSE otherwise (including every row when the claim has no evidence braces
+# at all, or under `complete_bm`, whose whole-field claims carry no
+# per-sub-claim evidence tokens to match against in the first place). See
+# R/build_llm_candidate_scope_parquet.R (the matching computation, unchanged
+# from when it fed a filter) and R/build_llm_verification_parquet.R (where
+# the tag is now attached) for the full design.
 llm_verification:
   active: openrouter_cheap   # which entry under configs: is active
 
   configs:
-    # Default: cheap, fast, non-reasoning, no candidate narrowing. First
-    # step: high-confidence REFUTES only.
+    # Default: cheap, fast, non-reasoning. First step: high-confidence
+    # REFUTES/SUPPORTS.
     openrouter_cheap:
       model: "openai/gpt-4o-mini"
       temperature: 0
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: default
-      nli_labels: [REFUTES, SUPPORTS]
-      nli_certainty: certain
-
-    # Same model/settings as openrouter_cheap, narrowed to the per-claim
-    # evidence-derived candidate scope (subset: "default" -- see
-    # R/build_llm_candidate_scope_parquet.R). Real narrowing only happens
-    # under naive_bm/atomic_bm granularity; under complete_bm this behaves
-    # identically to subset: "all" (complete_bm's whole-field claims carry
-    # no per-sub-claim evidence tokens to scope by).
-    openrouter_cheap_sm:
-      model: "openai/gpt-4o-mini"
-      temperature: 0
-      max_tokens: 8000
-      max_active: 24
-      max_retries: 2
-      subset: default
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
@@ -243,7 +225,6 @@ llm_verification:
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: all
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain
 
@@ -256,6 +237,5 @@ llm_verification:
       max_tokens: 8000
       max_active: 24
       max_retries: 2
-      subset: all
       nli_labels: [REFUTES, SUPPORTS]
       nli_certainty: certain

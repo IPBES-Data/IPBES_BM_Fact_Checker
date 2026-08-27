@@ -31,7 +31,7 @@ The pipeline fetches IPBES assessment data from the [IPBES Linked Open Data (LOD
 
 The **active scoring approach** is NLI (`nli_scores_by_claim` / `nli_scores_by_claim_evidence`): each citing work is classified as SUPPORTS / REFUTES / NOT_ENOUGH_INFO against its partition's Background Message using a zero-shot `bge-m3-zeroshot-v2.0-c` NLI model served on RunPod (see [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/) and [TD_BM_NLI_approach.qmd](TD_BM_NLI_approach.html)) — `deberta-v3-large-zeroshot-v2.0` was the original model, now retired.
 
-**Phase 2 LLM verification** (`llm_verification_parquet`) reviews whichever slice of NLI scores each config's `nli_labels`/`nli_certainty` fields select (currently `REFUTES` + `SUPPORTS`, both `certain`, on every shipped config — ~79k of 3.5M scored pairs), one `ellmer::chat_openrouter()` call per `(claim, work)` pair, optionally narrowed further by `llm_candidate_scope_parquet` (per-claim citing-work scoping via IPBES's own sub-chapter evidence references, `subset: "default"` — not the active cost lever right now, `nli_labels`/`nli_certainty` are doing that job instead) — see [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) for the design and [R/build_llm_verification_parquet.R](R/build_llm_verification_parquet.R)/[R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) for the implementation. The earlier truth/citing-document LLM design it replaced (`prompts_truth_parquet` → `prompts_citing_parquet` → `alignement_scores_parquet`) has been removed; see [TD_LLM_approach.qmd](TD_LLM_approach.html) for that record.
+**Phase 2 LLM verification** (`llm_verification_parquet`) reviews whichever slice of NLI scores each config's `nli_labels`/`nli_certainty` fields select (currently `REFUTES` + `SUPPORTS`, both `certain`, on every shipped config — ~79k of 3.5M scored pairs), one `ellmer::chat_openrouter()` call per `(claim, work)` pair — every routed pair is reviewed, none filtered, but each is tagged `direct_evidence_match` by `llm_candidate_scope_parquet` (via IPBES's own sub-chapter evidence references; a former `subset: "default"` candidate-narrowing filter was retired here since it only reduced routed pairs by ~14%, not worth the lost review coverage) — see [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) for the design and [R/build_llm_verification_parquet.R](R/build_llm_verification_parquet.R)/[R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) for the implementation. The earlier truth/citing-document LLM design it replaced (`prompts_truth_parquet` → `prompts_citing_parquet` → `alignement_scores_parquet`) has been removed; see [TD_LLM_approach.qmd](TD_LLM_approach.html) for that record.
 
 Fuseki startup and shutdown are handled inside the parquet builders rather than as separate targets. When `sparql_url: fuseki`, each builder boots an in-memory Fuseki, POSTs the TTL into the named graph `http://ontology.ipbes.net/report/<id>` via the Graph Store Protocol, runs its query, and tears Fuseki down.
 
@@ -121,8 +121,8 @@ chain or any download/snowball step upstream of it. Under
 `atomic_bm` it re-runs `complete_bm_fragments()` (normally a cache-hit
 against the completion cache a real atomic_bm `nli_ready_evidence_parquet`
 build already populated) to recover claim alignment. It always runs
-regardless of which `llm_verification` config is active; `subset: "all"`
-configs simply never read its output.
+regardless of which `llm_verification` config is active, since every
+config's output now carries the `direct_evidence_match` tag it produces.
 
 ## Configuration (`input/config.yaml`)
 
@@ -165,7 +165,7 @@ cascades.
 | `nli.active` | `nli_active` → `nli_config` | `nli_scores_parquet` only |
 | `nli.configs.<active>.*` | `nli_config` | `nli_scores_parquet` only |
 | `llm_verification.active` | `llm_verification_active` → `llm_verification_config` | `llm_verification_parquet` only |
-| `llm_verification.configs.<active>.*` (incl. `subset`) | `llm_verification_config` | `llm_verification_parquet` only |
+| `llm_verification.configs.<active>.*` | `llm_verification_config` | `llm_verification_parquet` only |
 
 ## Target 0: `assessment` — Assessment Specs
 
@@ -414,18 +414,22 @@ arrow::open_dataset("output/nli_scores") |>
 | `confidence` | dbl | `max(p_supports, p_refutes, p_nei)` |
 | `uncertain` | lgl | `TRUE` if `confidence < uncertain_threshold` |
 
-## Target 2h4a: `llm_candidate_scope_parquet` — per-claim candidate scoping
+## Target 2h4a: `llm_candidate_scope_parquet` — per-claim evidence match set
 
 **Source:** `R/build_llm_candidate_scope_parquet.R`
 
 Chains `refs_parquet`'s `sm` (sub-chapter id) → seed doi → seed OpenAlex
 work id → citing work (via the existing snowball edges) to produce, per
-claim, an allow-list of citing works tied to that claim's own evidentiary
-sub-chapter rather than the whole BM's — the input `llm_verification_parquet`'s
-`subset: "default"` configs (this value used to be called `"sm"`) narrow
-against. Supported for `naive_bm`/`atomic_bm`; a no-op sentinel for
-`complete_bm` (no per-sub-claim evidence tokens exist for whole-field
-claims). Reads only already-existing, unmodified targets
+claim, the set of citing works tied to that claim's own evidentiary
+sub-chapter rather than the whole BM's — `llm_verification_parquet` tags
+every reviewed pair `direct_evidence_match` against this set (formerly used
+to *filter* candidates via a `subset: "default"` config setting; retired
+once real GA1 atomic_bm data showed the narrowing reduced routed pairs by
+only ~14%, not worth the lost review coverage — see
+[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html#candidate-scoping)).
+Supported for `naive_bm`/`atomic_bm`; a no-op sentinel for `complete_bm`
+(no per-sub-claim evidence tokens exist for whole-field claims — every row
+is tagged FALSE there). Reads only already-existing, unmodified targets
 (`key_messages_parquet`, `refs_parquet`, `works_parquet`, `snowball_parquet`,
 `claim_completion_model`, and `nli_ready_evidence_parquet` for a drift
 sanity check); under `naive_bm`/`complete_bm` makes no network/API calls of
@@ -443,7 +447,7 @@ behavior against the originals. See
 the full design, including the fallback and prefix-matching policy
 decisions. Writes to
 `output/llm_candidate_scope/assessment=<id>/km=<km>/bm=<bm>/`
-(`assessment, km, bm, claim_id, work_id` — one row per allowed pair).
+(`assessment, km, bm, claim_id, work_id` — one row per matched pair).
 Always computed regardless of which `llm_verification` config is active.
 
 ## Target 2h4b: `llm_verification_parquet` — Phase 2 LLM verification
@@ -456,32 +460,36 @@ the active config's `nli_labels`/`nli_certainty` fields (see
 and its ported-architecture rationale) — `select_llm_verification_candidates()`
 filters on `label %in% nli_labels` AND the certainty band, both optional
 (`NULL`/absent = no filter on that dimension); currently every shipped
-config sets `nli_labels: [REFUTES]`, `nli_certainty: certain`. Optionally
-narrowed further by `llm_candidate_scope_parquet` when the active config's
-`subset` is `"default"` (not the active cost lever right now — see
-[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html#candidate-scoping)).
+config sets `nli_labels: [REFUTES, SUPPORTS]`, `nli_certainty: certain`.
+Every selected candidate is reviewed — none are filtered further —
+but `tag_direct_evidence_match()` tags each one against
+`llm_candidate_scope_parquet` (see
+[TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html#candidate-scoping) for
+why this used to be a filter and no longer is).
 Resumable per-pair JSON cache under
 `output/llm_verification/raw/model=<model>/prompt=<hash>/`; final output —
-`nli_label`, `llm_label`, `llm_agrees`, a required verbatim `quote`
-(demoted to `NOT_ENOUGH_INFO` if fabricated), `explanation` — written to
-`output/llm_verification/scores/llm_config=<config>/subset=<subset>/assessment=<id>/nli_route=<route>/km=<km>/bm=<bm>/`.
+`nli_label`, `llm_label`, `llm_agrees`, `direct_evidence_match`, a required
+verbatim `quote` (demoted to `NOT_ENOUGH_INFO` if fabricated), `explanation`
+— written to
+`output/llm_verification/scores/llm_config=<config>/assessment=<id>/nli_route=<route>/km=<km>/bm=<bm>/`.
 `nli_route` is `nli_route_label()`'s hive-safe encoding of **that row's
 own** NLI outcome (e.g. `REFUTES-certain`), computed per row from its
 actual label/uncertain values — not a single value per config call, so a
 config listing several labels/certainties (e.g. `nli_labels: [REFUTES, SUPPORTS]`)
 still writes one `nli_route=` subdirectory per distinct outcome actually
-present, never a merged string. `llm_config`/`subset`/`assessment` form the
+present, never a merged string. `llm_config`/`assessment` form the
 fixed prefix fully deleted and rewritten each call.
 
 Configured via `input/config.yaml`'s `llm_verification:` block — `active` +
 named `configs` (`model`, `temperature`, `max_tokens`, `max_active`,
-`max_retries`, `subset`, `nli_labels`, `nli_certainty` per config),
-mirroring `nli:`'s structure exactly. Four configs ship by default
-(`openrouter_cheap`/`openrouter_cheap_sm`/`openrouter_midtier`/`openrouter_toptier_gpt5`;
-only `openrouter_cheap_sm` uses `subset: "default"`), the model tiers carried
-over from the sibling `Categorisation_Literature` project's `epistemology:`
-config, including its proven `max_active: 24`/`max_tokens: 8000` values.
-This replaced an earlier truth/citing-document LLM design
+`max_retries`, `nli_labels`, `nli_certainty` per config),
+mirroring `nli:`'s structure exactly. Three configs ship by default
+(`openrouter_cheap`/`openrouter_midtier`/`openrouter_toptier_gpt5` — a
+fourth, `openrouter_cheap_sm`, was removed once `subset` itself was retired,
+since it differed from `openrouter_cheap` only by that setting), the model
+tiers carried over from the sibling `Categorisation_Literature` project's
+`epistemology:` config, including its proven `max_active: 24`/`max_tokens: 8000`
+values. This replaced an earlier truth/citing-document LLM design
 (`prompts_truth_parquet` → `prompts_citing_parquet` →
 `alignement_scores_parquet`, driven by an `analysis:` config block) — all
 of that source has been removed; see [TD_LLM_approach.qmd](TD_LLM_approach.html)

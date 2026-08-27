@@ -1,17 +1,17 @@
-# Per-claim candidate scope for Phase 2 LLM verification (`subset: "default"`
-# in an `llm_verification` config — see TD_NLI_LLM_two_phase.qmd; this value
-# used to be called "sm").
-#
-# NLI (and the `subset: "all"` Phase 2 alternative) treats every citing work
-# found anywhere under a Background Message as a candidate for every claim
-# segmented out of that BM's text. This file derives a tighter, principled
-# scope instead: each evidence-segmented claim ends with a brace group like
-# `{5.4.1, 5.4.2}` naming the specific IPBES sub-chapter(s) it draws on, and
-# `refs_parquet`'s `sm` column already links specific references (dois) to
-# those same sub-chapter identifiers. Chaining sm -> seed doi -> seed
-# OpenAlex work id -> citing work (via the existing snowball edges) gives,
-# per claim, an allow-list of citing works actually tied to its own
-# evidentiary basis rather than the whole BM's.
+# Per-claim evidence match set feeding Phase 2 LLM verification's
+# `direct_evidence_match` tag (see TD_NLI_LLM_two_phase.qmd) -- this used to
+# power a `subset: "default"`/`"all"` candidate-narrowing filter, retired
+# once real GA1 atomic_bm data showed the narrowing reduced routed pairs by
+# only ~14%, not worth the lost review coverage. Every citing work found
+# anywhere under a Background Message is now reviewed as a candidate for
+# every claim segmented out of that BM's text; this file derives a tighter,
+# principled match set instead: each evidence-segmented claim ends with a
+# brace group like `{5.4.1, 5.4.2}` naming the specific IPBES sub-chapter(s)
+# it draws on, and `refs_parquet`'s `sm` column already links specific
+# references (dois) to those same sub-chapter identifiers. Chaining sm ->
+# seed doi -> seed OpenAlex work id -> citing work (via the existing
+# snowball edges) gives, per claim, the set of citing works actually tied to
+# its own evidentiary basis rather than the whole BM's.
 #
 # Supported for `naive_bm` (evidence-segmented claims, via
 # extract_claim_evidence_tokens()) AND `atomic_bm` (per-fragment claims, via
@@ -173,8 +173,9 @@ extract_claim_evidence_tokens_atomic <- function(text, completion_cfg, completio
 # parenthetical annotations ("3.3.2.2 (Sustainable Development Goal 3)"), and
 # occasional malformed strings with unbalanced parentheses. This normalizer
 # is deliberately best-effort, not exhaustive -- residual gaps (e.g. the
-# malformed cases) are an accepted, disclosed limitation: `subset: "all"`
-# remains available as the exhaustive fallback.
+# malformed cases) are an accepted, disclosed limitation: since nothing is
+# filtered anymore, this only affects the direct_evidence_match tag's
+# accuracy on a small number of pairs, never review coverage.
 normalize_evidence_token <- function(x) {
   x <- tolower(x)
   x <- sub("^\\s*(spm\\s+table|box|boxes|table|tables)[.:\\s]*", "", x)

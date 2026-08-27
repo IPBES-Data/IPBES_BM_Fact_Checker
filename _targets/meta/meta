@@ -3099,8 +3099,6 @@ llm_scope_qa_data_9253f47f4598ab8b|branch|337943d8626125dc|f7c924b1c4b648be|bb05
 llm_scope_qa_report_html_07917970abd1fba2|branch|779f60db7560e0af|0144c49dfb4b57d4|c287e4e71a0824e9|-1040395775|output/reports/QA_LLM_Scope_Report_GA1_atomic_bm_default.html|t20692.4071496729s|s6717949b|6717949|file|local|vector|llm_scope_qa_report_html||157.85||
 llm_scope_qa_data|pattern|4ce57426fcb300bd|f7c924b1c4b648be||-775454233||||2590395|file|local|vector||llm_scope_qa_data_9253f47f4598ab8b|112.177||
 llm_scope_qa_report_html|pattern|37d973c1b14c2fda|0144c49dfb4b57d4||146871517||||6717949|file|local|vector||llm_scope_qa_report_html_07917970abd1fba2|157.85||
-mmd_workflow_nli|stem|a5c5d5bd7fedc839|291e3b8bb9b9de4a|2c530c1562a7fbd1|-48567711|input/mmd/workflow_nli.mmd|t20692.4094886661s|s10633b|10633|file|local|vector|||1.704||
-diagram_workflow_nli|stem|580d202dfd12bb03|3b2e422741bbb8f9|99e1325b5efc4b55|542749245|output/figures/workflow_nli.svg*output/figures/workflow_nli.png|t20692.409648477s|s376384b|376384|file|local|vector|||3.048||
 nli_ready_evidence_keypaper_parquet|pattern|ff314d6efca78389|9638f1936b2b6fc9||1701020224||||0|file|local|vector||nli_ready_evidence_keypaper_parquet_18725bf748d3cf35|0||
 nli_configs_all|stem|319d9ef2e40950d6|1fc4c6e543b436bb|652b8aa665b6d905|-1176972156||t20692.4517094133s|s619b|619|rds|local|vector|||0.001||
 nli_config|stem|54402813330e543f|3e80788a303cefbe|652b8aa665b6d905|-1786223254||t20692.4517097463s|s380b|380|rds|local|vector|||0||
@@ -3330,6 +3328,9 @@ nli_scores_qa_report_html_34270bae8ad439a7|branch|51d10dfabcd5dd31|2bec44dbdd7f4
 nli_scores_qa_report_html_b3e4b82f641eebf4|branch|a9ffbd49d1c56c56|2bec44dbdd7f4cdb|acfea63b7578b532|-32025231|output/reports/QA_NLI_Scores_Report_GA1_bge_m3_zeroshot_complete_bm_complete_bm.html|t20692.4560478467s|s10474385b|10474385|file|local|vector|nli_scores_qa_report_html||8.128||
 nli_scores_qa_report_html_9e3a4b34f36b7f8b|branch|b4344171e154a860|2bec44dbdd7f4cdb|c140effa80e7e0e3|1788451574|output/reports/QA_NLI_Scores_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.html|t20692.4562079095s|s20087416b|20087416|file|local|vector|nli_scores_qa_report_html||13.849||
 nli_scores_qa_report_html|pattern|bf26e1af1bf63204|2bec44dbdd7f4cdb||2066827019||||31751437|file|local|vector||nli_scores_qa_report_html_34270bae8ad439a7*nli_scores_qa_report_html_b3e4b82f641eebf4*nli_scores_qa_report_html_9e3a4b34f36b7f8b|25.996||
+apply_candidate_scope|function|33cac4455d55f216
+llm_scope_qa_html|function|5310c9324570a902
+build_llm_scope_qa_data|function|c109ef308c155451
 resolve_lod_endpoint|function|6d7679ec1f7f22d4
 extract_claim_evidence_tokens|function|aa4956e82ec1af9f
 infer_zotero_group_id|function|10e164ee81c0a6e4
@@ -3372,11 +3373,9 @@ nli_label_levels|object|7ec76f7bc5812e0d
 bm_highlight_regex_escape|function|7c4020ec73b4ecde
 zotero_item_to_row|function|4d66e706ea340900
 github_blob_sha|function|0002b259c2c0c9a7
-rl|object|50db69053aedd5a8
-llm_scope_qa_html|function|5310c9324570a902
+rl|object|3d0a9428f846cf94
 render_mmd|function|ec53eee26cafd7b2
 extract_zotero_key|function|b31d8ad3962b21e8
-apply_candidate_scope|function|33cac4455d55f216
 claim_completion_connective_stopwords|object|4e47382da489b0c1
 bm_highlight_escape_html|function|fdcc44b0f6e1d201
 normalise_llm_verification|function|6a12ca1d7d356e56
@@ -3385,6 +3384,7 @@ replace_citations_in_text|function|60f9e2ecac6da5a2
 build_snowball_parquet|function|5d6c049654d21e94
 quote_is_verbatim|function|f75f5e7d22d8ccc9
 llm_verification_output_type|function|ddba0f06ddb7a9dc
+tag_direct_evidence_match|function|97a73f3637450bca
 bm_extract_evidence_refs|function|533ce00480187e31
 nli_cfg|object|e2bc8924adddc2d0
 strip_bm_confidence|function|23c96ca8e4a1bccb
@@ -3432,7 +3432,7 @@ extract_sections_from_endpoint|function|d5f610ef88c07ce6
 extract_key_messages_from_endpoint|function|f20e28e17a7d697f
 extract_refs_from_endpoint|function|28f95c1df922070c
 with_fuseki_session|function|2a9ca22ebcbf09d4
-build_llm_verification_parquet|function|fc712106aac55a59
+build_llm_verification_parquet|function|7e76119c30e4a388
 check_nli_pool_health|function|816a45981e4e54ac
 score_one_claim|function|5c181c43b7efd5aa
 build_nli_ready_parquet|function|f948c92349ef9d81
@@ -3450,5 +3450,6 @@ extract_claim_evidence_tokens_atomic|function|452dc3b132742e20
 build_nli_ready_evidence_parquet|function|7f7b381b3d8f6950
 build_nli_ready_evidence_keypaper_parquet|function|ba521cb0e4d49fd0
 build_bm_split_highlighted|function|8b02a8897a8075a8
-build_llm_scope_qa_data|function|c109ef308c155451
 build_llm_candidate_scope_parquet|function|b486a771b2b0c718
+mmd_workflow_nli|stem|38ad71fff3901eb8|291e3b8bb9b9de4a|2c530c1562a7fbd1|-48567711|input/mmd/workflow_nli.mmd|t20692.6151193874s|s10453b|10453|file|local|vector|||1.925||
+diagram_workflow_nli|stem|0f6b805bea3fe2e6|3b2e422741bbb8f9|b735f07b99a2ff31|542749245|output/figures/workflow_nli.svg*output/figures/workflow_nli.png|t20692.6155879758s|s436508b|436508|file|local|vector|||3.309||
