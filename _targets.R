@@ -754,7 +754,13 @@ list(
       # nli_scores_by_claim_evidence argument already uses. Makes the
       # key-paper scoring chain run automatically as part of a bare
       # tar_make(), instead of needing to be triggered explicitly.
-      nli_scores_keypaper_evidence = nli_scores_keypaper_evidence
+      nli_scores_keypaper_evidence = nli_scores_keypaper_evidence,
+      # Resolved granularity's OWN uncertain_threshold -- not nli.active's --
+      # same fine-grained-config reasoning as nli_config_for_granularity()
+      # itself. Falls back to 0.60 (score_one_claim()'s own default) if the
+      # resolved config doesn't set one. Feeds the ternary figure's
+      # certain/uncertain boundary lines.
+      uncertain_threshold = nli_configs_all[[nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)]][["uncertain_threshold"]] %||% 0.60
     ),
     pattern = cross(map(assessment, works_citing_parquet), nli_granularities),
     format = "file",

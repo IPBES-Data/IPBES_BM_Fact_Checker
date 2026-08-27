@@ -123,10 +123,21 @@ composition losslessly in 2D. Each corner is 100% one label; a point's
 position encodes all three probabilities at once, and its color is the
 local **density** of scored pairs at that combination (log-scaled so
 structure is visible everywhere, not just at the tallest peaks). The three
-straight lines are the actual decision boundaries — where the winning
-label flips from one to another — running from the centroid out to each
-edge's midpoint; each corner's percentage is the real share of rows that
-label actually won.
+solid, coloured lines are the actual decision boundaries — where the
+winning label flips from one to another — running from the centroid out to
+each edge's midpoint; each corner's percentage is the real share of rows
+that label actually won.
+
+The black dashed triangle is the **certain/uncertain boundary**: `label` is
+always the argmax of the three probabilities (which line above a point
+falls on decides that), but `confidence` — the *winning* probability — is a
+separate question, and a row is `uncertain` whenever `confidence` is below
+this granularity's own `uncertain_threshold` (shown in the legend). Points
+inside the dashed triangle are `uncertain` regardless of which label
+technically won there; only the three small corners beyond it are
+`certain`. A label can be assigned with real confidence right up against
+this line while still counting as uncertain — the two are independent
+judgements, not the same thing read two ways.
 
 When available, small white markers overlay the actual **key papers** —
 the seed/reference works IPBES cites as evidence for a BM, scored against

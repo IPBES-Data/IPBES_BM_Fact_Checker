@@ -22,7 +22,7 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
     fn_ternary,
     nli_scores_qa_ternary_plot(
       x$probs, x$label_pct, x$keypaper_points, x$keypaper_label_pct,
-      x$keypaper_label_pvalue
+      x$keypaper_label_pvalue, x$uncertain_threshold %||% 0.60
     ),
     width = 8.2, height = 6.8, bg = "white"
   )
@@ -80,7 +80,19 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
 #   threshold, else "p=0.023" to 3 decimals -- not reduced to significance
 #   stars, so the reader sees the actual number rather than a threshold
 #   judgement call baked into the figure.
-nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL, keypaper_label_pct = NULL, keypaper_label_pvalue = NULL) {
+# - `uncertain_threshold` draws the certain/uncertain boundary implied by
+#   score_one_claim.R's own `uncertain = confidence < uncertain_threshold`
+#   (confidence = max(p_supports, p_refutes, p_nei), i.e. whichever
+#   probability won). Geometrically that's THREE lines, each parallel to
+#   the edge opposite one vertex, at that vertex's threshold value -- the
+#   exact same construction as the plain 20/40/60/80% gridlines below
+#   (gridline_df() is reused directly for a single-level vector), just
+#   drawn in a distinct dashed style with its own linetype legend entry so
+#   it doesn't read as just another generic gridline. The three small
+#   corner regions beyond this boundary are "certain" (that label's own
+#   probability cleared the bar); the hexagonal middle region is
+#   "uncertain" regardless of which label technically won there.
+nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL, keypaper_label_pct = NULL, keypaper_label_pvalue = NULL, uncertain_threshold = 0.60) {
   s3 <- sqrt(3)
   # Barycentric -> Cartesian. Vertices: NOT_ENOUGH_INFO=(0,0) bottom-left,
   # REFUTES=(1,0) bottom-right, SUPPORTS=(0.5, sqrt(3)/2) top.
@@ -126,6 +138,14 @@ nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL,
     }))
   }
   glines <- gridline_df(levels_pct)
+
+  # certain/uncertain boundary -- same construction as glines above, just
+  # for the single uncertain_threshold level, with its own `kind` column
+  # (constant across all three segments) so linetype maps them to ONE
+  # legend entry while `grp` (a1/b1/c1, from gridline_df()) still keeps
+  # the three segments from being connected into one wrong zigzag path.
+  uncertain_lines <- gridline_df(uncertain_threshold)
+  uncertain_lines$kind <- sprintf("certain / uncertain boundary\n(confidence = %.2f)", uncertain_threshold)
   lab_a <- data.frame(x = 0.5 * levels_pct - 0.035, y = levels_pct * s3 / 2, label = levels_pct * 100)
   lab_b <- data.frame(x = levels_pct, y = -0.045, label = levels_pct * 100)
   lab_c <- data.frame(x = 1 - 0.5 * (1 - levels_pct) + 0.06, y = (1 - levels_pct) * s3 / 2, label = rev(levels_pct * 100))
@@ -163,6 +183,7 @@ nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL,
     ggplot2::geom_contour_filled(data = grid, ggplot2::aes(x = x, y = y, z = zlog), na.rm = TRUE, alpha = 0.95, bins = 14) +
     ggplot2::geom_contour(data = grid, ggplot2::aes(x = x, y = y, z = zlog), colour = "black", linewidth = 0.12, na.rm = TRUE, bins = 14) +
     ggplot2::geom_line(data = glines, ggplot2::aes(x = x, y = y, group = grp), colour = "grey55", linewidth = 0.3, linetype = "dotted") +
+    ggplot2::geom_line(data = uncertain_lines, ggplot2::aes(x = x, y = y, group = grp, linetype = kind), colour = "black", linewidth = 0.6) +
     ggplot2::geom_line(data = boundaries, ggplot2::aes(x = x, y = y, colour = grp), linewidth = 1) +
     ggplot2::geom_path(data = tri, ggplot2::aes(x = x, y = y), linewidth = 0.7, colour = "black") +
     ggplot2::geom_text(data = lab_a, ggplot2::aes(x = x, y = y, label = label), size = 2.8, colour = "grey30") +
@@ -178,6 +199,7 @@ nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL,
       n <- length(v); out <- rep("", n); out[1] <- "low"; out[n] <- "high"; out
     }) +
     ggplot2::scale_colour_manual(name = "decision\nboundary", values = boundary_cols) +
+    ggplot2::scale_linetype_manual(name = NULL, values = stats::setNames("dashed", unique(uncertain_lines$kind))) +
     ggplot2::coord_fixed(clip = "off") +
     ggplot2::theme_void(base_size = 11) +
     ggplot2::theme(legend.position = "right", plot.margin = ggplot2::margin(25, 25, 25, 25))

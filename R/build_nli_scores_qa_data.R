@@ -27,7 +27,8 @@ build_nli_scores_qa_data <- function(
   output_root = "output/tables",
   per_claim_cap = 50L,
   keypaper_scores_path = NULL,
-  nli_scores_keypaper_evidence = NULL # unused -- establishes the DAG dependency on the key-paper scoring chain, same convention as build_llm_verification_parquet()'s own nli_scores_by_claim_evidence argument
+  nli_scores_keypaper_evidence = NULL, # unused -- establishes the DAG dependency on the key-paper scoring chain, same convention as build_llm_verification_parquet()'s own nli_scores_by_claim_evidence argument
+  uncertain_threshold = 0.60 # the RESOLVED granularity's own config value (see nli_config just above), passed in by the caller -- feeds the ternary figure's certain/uncertain boundary lines
 ) {
   assessment_id <- assessment$id
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
@@ -257,6 +258,7 @@ build_nli_scores_qa_data <- function(
       per_claim_cap  = per_claim_cap,
       matrix         = matrix_tbl,
       label_pct      = label_pct,
+      uncertain_threshold = uncertain_threshold,
       # Raw class probabilities only (no text columns) -- kept for the
       # ternary density figure, which needs the full uncapped distribution,
       # not a decile summary. ~14MB for 594K rows, small next to the
