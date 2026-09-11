@@ -24,10 +24,19 @@ build_overlap_after_2018_background_messages_table <- function(
   fn_rds  <- file.path(output_root, "overlap_after_2018_background_messages.rds")
   fn_html <- file.path(output_root, "overlap_after_2018_background_messages.html")
 
-  works_citing <- dplyr::bind_rows(lapply(works_citing_path, function(p) {
-    arrow::open_dataset(p) |>
-      dplyr::select(id, doi, title, abstract, km, bm, publication_year) |>
+  # works_citing is a slim per-(km, bm) id mapping plus a deduplicated
+  # metadata table (see R/build_works_citing_parquet.R). `abstract` makes
+  # this the heaviest of these reads, so the publication_year filter is
+  # applied lazily, before anything is collected.
+  queries <- works_citing_queries(
+    works_citing_path,
+    columns = c("doi", "title", "abstract", "publication_year")
+  )
+
+  works_citing <- dplyr::bind_rows(lapply(queries, function(q) {
+    q |>
       dplyr::filter(!is.na(id), publication_year > cutoff_year) |>
+      dplyr::select(id, doi, title, abstract, km, bm, publication_year) |>
       dplyr::collect()
   }))
 

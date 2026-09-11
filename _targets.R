@@ -668,7 +668,7 @@ list(
         paste0("assessment=", assessment$id)
       ),
       nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active),
-      works_citing_parquet,
+      works_citing_meta_paths(works_citing_parquet),
       "output/tables",
       nli_scores_evidence_consolidated,
       nli_granularities
@@ -789,7 +789,7 @@ list(
         paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
         paste0("assessment=", assessment$id)
       ),
-      works_citing_parquet,
+      works_citing_meta_paths(works_citing_parquet),
       nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active),
       nli_granularities,
       "output/tables",
@@ -1033,7 +1033,7 @@ list(
     build_llm_verification_qa_data(
       assessment,
       llm_verification_parquet,
-      works_citing_parquet,
+      works_citing_meta_paths(works_citing_parquet),
       llm_verification_active,
       nli_active,
       "output/tables",
@@ -1148,7 +1148,7 @@ list(
       ),
       llm_verification_keypaper_parquet,
       works_parquet,
-      works_citing_parquet,
+      works_citing_meta_paths(works_citing_parquet),
       nli_active,
       llm_verification_active,
       granularity,
@@ -1354,7 +1354,7 @@ list(
     build_label_funnel_data(
       assessment,
       "REFUTES",
-      works_citing_parquet,
+      works_citing_map_paths(works_citing_parquet),
       file.path(
         "output/nli_scores_evidence",
         paste0("granularity=", nli_granularities),
@@ -1379,7 +1379,7 @@ list(
     build_label_funnel_data(
       assessment,
       "SUPPORTS",
-      works_citing_parquet,
+      works_citing_map_paths(works_citing_parquet),
       file.path(
         "output/nli_scores_evidence",
         paste0("granularity=", nli_granularities),

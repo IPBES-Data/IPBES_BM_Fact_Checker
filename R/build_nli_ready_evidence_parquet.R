@@ -433,16 +433,19 @@ build_nli_ready_evidence_parquet <- function(
 
   scalar_cols <- c("id", "doi", "title", "abstract", "publication_year")
 
-  km_dirs <- list.dirs(works_citing_parquet, recursive = FALSE)
-  bm_pairs <- do.call(c, lapply(km_dirs, function(km_dir) {
-    lapply(list.dirs(km_dir, recursive = FALSE), function(bm_dir) {
-      list(km_dir = km_dir, bm_dir = bm_dir)
-    })
-  }))
+  # works_citing_parquet now carries two paths per assessment: the slim
+  # per-(km, bm) id mapping (still the same km=/bm= tree walked below) and
+  # the deduplicated metadata table the premise text comes from.
+  # See R/build_works_citing_parquet.R.
+  wc_map  <- works_citing_map_paths(works_citing_parquet)[[1L]]
+  wc_meta <- works_citing_meta_paths(works_citing_parquet)[[1L]]
+
+  groups <- works_citing_groups(wc_map)
+  bm_pairs <- split(groups, seq_len(nrow(groups)))
 
   results <- parallel::mclapply(bm_pairs, function(pair) {
-    km_val <- sub("^km=", "", basename(pair$km_dir))
-    bm_val <- sub("^bm=", "", basename(pair$bm_dir))
+    km_val <- pair$km[[1L]]
+    bm_val <- pair$bm[[1L]]
 
     sents_bm <- claims[
       claims$km == km_val & claims$bm == bm_val, ,
@@ -456,16 +459,8 @@ build_nli_ready_evidence_parquet <- function(
       return(FALSE)
     }
 
-    files <- list.files(pair$bm_dir, pattern = "\\.parquet$", full.names = TRUE)
-    if (!length(files)) {
-      return(FALSE)
-    }
-
-    works <- dplyr::bind_rows(lapply(files, function(f) {
-      arrow::read_parquet(f) |>
-        dplyr::select(dplyr::any_of(scalar_cols))
-    }))
-    if (!nrow(works)) {
+    works <- works_citing_group(wc_map, km_val, bm_val, wc_meta, scalar_cols)
+    if (is.null(works) || !nrow(works)) {
       return(FALSE)
     }
 

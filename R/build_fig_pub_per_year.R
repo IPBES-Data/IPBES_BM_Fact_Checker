@@ -13,9 +13,14 @@ build_fig_pub_per_year <- function(works_citing_path, output_root = "output/figu
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   figname <- file.path(output_root, "fig_pub_per_year")
 
-  counts <- dplyr::bind_rows(lapply(works_citing_path, function(p) {
-    assessment_id <- sub("^assessment=", "", basename(p))
-    arrow::open_dataset(p) |>
+  # works_citing is now a slim per-(km, bm) id mapping plus a deduplicated
+  # metadata table (see R/build_works_citing_parquet.R); publication_year
+  # lives in the latter, so join the two. Kept lazy until after the filter
+  # and count so only the aggregate is collected.
+  queries <- works_citing_queries(works_citing_path, columns = "publication_year")
+
+  counts <- dplyr::bind_rows(lapply(names(queries), function(assessment_id) {
+    queries[[assessment_id]] |>
       dplyr::filter(!is.na(publication_year)) |>
       dplyr::count(km, bm, publication_year) |>
       dplyr::collect() |>

@@ -24,10 +24,18 @@ build_overlap_after_2018_sub_messages_table <- function(
   fn_rds  <- file.path(output_root, "overlap_after_2018_sub_messages.rds")
   fn_html <- file.path(output_root, "overlap_after_2018_sub_messages.html")
 
-  works_citing <- dplyr::bind_rows(lapply(works_citing_path, function(p) {
-    arrow::open_dataset(p) |>
-      dplyr::select(id, doi, title, km, bm, publication_year) |>
+  # works_citing is a slim per-(km, bm) id mapping plus a deduplicated
+  # metadata table (see R/build_works_citing_parquet.R) -- join the columns
+  # this table needs, filtering on publication_year before collecting.
+  queries <- works_citing_queries(
+    works_citing_path,
+    columns = c("doi", "title", "publication_year")
+  )
+
+  works_citing <- dplyr::bind_rows(lapply(queries, function(q) {
+    q |>
       dplyr::filter(!is.na(id), publication_year > cutoff_year) |>
+      dplyr::select(id, doi, title, km, bm, publication_year) |>
       dplyr::collect()
   }))
 
