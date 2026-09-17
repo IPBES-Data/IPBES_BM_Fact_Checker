@@ -21,12 +21,30 @@ build_snowball_parquet <- function(
     paste0("assessment=", assessment_id)
   )
 
-  unlink(nodes_assessment_dir, recursive = TRUE, force = TRUE)
-  unlink(edges_assessment_dir, recursive = TRUE, force = TRUE)
-  unlink(keypaper_assessment_dir, recursive = TRUE, force = TRUE)
   dir.create(nodes_root, showWarnings = FALSE, recursive = TRUE)
   dir.create(edges_root, showWarnings = FALSE, recursive = TRUE)
   dir.create(keypaper_root, showWarnings = FALSE, recursive = TRUE)
+
+  # Clearing this assessment's existing partitions is DEFERRED until the
+  # OpenAlex fetch has actually succeeded -- see the three call sites below.
+  # It used to happen right here, at the top of the function, which meant a
+  # failed or interrupted fetch left the assessment with nothing at all: on
+  # 2026-09-15 one api.openalex.org stall (curl aborting after 600 s below
+  # 1 byte/sec) destroyed GA1, IAS and BBA in a single run, because all
+  # three branches had wiped their output hours before the fetch that was
+  # meant to replace it, and the erroring branch took the two still-running
+  # ones down with it. Recovery needed a Time Machine snapshot.
+  #
+  # write_dataset(existing_data_behavior = "delete_matching") below would
+  # already replace the matching partitions on its own, but an explicit
+  # wipe is still needed to drop STALE sub-partitions -- a relation= or
+  # edge_type= value present in the old data and absent from the new --
+  # which delete_matching leaves untouched.
+  clear_assessment_output <- function() {
+    unlink(nodes_assessment_dir, recursive = TRUE, force = TRUE)
+    unlink(edges_assessment_dir, recursive = TRUE, force = TRUE)
+    unlink(keypaper_assessment_dir, recursive = TRUE, force = TRUE)
+  }
 
   works <- arrow::open_dataset(works_path) |>
     dplyr::select(km, bm, id) |>
@@ -95,6 +113,11 @@ build_snowball_parquet <- function(
       # directory; keypapers are inside `nodes` with relation = "keypaper".
       keypaper_ds <- nodes_ds |> dplyr::filter(relation == "keypaper")
 
+      # The fetch succeeded and its output is readable: only now is it safe
+      # to drop the previous run's partitions. Everything above this line
+      # is non-destructive, so any failure leaves the old data intact.
+      clear_assessment_output()
+
       arrow::write_dataset(
         nodes_ds,
         nodes_root,
@@ -115,7 +138,17 @@ build_snowball_parquet <- function(
       )
 
       unlink(sb_dir, recursive = TRUE, force = TRUE)
+    } else {
+      # pro_snowball() hit the known zero-keypaper package bug handled
+      # above and produced nothing. No new data means whatever sits on
+      # disk from an earlier run is stale, so it goes -- matching what
+      # this function has always done for the no-data case.
+      clear_assessment_output()
     }
+  } else {
+    # No seed works for this assessment at all: nothing to snowball, and
+    # any existing output is stale.
+    clear_assessment_output()
   }
 
   c(nodes_assessment_dir, edges_assessment_dir, keypaper_assessment_dir)

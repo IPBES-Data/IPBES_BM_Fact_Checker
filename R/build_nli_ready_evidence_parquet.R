@@ -290,27 +290,24 @@ build_nli_ready_evidence_parquet <- function(
   assessment_id <- assessment$id
   output_path <- file.path(output_root, paste0("assessment=", assessment_id))
 
-  # Resumability: if this assessment already has parquet output for this
-  # EXACT output_root (which already encodes granularity=<value>/ -- see
-  # the _targets.R call site), skip regenerating entirely, same
-  # short-circuit convention score_one_claim() uses. Without this,
-  # switching nli.active back and forth between granularities forces a
-  # full rebuild every time `targets` sees granularity's value change --
-  # even reverting to a granularity that was already fully built earlier
-  # in the session -- since targets only compares against the LAST
-  # recorded value, not a history of past ones. For atomic_bm that meant
-  # redoing real LLM completion calls for no reason. To force a genuine
-  # rebuild (e.g. after a real segmentation/completion code change),
-  # delete this assessment's output_path by hand first -- same lever
-  # score_one_claim()'s own resumability check requires.
-  if (dir.exists(output_path) &&
-    length(list.files(output_path, pattern = "\\.parquet$", recursive = TRUE))) {
-    message(sprintf(
-      "[NLI_READY_EV %s] output already exists at %s (granularity=%s) -- skipping",
-      assessment_id, output_path, granularity
-    ))
-    return(output_path)
-  }
+  # NOTE: there is deliberately NO "output already exists -- skip" guard here.
+  # One used to sit at this point, so that flipping nli.active between
+  # granularities would not redo atomic_bm's LLM completion calls (targets
+  # only compares against the LAST recorded value of a dependency, not a
+  # history of past ones, so reverting to an already-built granularity looks
+  # like a change). It was removed because it defeated targets' core
+  # contract: the target would be re-dispatched on a genuine upstream change
+  # (a new snowball, refetched works, a re-segmented BM) and then return the
+  # stale output anyway, so nothing downstream ever saw the change and the
+  # only remedy was deleting output_path by hand. The cost it was guarding
+  # against is already paid for one layer down: complete_bm_fragments()
+  # (R/build_claim_completion.R) caches every fragment under
+  # output/claim_completion/raw/model=<model>/prompt=<hash>/, so a rebuild
+  # replays that cache rather than re-calling the LLM. What a rebuild really
+  # costs is local segmentation plus the premise cross-join. If some
+  # invalidation genuinely should be suppressed, express it declaratively
+  # with tar_cue() at the call site, where it is visible in the DAG -- not by
+  # returning early from the builder.
 
   now <- function() format(Sys.time(), "%H:%M:%S")
   # Each granularity is handled via its own explicit branch below in the
@@ -423,10 +420,10 @@ build_nli_ready_evidence_parquet <- function(
   }))
 
   # ── 2. Process works_citing partitions in parallel ───────────────────────
-  # output_path already computed above (used by the early resumability
-  # check); a defensive wipe here only matters for a partial/corrupt
-  # leftover (dir exists but had no parquet files, which is exactly what
-  # let execution reach this point instead of returning early).
+  # output_path is computed at the top of the function. Wipe it: this
+  # builder always rebuilds from scratch (there is no skip guard -- see the
+  # note up there), so any previous run's output must go before the
+  # mclapply loop below starts appending partitions.
   if (file.exists(output_path)) {
     unlink(output_path, recursive = TRUE, force = TRUE)
   }

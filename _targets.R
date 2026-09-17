@@ -255,7 +255,6 @@ list(
 
   # SPARQL query files — tracked so downstream targets invalidate when queries change
   tar_target(refs_sparql, "queries/refs.sparql", format = "file"),
-  tar_target(sections_sparql, "queries/sections.sparql", format = "file"),
   tar_target(
     key_messages_sparql,
     "queries/key_messages.sparql",
@@ -276,19 +275,37 @@ list(
     format = "file"
   ),
 
-  # Target 2b: DB2 — section content written directly to output/sections/
-  tar_target(
-    sections_parquet,
-    build_sections_parquet(
-      sparql_url,
-      assessment,
-      ttl_path,
-      sections_sparql,
-      "output/sections"
-    ),
-    pattern = map(assessment, ttl_path),
-    format = "file"
-  ),
+  # Target 2b: DB2 — section content. DISABLED 2026-09-15.
+  #
+  # Nothing consumed it. No target took sections_parquet as an argument and no
+  # qmd read output/sections/; its only ever consumer was resolve_citations.R,
+  # which has itself been orphaned (no active target) for some time. It was
+  # therefore paying a full SPARQL extraction + Fuseki round trip per
+  # assessment on every rebuild for output nothing read, and output/sections/
+  # was deleted along with this.
+  #
+  # Kept here commented rather than removed outright, same convention as the
+  # orphaned builders left in R/ (build_fulltext.R, resolve_citations.R):
+  # R/write_sections_parquet.R and queries/sections.sparql both still exist, so
+  # re-enabling is uncommenting the two tar_target() calls below (the
+  # sections_sparql file target moved in here with it, having no other
+  # consumer). NEXT_STEPS.md still floats joining claim evidence-references
+  # against this dataset to fetch the backing text — that is the one thing that
+  # would bring it back.
+  #
+  # tar_target(sections_sparql, "queries/sections.sparql", format = "file"),
+  # tar_target(
+  #   sections_parquet,
+  #   build_sections_parquet(
+  #     sparql_url,
+  #     assessment,
+  #     ttl_path,
+  #     sections_sparql,
+  #     "output/sections"
+  #   ),
+  #   pattern = map(assessment, ttl_path),
+  #   format = "file"
+  # ),
 
   # Target 2b2: DB3 — KM, BM, and SM descriptive text written directly to output/key_messages/
   tar_target(
@@ -325,7 +342,15 @@ list(
     snowball_parquet,
     build_snowball_parquet(assessment, works_parquet, "output/snowball"),
     pattern = map(assessment, works_parquet),
-    format = "file"
+    format = "file",
+    # One assessment's OpenAlex fetch failing must not abort the others.
+    # Without this, the 2026-09-15 api.openalex.org stall on the IAS branch
+    # aborted the whole pipeline and killed GA1's and BBA's branches while
+    # they were still running. Each branch is an independent multi-hour
+    # fetch, so a failure is reported and marked while every other branch
+    # proceeds -- same reasoning as the NLI scoring targets, where one bad
+    # claim used to cost a host its entire remaining backlog.
+    error = "continue"
   ),
 
   # Target 2f: Citing works — papers citing the seed works, fetched per km/bm

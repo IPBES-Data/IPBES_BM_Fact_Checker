@@ -3132,7 +3132,6 @@ nli_ready_evidence_keypaper_parquet_18725bf748d3cf35|branch|56e19d839367d3bd|963
 works_citing_parquet_d1d9cb33f2278561|branch|b6e299f36b1c2bce|8062d92dd0347aaf|7417c672bf2ca4fc|138015028|output/works_citing/assessment=GA1|t20697.7444841237s|s1207418484b|1207418484|file|local|vector|works_citing_parquet||0.459||
 nli_ready_evidence_parquet_ee400dcab719e43e|branch|0ff845b1adfee636|6d9047eee285451e|7220c1adeaf2440a|-1627342807|output/nli_ready_evidence/granularity=atomic_bm/assessment=GA1|t20684.7669547764s|s1557152438b|1557152438|file|local|vector|nli_ready_evidence_parquet||0.004||
 nli_ready_evidence_keypaper_parquet_dbd0f47068f3dd2e|branch|df2a0ebb3319fd97|9638f1936b2b6fc9|d98e17dc283f684d|-336959557|output/nli_ready_evidence_keypaper/granularity=atomic_bm/assessment=VA|t20697.75428512s|s606177b|606177|file|local|vector|nli_ready_evidence_keypaper_parquet||106.056||
-nli_ready_evidence_keypaper_parquet|pattern|af168bfade311305|9638f1936b2b6fc9||1701020224||||2140598|file|local|vector||nli_ready_evidence_keypaper_parquet_18725bf748d3cf35*nli_ready_evidence_keypaper_parquet_dbd0f47068f3dd2e*nli_ready_evidence_keypaper_parquet_44794a65d0baf13d|113.414||
 works_citing_parquet_e6bb24d9c57fb672|branch|9d6a2f3f6fe045de|8062d92dd0347aaf|86f35effa12165bc|-1511089869|output/works_citing/assessment=VA|t20697.7542871553s|s181761297b|181761297|file|local|vector|works_citing_parquet||0.158||
 nli_ready_evidence_parquet_9f455265a9624a34|branch|d00ff7ece7b0008b|6d9047eee285451e|cf480e84e90c2f22|-355204051|output/nli_ready_evidence/granularity=atomic_bm/assessment=VA|t20697.7543713158s|s174739923b|174739923|file|local|vector|nli_ready_evidence_parquet||7.066||
 nli_ready_evidence_parquet|pattern|e66c299109b9156b|6d9047eee285451e||498655787||||1740210345|file|local|vector||nli_ready_evidence_parquet_ee400dcab719e43e*nli_ready_evidence_parquet_9f455265a9624a34*nli_ready_evidence_parquet_9e8c10c6676e0f4d|8.877||
@@ -3775,41 +3774,52 @@ llm_verification_keypaper_parquet|pattern|1a274c8eea357bf2|5df5e0eb092455f6||-13
 nli_training_data|pattern|23140329824172ae|49cf1721516ee469||-323110918||||681835|file|local|vector||nli_training_data_7413541f33ed383c*nli_training_data_54dee260ac48817b*nli_training_data_381a55cd529016ed|5.158||
 works_parquet_40cd56bbe272c99c|branch|496387c37be6ee28|c405382f2acbc853|0d9df735c8ba80f9|-1149037159|output/works/assessment=TCA|t20698.3402997066s|s132722471b|132722471|file|local|vector|works_parquet||43.452|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
 works_parquet_2a22cfc9bc5becbe|branch|7cd230926d2e6a97|c405382f2acbc853|1498b5e23e8f029b|451443554|output/works/assessment=VA|t20698.340349606s|s155051661b|155051661|file|local|vector|works_parquet||48.381|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
-snowball_parquet_a723a3d92bf784e0|branch|06696c7b7af57fe0|27f6b13dbf873bb8|8c3e17849192c7bc|-2050288013|output/snowball/nodes/assessment=TCA*output/snowball/edges/assessment=TCA*output/snowball/keypaper/assessment=TCA|t20705.6026329541s|s2903405734b|2903405734|file|local|vector|snowball_parquet||7577.464||
-snowball_parquet_b9d5ea225aeb7e1e|branch|2a6319d4dc73ea2f|27f6b13dbf873bb8|ba425d231bcdad24|1882804897|output/snowball/nodes/assessment=VA*output/snowball/edges/assessment=VA*output/snowball/keypaper/assessment=VA|t20705.6301631107s|s3755264246b|3755264246|file|local|vector|snowball_parquet||9956.158||
-snowball_parquet_ed9d1c219bde80ae|branch|24b95992c0d4f792|27f6b13dbf873bb8|21fb9614a90e7690|1091226375|output/snowball/nodes/assessment=GA1*output/snowball/edges/assessment=GA1*output/snowball/keypaper/assessment=GA1|t20705.7087222362s|s6567343388b|6567343388|file|local|vector|snowball_parquet||16682.96||
 ttl_path_a42799ae47ae173c|branch||a20c7f2aa30328ab|e1b0aefa88eecb2e|1145064755||t20706.3031163808s||0|file|local|vector|ttl_path||3.963|Could not fetch GitHub SHA for IAS: HTTP 404 Not Found.. downloaded length 0 != reported length 14. cannot open URL 'https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Invasive%20Alien%20Species%20Assessment/IAS_v04.ttl': HTTP status was '404 Not Found'|cannot open URL 'https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Invasive%20Alien%20Species%20Assessment/IAS_v04.ttl'
-assessment|stem|78a01edd6cf59670|ae1b74426a7e508a|823934f22ec383f9|1623788928||t20706.3046259939s|s326b|326|rds|local|list||assessment_80b2f2ad9ef886f0*assessment_865b5a7b5f6bb416*assessment_484fbdc4c5cb97a8*assessment_9541dcce1d101052|0||
 ttl_path_7a42d51e45fe5d49|branch|1238228ab0ef082b|a20c7f2aa30328ab|e1b0aefa88eecb2e|-103816399|output/LoD/IAS.ttl|t20706.3046926051s|s5546374b|5546374|file|local|vector|ttl_path||3.985||
-ttl_path|pattern|a0332c547bf29468|a20c7f2aa30328ab||-2039406361||||5546374|file|local|vector||ttl_path_329a6eb8e1c18d48*ttl_path_d99bb257beb51e41*ttl_path_357ab6d7e10545a2*ttl_path_7a42d51e45fe5d49|3.985||
 refs_parquet_97ed16464bea2dff|branch|b32b6cc704b05abf|9745f55b58fdcf7e|2cd4a9eb45fa5cb3|-832088055|output/refs/assessment=IAS|t20706.3048539803s|s15907361b|15907361|file|local|vector|refs_parquet||13.945|The `file` argument of `read_csv()` should use `I()` for literal data as of readr 2.2.0.      # Bad (for example):   read_csv('x,y\n1,2')      # Good:   read_csv(I('x,y\n1,2'))|
-refs_parquet|pattern|91e4cc6a1e02538e|9745f55b58fdcf7e||1650781270||||15907361|file|local|vector||refs_parquet_3988b288110d41af*refs_parquet_6ff7ecf13c11df47*refs_parquet_00e7e04bc4bc7e18*refs_parquet_97ed16464bea2dff|13.945||
 zotero_parquet_02410fa4d234fd42|branch|b39825e312f29457|82c6c84749ec39b5|345339a58cf30bd3|1252473413|output/zotero/assessment=IAS|t20706.3074410671s|s3327796b|3327796|file|local|vector|zotero_parquet||223.48|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
-zotero_parquet|pattern|5394735281c2c25e|82c6c84749ec39b5||-933570212||||3327796|file|local|vector||zotero_parquet_b7689dcbf2d6a705*zotero_parquet_b99edef99537d099*zotero_parquet_6f4e7cfa371e66ba*zotero_parquet_02410fa4d234fd42|223.48||
 works_parquet_131fb0e01a9dcb15|branch|cf9df1ebf32c5979|c405382f2acbc853|5dd39dc4774219d7|-354828192|output/works/assessment=IAS|t20706.3080788494s|s185277971b|185277971|file|local|vector|works_parquet||55.086|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
-snowball_parquet_b05dd4bef264dedb|branch|5676000caacb189f|27f6b13dbf873bb8|405f55265b853969|-624980421|output/snowball/nodes/assessment=IAS*output/snowball/edges/assessment=IAS*output/snowball/keypaper/assessment=IAS|t20706.4733589194s|s5156400405b|5156400405|file|local|vector|snowball_parquet||14280.322||
-snowball_parquet|pattern|1873c9125ec89d19|27f6b13dbf873bb8||-1490676469||||5156400405|file|local|vector||snowball_parquet_ed9d1c219bde80ae*snowball_parquet_b9d5ea225aeb7e1e*snowball_parquet_a723a3d92bf784e0*snowball_parquet_b05dd4bef264dedb|14280.322||
-config_file|stem|41c284bb1ad71ba8|8a509d56b3459c7e|2c530c1562a7fbd1|-615108176|input/config.yaml|t20707.3239321447s|s17995b|17995|file|local|vector|||1.885||
 llm_verification_active|stem|ea4de15912706a49|5459717fa85aa4a0|958f2396af1d04df|1167148636||t20707.3240133821s|s68b|68|rds|local|vector|||0||
 llm_verification_config|stem|1555a5ed92daddc0|4ed5cbe2ab75cbcb|958f2396af1d04df|-693781744||t20707.3240134601s|s210b|210|rds|local|vector|||0||
-nli_active|stem|3e832ab0c4c45b0d|0335ae88abd325ef|958f2396af1d04df|-418857209||t20707.324013511s|s78b|78|rds|local|vector|||0.001||
-sparql_url|stem|1d600099f49684d7|443fe57c0fb6e0d7|958f2396af1d04df|265476876||t20707.3240137118s|s59b|59|rds|local|vector|||0.001||
-workers|stem|d1268f3d5a6c6f5a|19deb56d55aa4500|958f2396af1d04df|845121955||t20707.324013787s|s49b|49|rds|local|vector|||0.001||
-nli_config|stem|d20ab635bb0ead22|3e80788a303cefbe|958f2396af1d04df|-1786223254||t20707.3240139241s|s448b|448|rds|local|vector|||0||
-claim_completion_model|stem|35032aebbf25bf34|e8c837c994a42a63|958f2396af1d04df|877393417||t20707.3240138609s|s79b|79|rds|local|vector|||0.001||
-max_length|stem|aec6f7fcb8f8e462|741ca1923dea98a5|815e7d72181dcef1|-1209718522||t20707.3240140665s|s51b|51|rds|local|vector|||0.001||
-assessments_list|stem|0e4314fba28f4887|b872f4fd4b4abdf0|958f2396af1d04df|-2022784872||t20707.3240139919s|s293b|293|rds|local|vector|||0||
-granularity|stem|e7fd1d199f01ffda|a059631addc1c994|7d0aaa94eb7ada7c|500528443||t20707.3240141776s|s62b|62|rds|local|vector|||0||
-nli_ready_evidence_keypaper_parquet_3c8eb9c65c028b08|branch|139f9a26770d936b|f6f2c218aa5e6dcb|2a2204fe5ec3be88|1372640714|output/nli_ready_evidence_keypaper/granularity=atomic_bm/assessment=VA|t20706.4516893987s|s47758b|47758|file|local|vector|nli_ready_evidence_keypaper_parquet||0.041||
 nli_pool_health|stem|bff0a55c90bdc1fe|56e4e7e122d3e953|10e77846aeee28b0|621639448||t20707.3240351582s|s88b|88|rds|local|vector|||1.806||
-nli_ready_evidence_keypaper_parquet_f234c280f326d540|branch|443319e0dcdd6b88|f6f2c218aa5e6dcb|e305d43fe264d9df|-1474489075|output/nli_ready_evidence_keypaper/granularity=atomic_bm/assessment=TCA|t20706.4516886784s|s37159b|37159|file|local|vector|nli_ready_evidence_keypaper_parquet||0.001||
-nli_claim_units_evidence_keypaper_2efcd3e27d9cf003|branch|d721860df255f239|2aeae01335262e9e|7636895133147d9b|-656456807||t20707.3240660251s|s28130b|28130|rds|local|list|nli_claim_units_evidence_keypaper||1.881||
 key_messages_parquet_97ed16464bea2dff|branch|5148707d633723a4|1bdccb85f05f2b83|ed09f453dd3c4a6d|-558382371|output/key_messages/assessment=IAS|t20707.3240686131s|s105669b|105669|file|local|vector|key_messages_parquet||2.915|The `file` argument of `read_csv()` should use `I()` for literal data as of readr 2.2.0.      # Bad (for example):   read_csv('x,y\n1,2')      # Good:   read_csv(I('x,y\n1,2'))|
 nli_ready_evidence_keypaper_parquet_af1a8bf0d0f3add2|branch|7e80bd9fff966820|f6f2c218aa5e6dcb|ab59a67b4c15fb77|26800070|output/nli_ready_evidence_keypaper/granularity=atomic_bm/assessment=IAS|t20706.4516879905s|s192681b|192681|file|local|vector|nli_ready_evidence_keypaper_parquet||0.001||
-key_messages_parquet|pattern|d6dca52e8439aa0a|1bdccb85f05f2b83||2013747017||||105669|file|local|vector||key_messages_parquet_3988b288110d41af*key_messages_parquet_6ff7ecf13c11df47*key_messages_parquet_00e7e04bc4bc7e18*key_messages_parquet_97ed16464bea2dff|2.915||
 nli_claim_units_evidence_keypaper_6a2668059aece904|branch|2499a2dd440a5816|2aeae01335262e9e|012c8f24538b1782|303832917||t20707.3241154186s|s29967b|29967|rds|local|list|nli_claim_units_evidence_keypaper||2.121||
 works_parquet_d92410c91b60b8b4|branch|e92bc0516cd85b3e|c405382f2acbc853|b71dfb84c5d67935|1420870494|output/works/assessment=GA1|t20707.3250396549s|s22709788b|22709788|file|local|vector|works_parquet||82.048|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
-works_parquet|pattern|d533fb752564334b|c405382f2acbc853||1967066260||||22709788|file|local|vector||works_parquet_d92410c91b60b8b4*works_parquet_2a22cfc9bc5becbe*works_parquet_40cd56bbe272c99c*works_parquet_131fb0e01a9dcb15|82.048||
+works_citing_parquet_e39ca8d032cf9587|branch|8b70207c30a3ebac|cea54d19c20434a4|5c9e2030fdd3480f|262347653|output/works_citing/assessment=TCA*output/works_citing_meta/assessment=TCA|t20707.3948896563s|s369077494b|369077494|file|local|vector|works_citing_parquet||5.635||
+works_citing_parquet_81e7ca0a88908696|branch|7ea7f8e3ef64488f|cea54d19c20434a4|15a65f47869ec5b5|-1944556860|output/works_citing/assessment=GA1*output/works_citing_meta/assessment=GA1|t20707.3949039026s|s672060424b|672060424|file|local|vector|works_citing_parquet||6.874||
+works_citing_parquet_9e868ae42b201f41|branch|1b283a9b33d6b2d6|cea54d19c20434a4|840728f534775be2|467807394|output/works_citing/assessment=VA*output/works_citing_meta/assessment=VA|t20707.3949062498s|s509377075b|509377075|file|local|vector|works_citing_parquet||7.019||
+works_citing_parquet_4763a5b8ce4c7b2a|branch|de5628a892499279|cea54d19c20434a4|1f593fd452f5e461|841164878|output/works_citing/assessment=IAS*output/works_citing_meta/assessment=IAS|t20707.3949241476s|s486292738b|486292738|file|local|vector|works_citing_parquet||2.587||
+works_citing_parquet|pattern|ca9d801bd4e2a4a0|cea54d19c20434a4||-1385308626||||2036807731|file|local|vector||works_citing_parquet_81e7ca0a88908696*works_citing_parquet_9e868ae42b201f41*works_citing_parquet_e39ca8d032cf9587*works_citing_parquet_4763a5b8ce4c7b2a|22.115||
+nli_ready_evidence_keypaper_parquet_5ab2ad2c3121d38a|branch|aefc110e973a0309|f6f2c218aa5e6dcb|67ddc482964dc59f|-704704737|output/nli_ready_evidence_keypaper/granularity=atomic_bm/assessment=GA1|t20706.4516866574s|s219431b|219431|file|local|vector|nli_ready_evidence_keypaper_parquet||0.039||
+nli_ready_evidence_keypaper_parquet|pattern|ef1763017fdcd37e|f6f2c218aa5e6dcb||1701020224||||219431|file|local|vector||nli_ready_evidence_keypaper_parquet_5ab2ad2c3121d38a*nli_ready_evidence_keypaper_parquet_3c8eb9c65c028b08*nli_ready_evidence_keypaper_parquet_f234c280f326d540*nli_ready_evidence_keypaper_parquet_af1a8bf0d0f3add2|0.039||
+config_file|stem|49bc7b94f78b7506|8a509d56b3459c7e|2c530c1562a7fbd1|-615108176|input/config.yaml|t20711.4989048837s|s18166b|18166|file|local|vector|||1.69||
+assessments_list|stem|8bdae096624f4c20|b872f4fd4b4abdf0|cd2b0adb38953a74|-2022784872||t20711.5022009323s|s328b|328|rds|local|vector|||0.001||
+sparql_url|stem|1d600099f49684d7|443fe57c0fb6e0d7|cd2b0adb38953a74|265476876||t20711.5022009866s|s59b|59|rds|local|vector|||0.001||
+assessment|stem|d32f6059940cff0e|ae1b74426a7e508a|bc5d1d7579dbf702|1623788928||t20711.5022012507s|s366b|366|rds|local|list||assessment_80b2f2ad9ef886f0*assessment_865b5a7b5f6bb416*assessment_484fbdc4c5cb97a8*assessment_9541dcce1d101052*assessment_140804cf73e4c74b|0||
+ttl_path_369a52355f16a9ee|branch|52f32df332734247|a20c7f2aa30328ab|e1b0aefa88eecb2e|-1244688775|output/LoD/BBA.ttl|t20711.5022293947s|s2143957b|2143957|file|local|vector|ttl_path||1.045||
+ttl_path|pattern|d47f1e76a61011a2|a20c7f2aa30328ab||-2039406361||||2143957|file|local|vector||ttl_path_329a6eb8e1c18d48*ttl_path_d99bb257beb51e41*ttl_path_357ab6d7e10545a2*ttl_path_7a42d51e45fe5d49*ttl_path_369a52355f16a9ee|1.045||
+refs_parquet_84abdec31157a57b|branch|02e04e20a6eb79af|9745f55b58fdcf7e|5834a5267a6e758e|119173766|output/refs/assessment=BBA|t20711.5023344267s|s7908818b|7908818|file|local|vector|refs_parquet||9.073|The `file` argument of `read_csv()` should use `I()` for literal data as of readr 2.2.0.      # Bad (for example):   read_csv('x,y\n1,2')      # Good:   read_csv(I('x,y\n1,2'))|
+refs_parquet|pattern|1a13bfea3a3c947f|9745f55b58fdcf7e||1650781270||||7908818|file|local|vector||refs_parquet_3988b288110d41af*refs_parquet_6ff7ecf13c11df47*refs_parquet_00e7e04bc4bc7e18*refs_parquet_97ed16464bea2dff*refs_parquet_84abdec31157a57b|9.073||
+zotero_parquet_acd757c54bd03e4f|branch|dbded5bc630a9052|82c6c84749ec39b5|7ffe482984c3aa96|893761672|output/zotero/assessment=BBA|t20711.5033340102s|s987853b|987853|file|local|vector|zotero_parquet||86.337|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
+zotero_parquet|pattern|c7b9caff738d1a71|82c6c84749ec39b5||-933570212||||987853|file|local|vector||zotero_parquet_b7689dcbf2d6a705*zotero_parquet_b99edef99537d099*zotero_parquet_6f4e7cfa371e66ba*zotero_parquet_02410fa4d234fd42*zotero_parquet_acd757c54bd03e4f|86.337||
+works_parquet_0f01ae22595df0d9|branch|70aeaaec1bd96228|c405382f2acbc853|193dcd229bb9b517|256892468|output/works/assessment=BBA|t20711.5035480221s|s104918313b|104918313|file|local|vector|works_parquet||18.471|Invalid metadata$r. Invalid metadata$r. Invalid metadata$r|
+works_parquet|pattern|0409bf3d5ddfb33a|c405382f2acbc853||1967066260||||104918313|file|local|vector||works_parquet_d92410c91b60b8b4*works_parquet_2a22cfc9bc5becbe*works_parquet_40cd56bbe272c99c*works_parquet_131fb0e01a9dcb15*works_parquet_0f01ae22595df0d9|18.471||
+key_messages_parquet_84abdec31157a57b|branch|49c1403e1b2de95c|1bdccb85f05f2b83|f3d7477763b21b65|2082897346|output/key_messages/assessment=BBA|t20711.5047469032s|s104512b|104512|file|local|vector|key_messages_parquet||3.415|The `file` argument of `read_csv()` should use `I()` for literal data as of readr 2.2.0.      # Bad (for example):   read_csv('x,y\n1,2')      # Good:   read_csv(I('x,y\n1,2'))|
+key_messages_parquet|pattern|6aa1d94b467b0511|1bdccb85f05f2b83||2013747017||||104512|file|local|vector||key_messages_parquet_3988b288110d41af*key_messages_parquet_6ff7ecf13c11df47*key_messages_parquet_00e7e04bc4bc7e18*key_messages_parquet_97ed16464bea2dff*key_messages_parquet_84abdec31157a57b|3.415||
+workers|stem|d1268f3d5a6c6f5a|19deb56d55aa4500|cd2b0adb38953a74|845121955||t20711.5061379562s|s49b|49|rds|local|vector|||0.001||
+nli_active|stem|3e832ab0c4c45b0d|0335ae88abd325ef|cd2b0adb38953a74|-418857209||t20711.5061379562s|s78b|78|rds|local|vector|||0.001||
+nli_config|stem|d20ab635bb0ead22|3e80788a303cefbe|cd2b0adb38953a74|-1786223254||t20711.5061379563s|s448b|448|rds|local|vector|||0.001||
+claim_completion_model|stem|35032aebbf25bf34|e8c837c994a42a63|cd2b0adb38953a74|877393417||t20711.5061381897s|s79b|79|rds|local|vector|||0.001||
+max_length|stem|aec6f7fcb8f8e462|741ca1923dea98a5|77ab0c51f14a79c0|-1209718522||t20711.5061385296s|s51b|51|rds|local|vector|||0||
+granularity|stem|e7fd1d199f01ffda|a059631addc1c994|c9b9cd620c47fc24|500528443||t20711.5061384565s|s62b|62|rds|local|vector|||0.001||
+nli_ready_evidence_keypaper_parquet_3c8eb9c65c028b08|branch|d23efde2c0112d16|f6f2c218aa5e6dcb|e6805afdd77f26d9|1372640714|output/nli_ready_evidence_keypaper/granularity=atomic_bm/assessment=VA|t20711.5062062171s|s84781292b|84781292|file|local|vector|nli_ready_evidence_keypaper_parquet||3.194||
+nli_ready_evidence_keypaper_parquet_f234c280f326d540|branch|da12fd475a0b1f38|f6f2c218aa5e6dcb|c81ade620e9deb68|-1474489075|output/nli_ready_evidence_keypaper/granularity=atomic_bm/assessment=TCA|t20711.5062216176s|s15699012b|15699012|file|local|vector|nli_ready_evidence_keypaper_parquet||1.212||
+nli_claim_units_evidence_keypaper_2efcd3e27d9cf003|branch|014c0f16c95835e2|2aeae01335262e9e|eee04bf4492c9189|-656456807||t20711.5062251814s|s29219b|29219|rds|local|list|nli_claim_units_evidence_keypaper||0.28||
+snowball_parquet_a723a3d92bf784e0|branch|ffe5b7a4545ef9ab|27f6b13dbf873bb8|f52286acac5df24c|-2050288013|output/snowball/nodes/assessment=TCA*output/snowball/edges/assessment=TCA*output/snowball/keypaper/assessment=TCA|t20711.6626965911s|s2679020497b|2679020497|file|local|vector|snowball_parquet||9698.798||
+snowball_parquet_b9d5ea225aeb7e1e|branch|cad2f4d4a8ee02ee|27f6b13dbf873bb8|57be8a22fa4e9735|1882804897|output/snowball/nodes/assessment=VA*output/snowball/edges/assessment=VA*output/snowball/keypaper/assessment=VA|t20711.8355250624s|s3373504729b|3373504729|file|local|vector|snowball_parquet||11847.165||
+snowball_parquet_b05dd4bef264dedb|branch|c969e58bfe0fadd4|27f6b13dbf873bb8|51a1edef073befae|-624980421|output/snowball/nodes/assessment=IAS*output/snowball/edges/assessment=IAS*output/snowball/keypaper/assessment=IAS|t20711.8692671339s|s3366997894b|3366997894|file|local|vector|snowball_parquet||14762.466||
+snowball_parquet_610ab4195319f57c|branch|a6da9bd9656c73bf|27f6b13dbf873bb8|a3dc6fc67ffa4e49|117802019|output/snowball/nodes/assessment=BBA*output/snowball/edges/assessment=BBA*output/snowball/keypaper/assessment=BBA|t20711.8959624664s|s1780994022b|1780994022|file|local|vector|snowball_parquet||5220.192||
 nli_scores_path_cols|object|d760333d84122e98
 read_consolidated_group|function|99a3d49de162b3b9
 evidence_tokens_match|function|00d24594c229b607
@@ -3820,7 +3830,7 @@ nli_label_colors|object|6d33dc38af0e4150
 nli_model_suffix|function|fd260407234354bb
 segment_bm_confidence_pattern|object|1cfd3b47683d2252
 zotero_item_to_row|function|4d66e706ea340900
-build_snowball_parquet|function|cc1c7fbf8b88437b
+build_snowball_parquet|function|2098ef41789e5d46
 works_citing_group|function|e850845de9548f5d
 works_citing_groups|function|fc1d601734d6217a
 works_citing_map_paths|function|7069948fdc678d4d
@@ -3852,7 +3862,7 @@ claim_completion_connective_stopwords|object|4e47382da489b0c1
 nli_config_for_granularity|function|623e07d65a3951a5
 nli_health|function|3785a2c2aa7991fd
 nli_scores_qa_datatable|function|54248e0c817af46e
-rl|object|d657ab87d5b33170
+rl|object|42ff50ac00043290
 nli_cfg|object|a4d9906cd2217952
 bm_highlight_regex_escape|function|7c4020ec73b4ecde
 build_fulltext|function|56af0cddf9f2a298
@@ -3943,8 +3953,8 @@ with_fuseki_session|function|2a9ca22ebcbf09d4
 check_nli_pool_health|function|816a45981e4e54ac
 score_one_claim|function|75b68c92352b6766
 extract_claim_evidence_tokens_atomic|function|452dc3b132742e20
-build_nli_ready_evidence_keypaper_parquet|function|899802b0162c1745
-build_nli_ready_evidence_parquet|function|ed93114c825c1629
+build_nli_ready_evidence_keypaper_parquet|function|4a400765a5dd638d
+build_nli_ready_evidence_parquet|function|5ad2e0f2473455ce
 bm_atomic_raw_segments_aligned|function|b28968dbf5545f19
 build_bm_field_html|function|4c03b4912315ffa5
 build_refs_parquet|function|e3ed9cc45e38c3db
@@ -3952,8 +3962,5 @@ build_sections_parquet|function|9a500a604754b06c
 build_key_messages_parquet|function|1a02b0e88d088f28
 build_llm_candidate_scope_parquet|function|b486a771b2b0c718
 build_bm_split_highlighted|function|8b02a8897a8075a8
-works_citing_parquet_e39ca8d032cf9587|branch|8b70207c30a3ebac|cea54d19c20434a4|5c9e2030fdd3480f|262347653|output/works_citing/assessment=TCA*output/works_citing_meta/assessment=TCA|t20707.3948896563s|s369077494b|369077494|file|local|vector|works_citing_parquet||5.635||
-works_citing_parquet_81e7ca0a88908696|branch|7ea7f8e3ef64488f|cea54d19c20434a4|15a65f47869ec5b5|-1944556860|output/works_citing/assessment=GA1*output/works_citing_meta/assessment=GA1|t20707.3949039026s|s672060424b|672060424|file|local|vector|works_citing_parquet||6.874||
-works_citing_parquet_9e868ae42b201f41|branch|1b283a9b33d6b2d6|cea54d19c20434a4|840728f534775be2|467807394|output/works_citing/assessment=VA*output/works_citing_meta/assessment=VA|t20707.3949062498s|s509377075b|509377075|file|local|vector|works_citing_parquet||7.019||
-works_citing_parquet_4763a5b8ce4c7b2a|branch|de5628a892499279|cea54d19c20434a4|1f593fd452f5e461|841164878|output/works_citing/assessment=IAS*output/works_citing_meta/assessment=IAS|t20707.3949241476s|s486292738b|486292738|file|local|vector|works_citing_parquet||2.587||
-works_citing_parquet|pattern|ca9d801bd4e2a4a0|cea54d19c20434a4||-1385308626||||2036807731|file|local|vector||works_citing_parquet_81e7ca0a88908696*works_citing_parquet_9e868ae42b201f41*works_citing_parquet_e39ca8d032cf9587*works_citing_parquet_4763a5b8ce4c7b2a|22.115||
+snowball_parquet_ed9d1c219bde80ae|branch|f2500724a2e68d84|27f6b13dbf873bb8|2f782c693efbaf21|1091226375|output/snowball/nodes/assessment=GA1*output/snowball/edges/assessment=GA1*output/snowball/keypaper/assessment=GA1|t20713.8048129642s|s5818106827b|5818106827|file|local|vector|snowball_parquet||22433.165||
+snowball_parquet|pattern|dd4cddda822bf6cc|27f6b13dbf873bb8||-1490676469||||5818106827|file|local|vector||snowball_parquet_ed9d1c219bde80ae*snowball_parquet_b9d5ea225aeb7e1e*snowball_parquet_a723a3d92bf784e0*snowball_parquet_b05dd4bef264dedb*snowball_parquet_610ab4195319f57c|22433.165||

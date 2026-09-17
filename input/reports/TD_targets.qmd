@@ -75,8 +75,6 @@ config_file (file)
     │               ├── ttl_path (file)                    ← Target 1
     │               ├── refs_sparql (file) ──────────────── queries/refs.sparql
     │               ├── refs_parquet (file)                ← Target 2a
-    │               ├── sections_sparql (file) ──────────── queries/sections.sparql
-    │               ├── sections_parquet (file)            ← Target 2b
     │               ├── key_messages_sparql (file) ──────── queries/key_messages.sparql
     │               ├── key_messages_parquet (file)        ← Target 2b2
     │               ├── zotero_parquet (file)              ← Target 2c
@@ -216,11 +214,26 @@ arrow::open_dataset("output/refs") |>
 | `zotero_key` | chr | Raw Zotero item key |
 | `zotero` | chr | Zotero URL (`owl:sameAs`) |
 
-## Target 2b: `sections_parquet` — DB2
+## Target 2b: `sections_parquet` — DB2 {.unnumbered}
+
+::: {.callout-warning}
+## Disabled 2026-09-15 — no longer part of the pipeline
+
+`sections_parquet` and `sections_sparql` are commented out in `_targets.R`, and
+`output/sections/` has been deleted. Nothing consumed the dataset: no target
+took `sections_parquet` as an argument and no `.qmd` read it — its only ever
+consumer was `R/resolve_citations.R`, itself long orphaned — so it cost a SPARQL
+extraction and Fuseki round trip per assessment on every rebuild for output
+nothing read.
+
+`R/write_sections_parquet.R` and `queries/sections.sparql` both still exist.
+Re-enabling is uncommenting the block in `_targets.R`. The description below is
+kept as a record of what it produced.
+:::
 
 **Source:** `R/write_sections_parquet.R` → `build_sections_parquet(sparql_url, assessment, ttl_path, sections_sparql, "output/sections")`
 
-Builds the sections dataset for one assessment branch. Each SubChapter source row carries the SubMessage that referenced it (`sm` column). Written to `output/sections/assessment=<id>/`.
+Built the sections dataset for one assessment branch. Each SubChapter source row carried the SubMessage that referenced it (`sm` column). Written to `output/sections/assessment=<id>/`.
 
 ### Reading DB2
 
@@ -700,15 +713,15 @@ added, so Phase 2 now reviews both labels' certain pairs — see
 
 ## SPARQL Queries
 
-All three SPARQL queries live in `queries/*.sparql` and are tracked as `format = "file"` targets. Changing a query file invalidates only the downstream parquet target.
+The SPARQL queries live in `queries/*.sparql` and are tracked as `format = "file"` targets. Changing a query file invalidates only the downstream parquet target.
 
 | File | Target | Traversal |
 |---|---|---|
 | `queries/refs.sparql` | `refs_parquet` | `KM → BM → SM → SubChapter ← Reference(doi)` |
-| `queries/sections.sparql` | `sections_parquet` | `KM → BM → SM → SubChapter(content) → Chapter` (projects `sm_id`) |
+| `queries/sections.sparql` | *(none — `sections_parquet` disabled)* | `KM → BM → SM → SubChapter(content) → Chapter` (projects `sm_id`) |
 | `queries/key_messages.sparql` | `key_messages_parquet` | `KM → BM → SM` (text + confidence flags) |
 
-All three queries wrap their pattern in `GRAPH <%GRAPH_IRI%> { ... }`. The placeholder
+All queries wrap their pattern in `GRAPH <%GRAPH_IRI%> { ... }`. The placeholder
 is substituted at query time by `read_sparql_query()` using `assessment_graph_iri()`
 from `R/branch_helpers.R` — currently `http://ontology.ipbes.net/report/<id>`.
 Switching backends is a one-line change in `input/config.yaml` (`sparql_url:`).

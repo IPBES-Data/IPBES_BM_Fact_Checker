@@ -11,7 +11,6 @@ produced by the live pipeline, and which are dead leftovers safe to delete.
 |---|---|---|
 | `LoD/` | `ttl_path` (`R/download_ttls.R`) | Downloaded IPBES LOD Turtle files, one per assessment |
 | `refs/` | `refs_parquet` (`R/write_refs_parquet.R`) | DB1: references with Zotero group/key citations, partitioned by assessment |
-| `sections/` | `sections_parquet` (`R/write_sections_parquet.R`) | DB2: section content, partitioned by assessment |
 | `key_messages/` | `key_messages_parquet` (`R/write_key_messages_parquet.R`) | DB3: KM/BM/SM descriptive text, partitioned by assessment |
 | `zotero/` | `zotero_parquet` (`R/download_zotero.R`) | Zotero group items, partitioned by assessment/group id/page |
 | `works/` | `works_parquet` (`R/download_works.R`) | OpenAlex metadata for GA1-reference works, partitioned by assessment/km/bm |
@@ -55,6 +54,7 @@ split (figures listed below).
 
 Already removed (documented here so it doesn't get "rediscovered" as a mystery later):
 - `nli_scores/` — deleted 2026-08-12. Was the per-sentence scoring chain's output (`nli_scores_by_claim`, now commented out in `_targets.R` since it's not consumed by the report — see that target's comment for the full story).
+- `sections/` — deleted 2026-09-15, and `sections_parquet`/`sections_sparql` commented out in `_targets.R` at the same time. DB2 (section content, partitioned by assessment). Nothing consumed it: no target took `sections_parquet` as an argument and no qmd read the dataset — its only ever consumer was the long-orphaned `R/resolve_citations.R` — so it cost a SPARQL extraction and Fuseki round trip per assessment on every rebuild for output nothing read. `R/write_sections_parquet.R` and `queries/sections.sparql` still exist; uncomment the block in `_targets.R` to bring it back.
 - `overlap_key_paper_files/` (at the `output/` root, not inside `output/tables/`) — deleted 2026-08-12. Stale duplicate from before the code settled on writing to `output/tables/`; the real one lives at `tables/overlap_key_paper_files/`.
 - `prompts/` (653M) — deleted 2026-08-17, along with the truth/citing-document LLM-comparison chain it belonged to (`R/build_prompts_truth_parquet.R`, `R/build_prompts_citing_parquet.R`, `R/build_alignement_scores_parquet.R`, `R/alignement_schema.R`, `R/build_alignement_parquet.R`, all removed). That chain was the once-"parked" planned Phase 2 of the NLI → LLM pipeline; it was replaced outright by `llm_verification/` (below) rather than un-parked — see [TD_LLM_approach.qmd](../TD_LLM_approach.qmd) for the design record and [TD_NLI_LLM_two_phase.qmd](../TD_NLI_LLM_two_phase.qmd) for what actually shipped.
 
@@ -94,9 +94,11 @@ Reference, one row per `(bm, sm, reference)` triple.
 | `citation` | string | Synthesized `"[<zotero_key>]"` citation-key string, or `NA` when there's no Zotero key |
 | `assessment` | string | Assessment ID this row belongs to |
 
-### `sections/` (DB2)
+### `sections/` (DB2) — DISABLED, no longer produced
 
-Built by `extract_sections_from_endpoint()` from
+Schema kept for reference only: the target was disabled and this directory
+deleted on 2026-09-15 (see "Already removed" above). Was built by
+`extract_sections_from_endpoint()` from
 [queries/sections.sparql](../queries/sections.sparql): KM → BM → SM →
 SubChapter(content) → Chapter(section).
 

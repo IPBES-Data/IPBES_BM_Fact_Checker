@@ -44,18 +44,11 @@ build_nli_ready_evidence_keypaper_parquet <- function(
   assessment_id <- assessment$id
   output_path <- file.path(output_root, paste0("assessment=", assessment_id))
 
-  # Same resumability convention as build_nli_ready_evidence_parquet(): skip
-  # entirely if this exact (assessment, granularity) combination already has
-  # output, so switching nli.active back and forth doesn't force atomic_bm's
-  # real LLM completion calls to be redone for no reason.
-  if (dir.exists(output_path) &&
-    length(list.files(output_path, pattern = "\\.parquet$", recursive = TRUE))) {
-    message(sprintf(
-      "[NLI_READY_EV_KP %s] output already exists at %s (granularity=%s) -- skipping",
-      assessment_id, output_path, granularity
-    ))
-    return(output_path)
-  }
+  # NOTE: no "output already exists -- skip" guard here either, and for the
+  # same reason as build_nli_ready_evidence_parquet() -- see the longer note
+  # at that function's top. In short: it silently swallowed real upstream
+  # changes, and the LLM cost it protected is already covered by
+  # complete_bm_fragments()' per-fragment cache.
 
   keypaper_path <- snowball_path[grepl("keypaper", snowball_path)]
 
