@@ -121,8 +121,8 @@ here scores exactly one `(claim, work)` pair per call, so
 `llm_verification_output_type()` is a flat object with no nested field, and
 `normalise_llm_verification()` has no list-column to unwrap. Partitioning
 combines both projects' conventions: `llm_config=<name>` (the sibling's
-per-config separation, so switching `active` or comparing two named configs
-never overwrites either one's scored rows) nested with
+per-config separation, so switching the selected config or comparing two named
+configs never overwrites either one's scored rows) nested with
 `assessment/km/bm` (this project's own convention, matching
 `nli_scores_evidence`).
 
@@ -263,14 +263,14 @@ concrete to agree with, refine, or override, rather than scoring cold.
 
 ### Model choice
 
-`input/config.yaml`'s `llm_verification:` block follows the same
-`active` + named `configs` structure as `nli:` above — switch tiers by
-changing `active` to a different key, without touching any other config:
+`input/config.yaml`'s `llm_verification:` block is a **library** of named
+`configs`, the same shape as `nli:` above. It selects nothing itself: which
+tier a project uses comes from its own purpose block's `llm:` field, so switch
+tiers by changing that one line — `fact_checking.llm` or `training.llm` — without
+touching any config:
 
 ```yaml
 llm_verification:
-  active: openrouter_cheap
-
   configs:
     openrouter_cheap:
       model: "openai/gpt-4o-mini"

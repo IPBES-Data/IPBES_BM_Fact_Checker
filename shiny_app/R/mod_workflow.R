@@ -1,10 +1,11 @@
-# Clickable workflow_nli.mmd navigation. render_mmd() (R/render_diagrams.R)
+# Clickable workflow-diagram navigation (one .mmd per targets project:
+# input/mmd/workflow_{main,factcheck,training,reporting}.mmd). render_mmd() (R/render_diagrams.R)
 # is a headless mermaid-cli static render with no mermaid.js runtime
 # attached, so `click <id> call <fn>(...)` JS-callback directives silently
 # do nothing (verified directly against a scratchpad test render). `click
 # <id> href "#!<token>" "<tooltip>"` DOES survive into the SVG as a real
 # <a xlink:href="#!<token>"> wrapper -- confirmed the same way -- so that's
-# the directive style input/mmd/workflow_nli.mmd uses. The SVG is embedded
+# the directive style those .mmd files use. The SVG is embedded
 # inline (not <img src=...>) so its <a> elements are reachable by page JS;
 # a small click-delegation script intercepts them, prevents the real
 # navigation (which would reload the whole Shiny session), and forwards the
@@ -40,8 +41,11 @@ mod_workflow_server <- function(id, manifest, nav_state, repo_root) {
       # One section per project diagram. All render INSIDE svg_container, so the
       # click-interception JS above (bound to the container, not to a single svg)
       # keeps working unchanged -- and workflow_node_metadata still covers every
-      # clickable id, checked when the diagram was split: 25 in workflow_main,
-      # 9 in workflow_reporting, none lost.
+      # clickable id, re-checked after the four-way split: 38 clickable ids
+      # across main (11), factcheck (14), training (13) and reporting (9),
+      # 38 metadata rows, none missing and none orphaned. Ids are shared where
+      # a consumer diagram shows a node the collection project produces, so the
+      # counts sum to more than the number of distinct rows.
       svgs <- manifest$workflow_svgs
       shiny::req(length(svgs) > 0)
       shiny::tagList(lapply(svgs, function(f) {

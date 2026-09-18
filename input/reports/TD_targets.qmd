@@ -35,11 +35,30 @@ Fuseki startup and shutdown are handled inside the parquet builders rather than 
 
 ## Running the Pipeline
 
+The work is split across **four** `targets` projects, declared in
+`_targets.yaml`. Each has its own script and its own store, so rendering a
+report cannot reach a target that spends GPU time or API credit — a guarantee
+that used to rest on remembering `shortcut = TRUE`.
+
+| Project | Script / store | Holds | Credentials |
+|---|---|---|---|
+| `main` | `_targets.R` / `_targets/` | collection: LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
+| `factcheck` | `_targets_factcheck.R` / `_targets_factcheck/` | citing works → NLI (Phase 1) → LLM verification (Phase 2) | `API_openrouter` |
+| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → fine-tune | `API_openrouter` |
+| `reporting` | `_targets_reporting.R` / `_targets_reporting/` | everything that renders | **none** |
+
 ```r
-# Run all outdated targets
+# The default project is `main` (collection)
 targets::tar_make()
 
-# Visualise the dependency graph
+# Pick another project for the session...
+Sys.setenv(TAR_PROJECT = "factcheck")
+targets::tar_make()
+
+# ...or address one directly
+targets::tar_make(script = "_targets_reporting.R", store = "_targets_reporting")
+
+# Visualise the dependency graph of the current project
 targets::tar_visnetwork()
 
 # Check which targets are outdated
@@ -49,6 +68,18 @@ targets::tar_outdated()
 targets::tar_load(refs_parquet)
 ```
 
+`main` deliberately keeps the **original** `_targets/` store. A fresh store
+would make every target outdated by definition, and `download_works()`
+`unlink()`s its output before refetching while `build_snowball_parquet()` has no
+existence check at all — re-running them would cost days of OpenAlex time *and*
+produce a different corpus from the one every existing score was computed
+against. Targets were therefore *deleted from* `_targets.R` as they moved out.
+
+Each consumer declares the upstream outputs it reads as `format = "file"`
+targets **keeping the producing project's target names**, so the moved targets
+work verbatim and a genuine upstream change still invalidates downstream through
+content hashing. See `TODO_PIPELINE_SPLIT.md` for the full design.
+
 ## Pipeline Diagrams
 
 ### Rendered Workflow (NLI approach)
@@ -56,9 +87,17 @@ targets::tar_load(refs_parquet)
 Hand-authored, and split per project along the same boundaries as the pipeline
 diagrams below.
 
-#### `main` — collection and scoring
+#### `main` — collection
 
 ![Workflow: main](output/figures/workflow_main.png)
+
+#### `factcheck` — citing works → NLI → LLM verification
+
+![Workflow: factcheck](output/figures/workflow_factcheck.png)
+
+#### `training` — key papers → NLI → LLM → training set → fine-tune
+
+![Workflow: training](output/figures/workflow_training.png)
 
 #### `reporting`
 
@@ -72,9 +111,17 @@ no longer a single DAG to draw, so each project renders its own:
 `build_pipeline_mmd()` depicts whatever graph it is run inside. These can be
 combined into one overview later.
 
-#### `main` — collection and scoring (`_targets.R`)
+#### `main` — collection (`_targets.R`)
 
 ![Pipeline: main](output/figures/pipeline_main.png)
+
+#### `factcheck` (`_targets_factcheck.R`)
+
+![Pipeline: factcheck](output/figures/pipeline_factcheck.png)
+
+#### `training` (`_targets_training.R`)
+
+![Pipeline: training](output/figures/pipeline_training.png)
 
 #### `reporting` (`_targets_reporting.R`)
 
@@ -82,10 +129,17 @@ combined into one overview later.
 
 ## Pipeline DAG
 
+This is the **logical** dependency chain end to end, as it was before the
+split and as it still is in substance — it now spans four projects rather than
+one, with each consumer re-declaring the upstream outputs it reads as
+`format = "file"` inputs under the producing project's own target names. The
+per-project pictures above show where the cuts fall.
+
 ```
 config_file (file)
     ├── sparql_url                              ← SPARQL backend string
-    ├── nli_active                              ← active NLI profile name
+    ├── purpose                                 ← this project's block (fact_checking: / training:)
+    ├── nli_active                              ← selected NLI profile name
     ├── nli_config                              ← resolved NLI profile (host, model, etc.)
     ├── assessments_list
     │       └── assessment (list, branched)
@@ -150,9 +204,9 @@ assessments:
   - id: IAS
     ttl_url: https://...
 
+# `nli:` and `llm_verification:` are LIBRARIES of named definitions. They
+# select nothing themselves -- see the purpose blocks below.
 nli:
-  active: bge_m3_zeroshot_naive_bm   # which entry under configs: is active
-
   configs:
     bge_m3_zeroshot_naive_bm:
       scheme: https
@@ -166,7 +220,45 @@ nli:
       uncertain_threshold: 0.60
       nei_threshold: 0.90
       granularity: naive_bm   # complete_bm / atomic_bm also supported
+
+# Purpose blocks: scope + selection, one per consuming project.
+fact_checking:
+  assessments: [GA1]
+  nli: bge_m3_zeroshot_atomic_bm
+  llm: openrouter_cheap
+  claim_completion: haiku_completion
+
+training:
+  assessments: [GA1, VA, TCA, IAS, BBA]
+  nli: bge_m3_zeroshot_atomic_bm
+  llm: openrouter_cheap
+  claim_completion: haiku_completion
+  finetune:
+    enabled: true
+    downsample_seed: 13
 ```
+
+There is no global `active:` any more. It was a single answer to a question each
+project answers for itself: fact checking is scoped to one assessment because it
+is the expensive arm, training pools all five key-paper sets, and the two need
+not agree on a model. While there was one DAG the conflation was invisible; with
+four projects it is wrong.
+
+Selections are resolved and **validated** by `purpose_config()`
+([R/branch_helpers.R](R/branch_helpers.R)) — naming a config that is not in the
+corresponding library is a hard error, because it would otherwise read as
+"nothing has been scored yet" and re-dispatch a corpus at real GPU cost.
+
+Scope lives in the purpose block rather than as per-assessment flags inside
+`assessments:`. Flags there would change `assessments_list`'s value and so
+invalidate `assessment`, `ttl_path`, `works_parquet`, `snowball_parquet` and
+everything downstream; `purpose_assessments_list()` preserves the exact element
+shape `assessments_list` has always produced, so a purpose listing every
+assessment yields a byte-identical value.
+
+`train:`/`downsample_seed:` also moved out of the serving configs into
+`training.finetune`, where they belong — how a model is *served* and whether the
+training project *trains* one are different questions.
 
 Config is split into fine-grained targets — each reads only its own section from
 `config_file` directly (no intermediate `config` target). Changing one section
@@ -177,10 +269,15 @@ cascades.
 |---|---|---|
 | `sparql_url` | `sparql_url` | All SPARQL build targets |
 | `assessments` | `assessments_list` → `assessment` | Assessment branches and their outputs |
-| `nli.active` | `nli_active` → `nli_config` | `nli_scores_parquet` only |
-| `nli.configs.<active>.*` | `nli_config` | `nli_scores_parquet` only |
-| `llm_verification.active` | `llm_verification_active` → `llm_verification_config` | `llm_verification_parquet` only |
-| `llm_verification.configs.<active>.*` | `llm_verification_config` | `llm_verification_parquet` only |
+| `fact_checking.*` / `training.*` | `purpose` (per project) → `nli_active`, `llm_verification_active`, `claim_completion_model`, `assessments_list` | that project's chain only |
+| `nli.configs.<selected>.*` | `nli_config` | the NLI scoring chain of whichever project selected it |
+| `llm_verification.configs.<selected>.*` | `llm_verification_config` | that project's LLM verification target only |
+
+Note `config_file` is a `format = "file"` target over the **whole** YAML, so any
+edit to it — including swapping a pod hostname — marks it outdated and
+`tar_outdated()` projects that pessimistically down the chain. It clears itself
+as soon as the cheap config targets re-run and produce identical values; nothing
+expensive actually rebuilds.
 
 ## Target 0: `assessment` — Assessment Specs
 
@@ -513,10 +610,11 @@ still writes one `nli_route=` subdirectory per distinct outcome actually
 present, never a merged string. `llm_config`/`assessment` form the
 fixed prefix fully deleted and rewritten each call.
 
-Configured via `input/config.yaml`'s `llm_verification:` block — `active` +
+Configured via `input/config.yaml`'s `llm_verification:` block — a library of
 named `configs` (`model`, `temperature`, `max_tokens`, `max_active`,
-`max_retries`, `nli_labels`, `nli_certainty` per config),
-mirroring `nli:`'s structure exactly. Three configs ship by default
+`max_retries`, `nli_labels`, `nli_certainty` per config), mirroring `nli:`'s
+structure exactly. Which one a project uses comes from its purpose block's
+`llm:` field, not from an `active:` key. Three configs ship by default
 (`openrouter_cheap`/`openrouter_midtier`/`openrouter_toptier_gpt5` — a
 fourth, `openrouter_cheap_sm`, was removed once `subset` itself was retired,
 since it differed from `openrouter_cheap` only by that setting), the model

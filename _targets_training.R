@@ -88,6 +88,18 @@ list(
   # is run inside, so each project generates its own picture rather than one
   # file that silently depicts whichever project last owned the target -- see
   # the same comment in _targets_reporting.R for how that actually went wrong.
+  # Hand-authored conceptual workflow for THIS project (one per targets
+  # project; see input/mmd/workflow_main.mmd's own header for the set).
+  tar_target(
+    mmd_workflow_training,
+    "input/mmd/workflow_training.mmd",
+    format = "file"
+  ),
+  tar_target(
+    diagram_workflow_training,
+    render_mmd(mmd_workflow_training),
+    format = "file"
+  ),
   tar_target(r_files, list.files("R", full.names = TRUE), format = "file"),
   tar_target(
     pipeline_mmd,

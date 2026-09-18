@@ -70,6 +70,18 @@ list.files("./R", full.names = TRUE) |> lapply(source)
 list(
   # DAG diagram for THIS project. build_pipeline_mmd() renders whatever DAG it
   # is run inside, so each project generates its own picture.
+  # Hand-authored conceptual workflow for THIS project (one per targets
+  # project; see input/mmd/workflow_main.mmd's own header for the set).
+  tar_target(
+    mmd_workflow_factcheck,
+    "input/mmd/workflow_factcheck.mmd",
+    format = "file"
+  ),
+  tar_target(
+    diagram_workflow_factcheck,
+    render_mmd(mmd_workflow_factcheck),
+    format = "file"
+  ),
   tar_target(r_files, list.files("R", full.names = TRUE), format = "file"),
   tar_target(
     pipeline_mmd,

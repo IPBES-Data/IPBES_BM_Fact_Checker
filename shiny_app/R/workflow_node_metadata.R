@@ -1,6 +1,10 @@
-# One row per clickable node in input/mmd/workflow_nli.mmd. Maintained by
-# hand alongside that .mmd file's own `click <id> href "#!..."` lines (see
-# that file's own comment block for the encoding). `kind` drives the modal
+# One row per clickable node across the FOUR hand-authored workflow diagrams
+# (input/mmd/workflow_{main,factcheck,training,reporting}.mmd), one per targets
+# project. Maintained by hand alongside those files' own
+# `click <id> href "#!..."` lines (see workflow_main.mmd's comment block for
+# the encoding). Ids are shared across diagrams on purpose: a node produced by
+# the collection project keeps its id where a consumer diagram shows it, so a
+# click resolves to the same row whichever diagram it came from. `kind` drives the modal
 # shown on click: "database" nodes get a live schema/row-count/download
 # panel (dataset_root resolved via arrow::open_dataset()); "action" nodes
 # get a description + links to their implementing R source; "doc" nodes
@@ -27,6 +31,7 @@ workflow_node_metadata <- tibble::tribble(
   "llm_scores_db",         "database", "Phase 2 LLM verification of NLI-flagged (REFUTES/SUPPORTS, certain) pairs.",  "output/llm_verification/scores",
   "llm_scores_kp_db",      "database", "Phase 2 LLM verification of every key/seed paper (full coverage, no routing).", "output/llm_verification/scores_keypaper",
   "training_db",           "database", "Fine-tuning training data export: positives / negatives / REFUTES pairs.",    "output/nli_training",
+  "model_db",              "database", "Fine-tuned model checkpoints + run_results.json from the local training run.", "output/nli_training_finetuned",
 
   "build_refs",            "action",   "SPARQL extraction of the reference hierarchy (KM -> BM -> SM -> SubChapter <- Reference) from the IPBES LOD.", NA_character_,
   "build_key_messages",    "action",   "SPARQL extraction of Key/Background Message descriptive text.",              NA_character_,
@@ -40,6 +45,9 @@ workflow_node_metadata <- tibble::tribble(
   "llm_verify",             "action",   "Phase 2 LLM review of NLI-flagged pairs, with a verbatim-quote check.",       NA_character_,
   "llm_verify_keypaper",    "action",   "Phase 2 LLM review of every key/seed paper, irrespective of NLI label.",     NA_character_,
   "training_extract",       "action",   "Extracts labelled (claim, work) pairs for NLI fine-tuning from Phase 2 output.", NA_character_,
+  "nli_consolidate",        "action",   "Merges per-claim NLI scratch files into one parquet per (km, bm); prunes orphaned claim_ids.", NA_character_,
+  "nli_kp_consolidate",     "action",   "Same consolidation for the key-paper NLI chain.",                            NA_character_,
+  "finetune",               "action",   "Real local CPU fine-tuning run, gated on training.finetune.enabled.",        NA_character_,
 
   "qa_bm_split",            "doc",      "QA report: how each BM was actually split into claims.",                     NA_character_,
   "qa_nli_scores",          "doc",      "QA report: NLI score-distribution sanity check (ternary plot, key-paper overlay).", NA_character_,
@@ -65,7 +73,10 @@ workflow_node_source_files <- list(
   nli_keypaper_scoring = "R/build_nli_ready_evidence_keypaper_parquet.R",
   llm_verify           = "R/build_llm_verification_parquet.R",
   llm_verify_keypaper  = "R/build_llm_verification_keypaper_parquet.R",
-  training_extract     = "R/build_nli_training_data.R"
+  training_extract     = "R/build_nli_training_data.R",
+  nli_consolidate      = "R/consolidate_nli_scores.R",
+  nli_kp_consolidate   = "R/consolidate_nli_scores.R",
+  finetune             = c("R/build_nli_finetuned_model.R", "scripts/training/train_nli.py")
 )
 
 # node_id -> list(tab=, ...tab-specific filter hints...); see mod_*'s own

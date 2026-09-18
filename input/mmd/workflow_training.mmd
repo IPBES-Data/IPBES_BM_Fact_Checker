@@ -1,0 +1,157 @@
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementStrategy: BRANDES_KOEPF
+---
+flowchart TD
+
+  %% Conceptual workflow for the TRAINING project (_targets_training.R).
+  %% --
+  %% One of four hand-authored workflow diagrams, one per targets project
+  %% (see _targets.yaml and TODO_PIPELINE_SPLIT.md):
+  %% --
+  %%   workflow_main.mmd        collection: LOD -> refs -> zotero -> works ->
+  %%                            snowball -> works_citing
+  %%   workflow_factcheck.mmd   citing works -> NLI -> LLM verification
+  %%   workflow_training.mmd    this file
+  %%   workflow_reporting.mmd   everything that renders
+  %% --
+  %% The key-paper arm. A key paper IS the evidence a Background Message was
+  %% written from, so scoring one against its own BM is both a QA sanity check
+  %% (it should overwhelmingly land in SUPPORTS) and the source of the positive
+  %% class for fine-tuning. Small and bounded where the citing-works corpus is
+  %% not, which is why every key paper is reviewed rather than a routed subset.
+
+  %% Configuration. Selections come from the `training:` purpose block -- there
+  %% is no global `active:`, and the fine-tuning gate lives here rather than on
+  %% a serving config, because how a model is SERVED and whether this project
+  %% TRAINS one are different questions.
+  config_file@{ shape: doc, label: "Configuration <br><tt>input/config.yaml</tt>" }
+  purpose_tr@{ shape: rect, label: "Purpose block<br/><tt>training:</tt><br/>assessments · nli · llm · claim_completion · finetune" }
+  nli_active@{ shape: rect, label: "NLI profile<br/><tt>training.nli</tt>" }
+  llm_active@{ shape: rect, label: "LLM verification profile<br/><tt>training.llm</tt>" }
+  finetune_gate@{ shape: hex, label: "Fine-tuning gate<br/><tt>training.finetune.enabled</tt><br/>+ <tt>downsample_seed</tt>" }
+
+  config_file --> purpose_tr
+  purpose_tr --> nli_active
+  purpose_tr --> llm_active
+  purpose_tr --> finetune_gate
+
+  %% Inputs produced by the collection project.
+  subgraph collected["From the collection project (workflow_main.mmd)"]
+    direction TB
+
+    key_messages_db@{ shape: lin-cyl, label: "Key + Background Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
+    works_db@{ shape: lin-cyl, label: "OpenAlex Works DB (seed / key papers)<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
+    snowball_db@{ shape: lin-cyl, label: "Snowball DB (nodes / edges / keypaper)<br/><tt>output/snowball/{nodes,edges,keypaper}/assessment=&lt;id&gt;/</tt>" }
+    citing_db@{ shape: lin-cyl, label: "Citing Works DB (metadata lookup only)<br/><tt>output/works_citing_meta/assessment=&lt;id&gt;/</tt>" }
+  end
+
+  subgraph nli_keypaper["Phase 1 — NLI scoring of key/seed papers"]
+    direction TB
+
+    %% Nodes
+    nli_server@{ shape: cloud, label: "Zero-shot NLI server pool<br/>bge-m3-zeroshot-v2.0-c<br/><tt>external/runpod/docker/nli-runpod-bge-m3/</tt>" }
+    nli_keypaper_scoring@{ shape: rect, label: "Score KEY/SEED papers vs. their own BM's claim<br/>same claims-building + score_one_claim() as the citing-works arm, applied to the keypaper snowball partition<br/>separate output roots, so it can never collide with that chain<br/><tt>[nli_ready_evidence_keypaper_parquet -> nli_claim_units_evidence_keypaper -> nli_scores_keypaper_evidence]</tt>" }
+    nli_kp_consolidate@{ shape: rect, label: "Merge per-claim scratch files into one parquet per (km, bm)<br/><tt>[nli_scores_keypaper_evidence_consolidated]</tt>" }
+    nli_scores_kp_db@{ shape: lin-cyl, label: "Key-paper NLI Scores DB<br/><tt>output/nli_scores_evidence_keypaper/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/</tt>" }
+
+    %% Edges
+    nli_server <--> nli_keypaper_scoring
+    nli_keypaper_scoring --> nli_kp_consolidate
+    nli_kp_consolidate --> nli_scores_kp_db
+  end
+
+  %% Inputs to Phase 1: the same BM text as the citing-works arm, but the
+  %% keypaper (not citing-work) snowball partition, re-split per (km, bm)
+  %% against works_db's own seed mapping.
+  key_messages_db --> nli_keypaper_scoring
+  works_db --> nli_keypaper_scoring
+  snowball_db --> nli_keypaper_scoring
+  nli_active --> nli_keypaper_scoring
+
+  subgraph llm_keypaper["Phase 2 — full-coverage LLM verification of key papers"]
+    direction TB
+
+    %% Nodes
+    llm_server@{ shape: cloud, label: "OpenRouter LLM<br/>(gpt-4o-mini / gemini-2.5-flash / gpt-5)" }
+    llm_verify_keypaper@{ shape: rect, label: "Verify EVERY key/seed paper via LLM — irrespective of NLI label/confidence<br/>(no routing, unlike the citing-works chain: this set is small, bounded and high-importance)<br/>no direct_evidence_match tag — a key paper IS a seed reference<br/><tt>[llm_verification_keypaper_parquet]</tt>" }
+    llm_scores_kp_db@{ shape: lin-cyl, label: "Key-paper LLM Verification Scores DB<br/><tt>output/llm_verification/scores_keypaper/llm_config=&lt;cfg&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/</tt>" }
+
+    %% Edges
+    llm_server <--> llm_verify_keypaper
+    llm_verify_keypaper --> llm_scores_kp_db
+  end
+
+  nli_scores_kp_db --> llm_verify_keypaper
+  llm_active --> llm_verify_keypaper
+
+  subgraph training_export["NLI fine-tuning: training set and run"]
+    direction TB
+
+    %% Nodes
+    training_extract@{ shape: rect, label: "Extract fine-tuning training data from LLM-verified pairs<br/>positives: key papers LLM-confirmed SUPPORTS w/ verbatim quote (only ~2.6% of GA1's — blanket-labelling the rest would teach the very confusion this corrects)<br/>negatives: NLI confident + LLM said NOT_ENOUGH_INFO (downsampled to match positives)<br/>refutes: llm_label == REFUTES, on the LLM's call alone (incl. where NLI was wrong)<br/><tt>[nli_training_data]</tt>" }
+    training_db@{ shape: lin-cyl, label: "Training Data DB<br/><tt>output/nli_training/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/keypaper=&lt;TRUE|FALSE&gt;/</tt>" }
+    finetune@{ shape: rect, label: "Fine-tune the selected model — real local CPU run (~25 min)<br/><tt>scripts/training/train_nli.py</tt> via a Python venv<br/><tt>[nli_finetuned_model]</tt>" }
+    model_db@{ shape: lin-cyl, label: "Fine-tuned model checkpoints + run_results.json<br/><tt>output/nli_training_finetuned/&lt;run id&gt;/</tt><br/>(<tt>.disabled/&lt;cfg&gt;/</tt> marker when the gate is off)" }
+
+    %% Edges
+    training_extract --> training_db
+    training_db --> finetune
+    finetune --> model_db
+  end
+
+  %% Inputs to the training set: BOTH Phase 2 chains supply labelled pairs --
+  %% the key-paper one from this project, the citing-works one read off disk
+  %% by a COMPUTED path rather than a tracked dependency, so an assessment with
+  %% only key-paper data never forces its whole citing-works chain to build.
+  llm_scores_kp_db --> training_extract
+  factcheck_scores@{ shape: doc, label: "Citing-works LLM Verification Scores<br/>from <tt>workflow_factcheck.mmd</tt> — read by computed path, NOT a tracked dependency" }
+  factcheck_scores --> training_extract
+  works_db --> training_extract
+  citing_db --> training_extract
+  finetune_gate --> finetune
+
+  %% The human in the loop. A DAG cannot contain a cycle, so adopting a
+  %% fine-tuned model is deliberately NOT an edge: it is a person deciding the
+  %% model is good, adding it to config.yaml's nli library, pointing
+  %% fact_checking.nli at it, and accepting a full rescore (scored output is
+  %% partitioned by nli_config, so nothing carries over).
+  adopt@{ shape: doc, label: "Manual: serve the checkpoint, add it to the <tt>nli:</tt> library,<br/>point <tt>fact_checking.nli</tt> at it, then FULL RESCORE<br/>(needs passes: 1 and the three real label names — see TODO_PIPELINE_SPLIT.md)" }
+  model_db -.-> adopt
+
+  %% Workflow-diagram navigation (shiny_app/) -- see workflow_main.mmd's own
+  %% block for why these are href-style click directives. Config/helper nodes
+  %% (config_file, purpose_tr, nli_active, llm_active, finetune_gate,
+  %% nli_server, llm_server) are deliberately left non-clickable. Nodes shown
+  %% here but PRODUCED by the collection project keep their original ids.
+  click key_messages_db href "#!key_messages_db" "Key + Background Messages DB"
+  click works_db href "#!works_db" "OpenAlex Works DB"
+  click snowball_db href "#!snowball_db" "Snowball DB"
+  click citing_db href "#!citing_db" "Citing Works DB"
+  click nli_scores_kp_db href "#!nli_scores_kp_db" "Key-paper NLI Scores DB"
+  click llm_scores_kp_db href "#!llm_scores_kp_db" "Key-paper LLM Verification Scores DB"
+  click training_db href "#!training_db" "Training Data DB"
+  click model_db href "#!model_db" "Fine-tuned model checkpoints"
+
+  click nli_keypaper_scoring href "#!nli_keypaper_scoring" "Score key/seed papers vs their own BM"
+  click nli_kp_consolidate href "#!nli_kp_consolidate" "Consolidate per-claim key-paper scores"
+  click llm_verify_keypaper href "#!llm_verify_keypaper" "LLM-review every key/seed paper"
+  click training_extract href "#!training_extract" "Extract fine-tuning training data"
+  click finetune href "#!finetune" "Fine-tune the selected NLI model"
+
+  %% Styles
+  classDef input_file  fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
+  classDef config      fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
+  classDef database    fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
+  classDef processing  fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1px;
+  classDef helper      fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
+  classDef handoff     fill:#f5f3ff,stroke:#7c3aed,color:#3b0764,stroke-width:1.5px,stroke-dasharray:4 3;
+
+  class config_file input_file;
+  class purpose_tr,nli_active,llm_active,finetune_gate config;
+  class key_messages_db,works_db,snowball_db,citing_db,nli_scores_kp_db,llm_scores_kp_db,training_db,model_db database;
+  class nli_keypaper_scoring,nli_kp_consolidate,llm_verify_keypaper,training_extract,finetune processing;
+  class nli_server,llm_server helper;
+  class factcheck_scores,adopt handoff;

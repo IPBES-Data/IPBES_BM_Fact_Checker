@@ -1,0 +1,149 @@
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementStrategy: BRANDES_KOEPF
+---
+flowchart TD
+
+  %% Conceptual workflow for the FACT-CHECKING project (_targets_factcheck.R).
+  %% --
+  %% One of four hand-authored workflow diagrams, one per targets project
+  %% (see _targets.yaml and TODO_PIPELINE_SPLIT.md):
+  %% --
+  %%   workflow_main.mmd        collection: LOD -> refs -> zotero -> works ->
+  %%                            snowball -> works_citing
+  %%   workflow_factcheck.mmd   this file
+  %%   workflow_training.mmd    key papers -> NLI -> LLM -> training set -> fine-tune
+  %%   workflow_reporting.mmd   everything that renders
+  %% --
+  %% This is the expensive arm: the citing-works corpus, millions of pairs,
+  %% GPU hours and real OpenRouter spend. Its sibling workflow_training.mmd
+  %% scores the far smaller key-paper set through the same two phases.
+
+  %% Configuration. There is no global `active:` any more -- each project reads
+  %% its own purpose block, so this one's selections come from `fact_checking:`.
+  config_file@{ shape: doc, label: "Configuration <br><tt>input/config.yaml</tt>" }
+  purpose_fc@{ shape: rect, label: "Purpose block<br/><tt>fact_checking:</tt><br/>assessments · nli · llm · claim_completion" }
+  nli_active@{ shape: rect, label: "NLI profile<br/><tt>fact_checking.nli</tt>" }
+  llm_active@{ shape: rect, label: "LLM verification profile<br/><tt>fact_checking.llm</tt>" }
+
+  config_file --> purpose_fc
+  purpose_fc --> nli_active
+  purpose_fc --> llm_active
+
+  %% Inputs produced by the collection project. Declared here as format = "file"
+  %% targets keeping the producing project's names, so a genuine upstream change
+  %% still invalidates this chain through content hashing.
+  subgraph collected["From the collection project (workflow_main.mmd)"]
+    direction TB
+
+    key_messages_db@{ shape: lin-cyl, label: "Key + Background Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
+    refs_db@{ shape: lin-cyl, label: "References DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
+    works_db@{ shape: lin-cyl, label: "OpenAlex Works DB (seed / key papers)<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
+    snowball_db@{ shape: lin-cyl, label: "Snowball DB (nodes / edges / keypaper)<br/><tt>output/snowball/{nodes,edges,keypaper}/assessment=&lt;id&gt;/</tt>" }
+    citing_db@{ shape: lin-cyl, label: "Citing Works DB (mapping + metadata)<br/><tt>output/works_citing{,_meta}/assessment=&lt;id&gt;/</tt>" }
+  end
+
+  subgraph scope["Evidence scope (no LLM call for naive_bm/complete_bm)"]
+    direction TB
+
+    llm_scope@{ shape: rect, label: "Match citing works per claim via evidence sub-chapter refs<br/>{5.4.1} → refs sm → seed dois → snowball edges → citing works<br/>(naive_bm/atomic_bm only — complete_bm has no per-sub-claim tokens to match)<br/><tt>[llm_candidate_scope_parquet]</tt>" }
+    llm_scope_db@{ shape: lin-cyl, label: "Candidate Scope DB<br/><tt>output/llm_candidate_scope/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+
+    llm_scope --> llm_scope_db
+  end
+
+  key_messages_db --> llm_scope
+  refs_db --> llm_scope
+  works_db --> llm_scope
+  snowball_db --> llm_scope
+
+  subgraph nli_assessment["Phase 1 — NLI alignment of BMs and citing publications"]
+    direction TB
+
+    %% Nodes
+    nli_segment@{ shape: rect, label: "Segment each BM into claims — per granularity:<br/>naive_bm: evidence-delimited, one claim per sentence-group ending in a {ref} (+ a separate bm_label claim) — 2-17 claims per BM<br/>complete_bm: whole bm_description/bm_label as one claim each — 2 per BM (1 if identical)<br/>atomic_bm: split at EVERY evidence brace, then LLM-complete elliptical fragments into self-contained claims (confidence qualifiers extracted to their own column, same as naive_bm)<br/><tt>[nli_ready_evidence_parquet]</tt>" }
+    nli_ready_db@{ shape: lin-cyl, label: "NLI-Ready DB (claim × citing-work premise)<br/><tt>output/nli_ready_evidence/granularity=&lt;gran&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    nli_server@{ shape: cloud, label: "Zero-shot NLI server pool<br/>bge-m3-zeroshot-v2.0-c<br/><tt>external/runpod/docker/nli-runpod-bge-m3/</tt>" }
+    nli_scoring@{ shape: rect, label: "Classify each citing work vs one BM claim<br/>premise = clean(title + abstract)<br/>hypothesis = one evidence-segmented BM claim<br/>→ SUPPORTS / REFUTES / NEI<br/>one branch per claim; resumable at WORK granularity (delta dispatch)<br/><tt>[nli_claim_units_evidence -> nli_claim_units_evidence_flat -> nli_scores_by_claim_evidence]</tt>" }
+    nli_consolidate@{ shape: rect, label: "Merge per-claim scratch files into one parquet per (km, bm)<br/>and prune rows whose claim_id is gone<br/><tt>[nli_scores_evidence_consolidated]</tt>" }
+    nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores_evidence/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+
+    %% Edges
+    nli_segment --> nli_ready_db
+    nli_ready_db --> nli_scoring
+    nli_server <--> nli_scoring
+    nli_scoring --> nli_consolidate
+    nli_consolidate --> nli_scores_db
+  end
+
+  %% Inputs to Phase 1: BM text, segmented into claims first, + citing works
+  %% (premise) joined against every claim independently.
+  key_messages_db --> nli_segment
+  citing_db --> nli_ready_db
+
+  %% The selected NLI profile determines model config AND output partition.
+  nli_active --> nli_scoring
+
+  subgraph llm_verification["Phase 2 — LLM verification of flagged pairs"]
+    direction TB
+
+    %% Nodes
+    llm_server@{ shape: cloud, label: "OpenRouter LLM<br/>(gpt-4o-mini / gemini-2.5-flash / gpt-5)" }
+    llm_verify@{ shape: rect, label: "Route NLI-scored pairs (label = REFUTES or SUPPORTS, certain only), tag each with direct_evidence_match from the candidate scope above<br/>then call the LLM per (claim, work) — every routed pair reviewed, none filtered — NLI label + confidence as prior<br/>→ SUPPORTS / REFUTES / NEI + verbatim quote, demoted to NEI if the quote is not actually in the premise<br/><tt>[llm_verification_parquet]</tt>" }
+    llm_scores_db@{ shape: lin-cyl, label: "LLM Verification Scores DB<br/><tt>output/llm_verification/scores/llm_config=&lt;cfg&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+
+    %% Edges
+    llm_server <--> llm_verify
+    llm_verify --> llm_scores_db
+  end
+
+  %% Inputs to Phase 2: Phase 1's own flagged output, plus the candidate-scope
+  %% match set (used to TAG, never to filter).
+  nli_scores_db --> llm_verify
+  llm_scope_db --> llm_verify
+  llm_active --> llm_verify
+
+  %% Where this arm's output goes.
+  consumers@{ shape: doc, label: "Consumed by<br/><tt>workflow_reporting.mmd</tt> (funnels, QA) · <tt>workflow_training.mmd</tt> (training set)" }
+  nli_scores_db --> consumers
+  llm_scores_db --> consumers
+
+  %% Workflow-diagram navigation (shiny_app/) -- see workflow_main.mmd's own
+  %% block for why these are href-style click directives and how
+  %% shiny_app/R/mod_workflow.R intercepts them. Config/helper nodes
+  %% (config_file, purpose_fc, nli_active, llm_active, nli_server, llm_server)
+  %% are deliberately left non-clickable. Nodes shown here but PRODUCED by the
+  %% collection project keep their original ids, so a click resolves to the same
+  %% metadata row regardless of which diagram it was clicked in.
+  click key_messages_db href "#!key_messages_db" "Key + Background Messages DB"
+  click refs_db href "#!refs_db" "References DB"
+  click works_db href "#!works_db" "OpenAlex Works DB"
+  click snowball_db href "#!snowball_db" "Snowball DB"
+  click citing_db href "#!citing_db" "Citing Works DB"
+  click llm_scope_db href "#!llm_scope_db" "Candidate Scope DB"
+  click nli_ready_db href "#!nli_ready_db" "NLI-Ready DB"
+  click nli_scores_db href "#!nli_scores_db" "NLI Scores DB"
+  click llm_scores_db href "#!llm_scores_db" "LLM Verification Scores DB"
+
+  click llm_scope href "#!llm_scope" "Match citing works per claim"
+  click nli_segment href "#!nli_segment" "Segment each BM into claims"
+  click nli_scoring href "#!nli_scoring" "Classify each citing work vs one BM claim"
+  click nli_consolidate href "#!nli_consolidate" "Consolidate per-claim NLI scores"
+  click llm_verify href "#!llm_verify" "Route + LLM-review flagged pairs"
+
+  %% Styles
+  classDef input_file  fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
+  classDef config      fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
+  classDef database    fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
+  classDef processing  fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1px;
+  classDef helper      fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1px;
+  classDef handoff     fill:#f5f3ff,stroke:#7c3aed,color:#3b0764,stroke-width:1.5px,stroke-dasharray:4 3;
+
+  class config_file input_file;
+  class purpose_fc,nli_active,llm_active config;
+  class key_messages_db,refs_db,works_db,snowball_db,citing_db,llm_scope_db,nli_ready_db,nli_scores_db,llm_scores_db database;
+  class llm_scope,nli_segment,nli_scoring,nli_consolidate,llm_verify processing;
+  class nli_server,llm_server helper;
+  class consumers handoff;
