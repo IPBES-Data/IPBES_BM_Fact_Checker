@@ -1,21 +1,11 @@
----
-title: NLI/LLM Funnel Report
-subtitle: Narrowing down citing works that support or contradict a Background Message
-date: today
-params:
-  assessment_id: "GA1"
-  label: "REFUTES"
-  granularity: "naive_bm"
-  nli_active: "deberta_zeroshot"
-format:
-    html:
-        toc: true
-        toc-depth: 4
-        embed-resources: true
-        code-fold: true
-        code-summary: 'Show the code'
-        keep-md: false
----
+<!-- Shared BODY for the IPBES_Label_Funnel_Report report family.
+     Rendered only via the generated wrapper .qmd files that `{{< include >}}`
+     this file -- see R/generate_report_wrappers.R and config.yaml's `reports:`
+     section. The leading underscore keeps Quarto from rendering it on its own
+     -- but it also keeps it out of the project entirely, so tar_quarto() never
+     scans this file for dependencies. That is why the tar_read() calls live in
+     the wrapper and arrive here as `report_deps`; `params$...` likewise comes
+     from the wrapper. -->
 
 ```{r}
 #| label: setup
@@ -58,22 +48,40 @@ copy_into_report_files <- function(paths) {
 }
 
 # Target names are label-specific (refutes_funnel_data / supports_funnel_data,
-# etc.) rather than one generic target, so tar_read_raw() (the string-based
-# variant) is used to pick the right one at render time from params$label.
+# etc.) rather than one generic target. This used to use tar_read_raw() with a
+# name computed from params$label -- but tarchetypes cannot see through that
+# (it warns about exactly this), so the funnel report contributed NO dependency
+# edges and the old render target had to list them by hand. Both label variants
+# are named LITERALLY in the generated WRAPPER instead (Quarto excludes this
+# underscore-prefixed body from the project, so it is never scanned for
+# dependencies), and each wrapper names only its own label's three targets.
 # Matched by exact basename (not a loose grepl) against the deterministic
 # filename the R builders produce -- necessary now that "naive_bm" (no
 # suffix) and "complete_bm" ("_complete_bm" suffix) coexist on disk and a
 # suffix-less grepl for e.g. "_GA1.rds" would also match "_GA1_complete_bm.rds"
 # style names as a false substring hit in the wrong direction, or vice versa.
+# The wrapper already resolved this label's own targets (refutes_* or
+# supports_*) into report_deps, so there is nothing to branch on here.
+funnel_target <- function(kind) report_deps[[kind]]
+
 target_stem <- tolower(params$label)
 expected_name <- function(kind, ext) sprintf("%s_funnel_%s_%s%s%s.%s", target_stem, kind, params$assessment_id, model_suffix, gran_suffix, ext)
 
-data_path <- targets::tar_read_raw(paste0(target_stem, "_funnel_data")) |>
+data_path <- funnel_target("data") |>
   (\(x) x[basename(x) == expected_name("data", "rds")])()
-x <- readRDS(data_path)
+# config.yaml's `reports:` declares every (assessment x granularity)
+# combination, but a granularity that has not been scored yet produces no rds
+# at all -- which is different from an rds that exists and reports x$empty,
+# and used to abort the whole project render on the first such combination
+# rather than just that document. Both degrade to the same empty-state
+# section below (see the `empty-check` chunk). This is expected, not a bug:
+# see TODO.md on complete_bm/atomic_bm branches being empty until those
+# granularities are actually run.
+data_path <- data_path[file.exists(data_path)]
+x <- if (length(data_path) == 1L) readRDS(data_path) else list(empty = TRUE)
 
 fig_paths <- copy_into_report_files(
-  targets::tar_read_raw(paste0(target_stem, "_funnel_figures")) |>
+  funnel_target("figures") |>
     (\(x) x[grepl(paste0("_", params$assessment_id, model_suffix, gran_suffix, "\\.png$"), x)])()
 )
 fig_overall <- fig_paths[grepl("_overall_", fig_paths)]
@@ -81,7 +89,7 @@ fig_by_bm <- fig_paths[grepl("_by_bm_", fig_paths) & !grepl("_normalized_", fig_
 fig_by_bm_norm <- fig_paths[grepl("_by_bm_normalized_", fig_paths)]
 
 table_paths <- copy_into_report_files(
-  targets::tar_read_raw(paste0(target_stem, "_funnel_tables")) |>
+  funnel_target("tables") |>
     (\(x) x[grepl(paste0("_", params$assessment_id, model_suffix, gran_suffix, "\\.html$"), x)])()
 )
 table_l3 <- table_paths[grepl("_l3_", table_paths)]

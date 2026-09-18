@@ -1,0 +1,12 @@
+/.quarto/
+**/*.quarto_ipynb
+
+# Build artifacts that land HERE rather than in output-dir. Only
+# IPBES_Fact_Checker.qmd is affected: it is excluded from _quarto.yml's
+# `render:` list so it runs after the rest, and Quarto applies a project's
+# output-dir only to files it renders as part of the project. Rendering it
+# singly therefore picks up the project's `format:` but NOT its `output-dir`.
+# build_report_output_dir() copies the result into output/reports/; these are
+# the originals targets tracks, not something to commit.
+/IPBES_Fact_Checker.html
+/IPBES_Fact_Checker_files/

@@ -26,15 +26,16 @@ citation:
 doi: xxxxxxxxxxxxxx4
 version: 0.0.1
 
+# Shared settings come from input/reports/_quarto.yml; only the three
+# deviations from that block are repeated here. embed-resources: false is
+# deliberate (file size): in a project Quarto writes this report's _files/
+# sidecar under output-dir beside the html, which is what finally fixes the
+# stale-libs/ problem the old render-then-file.rename() design left behind.
 format:
     html:
-        toc: true
         toc-depth: 6
         toc_expand: true
         embed-resources: false
-        code-fold: true
-        code-summary: 'Show the code'
-        keep-md: false
         # grid:
         #     sidebar-width: 0px
         #     body-width: 4000px
@@ -65,13 +66,12 @@ library(tictoc)
 # the report-relative link/iframe-src path(s).
 #
 # Deliberately file.path("output/reports", ...) rather than a bare
-# knitr::current_input()-derived name: the qmd source lives in
-# input/reports/, but the rendered .html itself gets moved to
-# output/reports/ by the _targets.R target AFTER this chunk runs (Quarto
-# renders next to the input regardless of execute_dir) -- writing the
-# sidecar directly into its final home means it's already a correct
-# sibling of the .html once that move happens, no second relocation step
-# needed for this directory.
+# knitr::current_input()-derived name. This used to be because the target
+# file.rename()d the rendered html out of input/reports/ afterwards; now
+# _quarto.yml's `output-dir` puts the html here directly, and Quarto's own
+# native _files/ sidecar (embed-resources: false) lands in this same
+# directory. Writing the copied artifacts here keeps them siblings of the
+# html either way, and there is no relocation step left at all.
 report_files_dir <- file.path(
   "output/reports",
   paste0(tools::file_path_sans_ext(knitr::current_input()), "_files")
@@ -80,6 +80,24 @@ dir.create(report_files_dir, recursive = TRUE, showWarnings = FALSE)
 copy_into_report_files <- function(paths) {
   file.copy(paths, report_files_dir, overwrite = TRUE)
   file.path(basename(report_files_dir), basename(paths))
+}
+
+# Every sibling report -- the six TD design docs, the REFUTES/SUPPORTS funnel
+# reports, and the three QA report families -- is rendered by the
+# `reports_project` target: one Quarto project render of input/reports/, from
+# which THIS file is excluded (see _quarto.yml's `project: render:` list)
+# precisely so it can run afterwards and link to their output.
+#
+# Reading that target here is what establishes the ordering: tar_quarto()
+# turns tar_read() calls in project sources into real dependency edges, so
+# targets renders the whole project before this report. Previously each
+# sibling was its own target and this file read each one by name; those
+# targets no longer exist, so the rendered html is discovered on disk instead
+# -- safe only BECAUSE of the dependency edge below.
+invisible(targets::tar_read(reports_project))
+rendered_reports_dir <- "output/reports"
+rendered_report_html <- function(pattern) {
+  sort(list.files(rendered_reports_dir, pattern = pattern, full.names = TRUE))
 }
 ```
 
@@ -102,7 +120,7 @@ Three assessments available in ttl format are currently:
 # design docs (each this report's format/layout block followed by its own
 # prose) and copied into the report's own _files/ sidecar so the links
 # below work in a distributed copy of the report too.
-td_doc_html_paths <- copy_into_report_files(targets::tar_read(td_doc_html))
+td_doc_html_paths <- copy_into_report_files(rendered_report_html("^TD_.*\\.html$"))
 td_doc_link <- function(name) {
   td_doc_html_paths[grepl(paste0("/", name, "\\.html$"), td_doc_html_paths)]
 }
@@ -145,11 +163,27 @@ key_papers <- dplyr::bind_rows(lapply(works_paths, function(p) {
 })) |>
   dplyr::mutate(oa_input = TRUE)
 
-citing_papers <- dplyr::bind_rows(lapply(works_citing_paths, function(p) {
-  arrow::open_dataset(p) |>
-    dplyr::select(km, bm, doi, publication_year, type) |>
+# works_citing_parquet returns TWO paths per branch since the mapping/metadata
+# split: a slim (km, bm, id) mapping, and one row per DISTINCT citing work
+# carrying doi/publication_year/type. Selecting those columns straight off the
+# mapping stopped working at that point -- they are no longer there. Join on
+# `id` instead. Only the columns the summaries below actually use are pulled
+# through; `doi` is deliberately not among them (it is used for refs and
+# key_papers only), which keeps the collect well under what the full record
+# would cost across ~37M mapping rows.
+wc_map <- works_citing_paths[!grepl("works_citing_meta", works_citing_paths)]
+wc_meta <- works_citing_paths[grepl("works_citing_meta", works_citing_paths)]
+stopifnot(length(wc_map) == length(wc_meta))
+
+citing_papers <- dplyr::bind_rows(Map(function(map_p, meta_p) {
+  meta <- arrow::open_dataset(meta_p) |>
+    dplyr::select(id, publication_year, type)
+  arrow::open_dataset(map_p) |>
+    dplyr::select(km, bm, id) |>
+    dplyr::left_join(meta, by = "id") |>
+    dplyr::select(km, bm, publication_year, type) |>
     dplyr::collect()
-})) |>
+}, wc_map, wc_meta)) |>
   dplyr::mutate(oa_input = FALSE)
 
 all_papers <- dplyr::bind_rows(key_papers, citing_papers)
@@ -607,9 +641,8 @@ report's own Methodology section for the full 3-level sieve definition.
 # it and this report sit as flat siblings both in the project root and in
 # output/reports/ (build_report_output_dir()), so a relative link resolves
 # in both places with no copying needed here.
-label_funnel_html_paths <- c(
-  targets::tar_read(report_refutes_funnel_html),
-  targets::tar_read(report_supports_funnel_html)
+label_funnel_html_paths <- rendered_report_html(
+  "^IPBES_(REFUTES|SUPPORTS)_Report_.*\\.html$"
 )
 # Assessment ids are alphanumeric (GA1, IAS); the trailing blob is
 # "_<model>" (optional -- omitted only for the deberta_zeroshot default)
@@ -654,7 +687,7 @@ Methodology section for details.
 #| results: asis
 
 # Same plain-relative-link convention as the Funnel Reports section above.
-bm_split_html_paths <- targets::tar_read(bm_split_report_html)
+bm_split_html_paths <- rendered_report_html("^QA_BM_Split_Report_.*\\.html$")
 for (p in bm_split_html_paths) {
   m <- regmatches(
     basename(p),
@@ -679,7 +712,7 @@ see the report's own Methodology section for details.
 # model_suffix and gran_suffix are both optional and concatenated in the
 # filename, so known_granularities (defined there) disambiguates them here
 # too.
-nli_scores_qa_html_paths <- targets::tar_read(nli_scores_qa_report_html)
+nli_scores_qa_html_paths <- rendered_report_html("^QA_NLI_Scores_Report_.*\\.html$")
 for (p in nli_scores_qa_html_paths) {
   m <- regmatches(
     basename(p),
@@ -713,7 +746,9 @@ scoring result; see the report's own Methodology section for details.
 # Filename is always "..._<assessment>_<llm_config>.html" -- llm_config is
 # always present (no optional-default-unsuffixed convention here, unlike
 # nli_model_suffix()'s historical exception for "deberta_zeroshot").
-llm_verification_qa_html_paths <- targets::tar_read(llm_verification_qa_report_html)
+llm_verification_qa_html_paths <- rendered_report_html(
+  "^QA_LLM_Verification_Report_.*\\.html$"
+)
 for (p in llm_verification_qa_html_paths) {
   m <- regmatches(
     basename(p),

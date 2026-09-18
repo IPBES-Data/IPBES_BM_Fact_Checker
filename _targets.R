@@ -69,6 +69,22 @@ list.files(
     source
   )
 
+# Generate the per-combination wrapper .qmd files declared by config.yaml's
+# `reports:` section, BEFORE the pipeline list below is built.
+#
+# This has to be a plain call here rather than a target. tarchetypes::
+# tar_quarto() resolves the Quarto project's file list AND its dependency
+# edges when _targets.R is SOURCED -- tar_quarto_raw() calls
+# tar_quarto_files() in its own body, and tar_quarto_command() computes
+# `deps <- map(sources, knitr_deps)` there too, baking both into the target's
+# command. A wrapper produced by an upstream target would therefore contribute
+# nothing on the run that created it: no source, no dependency edge, no output.
+#
+# It is idempotent (writes only when bytes change) and prunes wrappers the
+# current config no longer asks for, so running on every tar_make()/
+# tar_outdated()/tar_visnetwork() costs nothing and invalidates nothing.
+generate_report_wrappers("input/config.yaml", "input/reports")
+
 list(
   # Diagrams — re-render SVGs whenever .mmd source files change.
   # workflow_nli.mmd is the active, hand-authored conceptual workflow;
@@ -485,45 +501,6 @@ list(
     format = "file"
   ),
 
-  tar_target(
-    bm_split_report_qmd,
-    "input/reports/QA_BM_Split_Report.qmd",
-    format = "file"
-  ),
-
-  tar_target(
-    bm_split_report_html,
-    {
-      # Referenced only to establish the DAG dependency -- the qmd itself
-      # re-reads bm_split_report_highlighted's actual value via
-      # tar_read_raw() at render time, same convention as
-      # IPBES_Label_Funnel_Report.qmd.
-      bm_split_report_highlighted
-      out <- paste0("QA_BM_Split_Report_", assessment$id, granularity_suffix(granularity), ".html")
-      # Renders next to the input (input/reports/), regardless of
-      # execute_dir -- see td_doc_html's comment for why. file.rename()
-      # is the whole relocation step.
-      quarto::quarto_render(
-        bm_split_report_qmd,
-        output_file = out,
-        execute_dir = getwd(),
-        execute_params = list(assessment_id = assessment$id, granularity = granularity)
-      )
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      file.rename(file.path("input/reports", out), file.path("output/reports", out))
-      file.path("output/reports", out)
-    },
-    pattern = map(assessment),
-    format = "file",
-    # Same reasoning as report_refutes_funnel_html/report_supports_funnel_html:
-    # avoids concurrent quarto_render() calls against the same source .qmd
-    # racing on separate crew workers -- without this, the GA1 and IAS
-    # branches rendering QA_BM_Split_Report.qmd at the same time can
-    # cross-contaminate each other's output (caught directly: GA1's .html
-    # ended up containing IAS's rendered content).
-    deployment = "main"
-  ),
-
   # Target 2h (NLI): NLI alignement scores — classify each citing work against
   # each BM sentence (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) via a zero-shot NLI
   # model served on a pool of RunPod hosts. Consumes nli_ready_parquet (work ×
@@ -863,63 +840,6 @@ list(
     format = "file"
   ),
 
-  tar_target(
-    nli_scores_qa_report_qmd,
-    "input/reports/QA_NLI_Scores_Report.qmd",
-    format = "file"
-  ),
-
-  tar_target(
-    nli_scores_qa_report_html,
-    {
-      # Referenced only to establish the DAG dependency -- the qmd itself
-      # re-reads nli_scores_qa_data's actual value via tar_read_raw() at
-      # render time, same convention as the other parameterized reports.
-      #
-      # Known cold-build quirk (reproduced directly): if nli_scores_qa_data
-      # has NEVER been built before, building it and this target in the
-      # SAME tar_make() call can race -- a branch of this target can start
-      # rendering (and its qmd's own tar_read_raw("nli_scores_qa_data")
-      # call fail with "target nli_scores_qa_data not found") before
-      # nli_scores_qa_data's dynamic-branch pattern is fully finalized in
-      # _targets/meta/meta, even though every individual branch already
-      # completed. Simply re-running tar_make() fixes it -- by then
-      # nli_scores_qa_data is fully finalized and this target builds
-      # cleanly. Same risk likely applies to the pre-existing
-      # refutes_funnel_data/report_refutes_funnel_html pattern this mirrors,
-      # just never hit because those targets are rarely both cold in the
-      # same call in practice.
-      nli_scores_qa_report_qmd
-      nli_scores_qa_figures
-      x <- readRDS(nli_scores_qa_data)
-      out <- paste0(
-        "QA_NLI_Scores_Report_", x$assessment,
-        nli_model_suffix(x$nli_config), granularity_suffix(x$granularity), ".html"
-      )
-      # Renders next to the input (input/reports/), regardless of
-      # execute_dir -- see td_doc_html's comment for why. file.rename()
-      # is the whole relocation step.
-      quarto::quarto_render(
-        "input/reports/QA_NLI_Scores_Report.qmd",
-        output_file = out,
-        execute_dir = getwd(),
-        execute_params = list(
-          assessment_id = x$assessment, granularity = x$granularity, nli_config = x$nli_config
-        )
-      )
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      file.rename(file.path("input/reports", out), file.path("output/reports", out))
-      file.path("output/reports", out)
-    },
-    pattern = map(nli_scores_qa_data, nli_scores_qa_figures),
-    format = "file",
-    # Same concurrent-quarto_render() guard as bm_split_report_html/
-    # report_refutes_funnel_html/report_supports_funnel_html -- avoids two
-    # branches racing on the same source .qmd and cross-contaminating each
-    # other's output.
-    deployment = "main"
-  ),
-
   # Target 2h4a: Per-claim evidence scope feeding Phase 2's
   # `direct_evidence_match` tag (see R/build_llm_candidate_scope_parquet.R
   # and TD_NLI_LLM_two_phase.qmd; this fed a candidate-narrowing FILTER
@@ -1091,39 +1011,6 @@ list(
     format = "file"
   ),
 
-  tar_target(
-    llm_verification_qa_report_qmd,
-    "input/reports/QA_LLM_Verification_Report.qmd",
-    format = "file"
-  ),
-
-  tar_target(
-    llm_verification_qa_report_html,
-    {
-      # Referenced only to establish the DAG dependency — the qmd itself
-      # re-reads llm_verification_qa_data's actual value via tar_read_raw()
-      # at render time, same convention as nli_scores_qa_report_html.
-      llm_verification_qa_report_qmd
-      llm_verification_qa_figures
-      x <- readRDS(llm_verification_qa_data)
-      out <- paste0("QA_LLM_Verification_Report_", x$assessment, "_", x$llm_active, ".html")
-      quarto::quarto_render(
-        "input/reports/QA_LLM_Verification_Report.qmd",
-        output_file = out, execute_dir = getwd(),
-        execute_params = list(assessment_id = x$assessment, llm_config = x$llm_active)
-      )
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      file.rename(file.path("input/reports", out), file.path("output/reports", out))
-      file.path("output/reports", out)
-    },
-    pattern = map(llm_verification_qa_data, llm_verification_qa_figures),
-    format = "file",
-    # Same concurrent-quarto_render() guard as nli_scores_qa_report_html/
-    # bm_split_report_html — avoids two branches racing on the same source
-    # .qmd and cross-contaminating each other's output.
-    deployment = "main"
-  ),
-
   # Target 2h4d: NLI fine-tuning training data (TD_NLI_training.qmd) — reads
   # only already-built output/llm_verification/scores* data (no new LLM/API
   # calls). Single-active-granularity, same scope as llm_verification_parquet
@@ -1201,41 +1088,6 @@ list(
     format = "file"
   ),
 
-  tar_target(
-    nli_training_qa_report_qmd,
-    "input/reports/QA_NLI_Training_Data_Report.qmd",
-    format = "file"
-  ),
-
-  tar_target(
-    nli_training_qa_report_html,
-    {
-      # Referenced only to establish the DAG dependency — the qmd itself
-      # re-reads nli_training_qa_data's actual value via tar_read_raw() at
-      # render time, same convention as the other QA_*_Report targets.
-      nli_training_qa_report_qmd
-      x <- readRDS(nli_training_qa_data)
-      out <- paste0(
-        "QA_NLI_Training_Data_Report_", x$assessment, "_", x$nli_config, "_", x$granularity, ".html"
-      )
-      quarto::quarto_render(
-        "input/reports/QA_NLI_Training_Data_Report.qmd",
-        output_file = out, execute_dir = getwd(),
-        execute_params = list(
-          assessment_id = x$assessment, nli_config = x$nli_config, granularity = x$granularity
-        )
-      )
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      file.rename(file.path("input/reports", out), file.path("output/reports", out))
-      file.path("output/reports", out)
-    },
-    pattern = map(nli_training_qa_data),
-    format = "file",
-    # Same concurrent-quarto_render() guard as every other QA_*_Report
-    # target — avoids two branches racing on the same source .qmd.
-    deployment = "main"
-  ),
-
   # Target 2h4e: fine-tune the active nli config's model, IFF that config's
   # own train: field is true (default false) -- see R/build_nli_finetuned_model.R
   # for the full "why a real train:true/false gate, not just running
@@ -1274,60 +1126,6 @@ list(
   tar_target(
     nli_finetuned_model_qa_data,
     build_nli_finetuned_model_qa_data(nli_finetuned_model, nli_active, "output/tables")
-  ),
-
-  tar_target(
-    nli_finetuned_model_qa_report_qmd,
-    "input/reports/QA_NLI_Finetuned_Model_Report.qmd",
-    format = "file"
-  ),
-
-  # Deliberately does NOT always call quarto::quarto_render() the way every
-  # other QA_*_Report target does -- rendered ONLY when the active config's
-  # train: is actually true (i.e. nli_finetuned_model_qa_data has a real
-  # result, not its empty marker). Rendering an HTML report that only ever
-  # says "no fine-tuned model, train: false" for every config that hasn't
-  # opted in adds file clutter with zero information content; the qmd's own
-  # empty-check (knit_exit()) is a safety net for a config that flips from
-  # true to false again AFTER a real report was already rendered, not the
-  # normal path.
-  tar_target(
-    nli_finetuned_model_qa_report_html,
-    {
-      nli_finetuned_model_qa_report_qmd
-      x <- readRDS(nli_finetuned_model_qa_data)
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      # No bare return() here -- a tar_target() command block is an
-      # evaluated expression, not a function body, so the if/else's own
-      # value (the last thing evaluated in whichever branch runs) is what
-      # this target's value ends up being; that's the deliberate structure
-      # below rather than an early return.
-      if (isTRUE(x$empty)) {
-        message(sprintf(
-          "[nli_finetuned_model_qa_report_html %s] train: false -- skipping report render",
-          x$nli_config
-        ))
-        placeholder <- file.path("output/reports", sprintf(".skipped_%s", x$nli_config))
-        writeLines(
-          "train: false for this nli_config -- no report rendered. See input/config.yaml.",
-          placeholder
-        )
-        placeholder
-      } else {
-        out <- paste0("QA_NLI_Finetuned_Model_Report_", x$nli_config, ".html")
-        quarto::quarto_render(
-          "input/reports/QA_NLI_Finetuned_Model_Report.qmd",
-          output_file = out, execute_dir = getwd(),
-          execute_params = list(nli_config = x$nli_config)
-        )
-        file.rename(file.path("input/reports", out), file.path("output/reports", out))
-        file.path("output/reports", out)
-      }
-    },
-    format = "file",
-    # Same concurrent-quarto_render() guard as every other QA_*_Report
-    # target — avoids two branches racing on the same source .qmd.
-    deployment = "main"
   ),
 
   # Target 2h3: NLI overview figures — label split (overall/per-KM/per-BM),
@@ -1451,205 +1249,103 @@ list(
   ),
 
   tar_target(
-    qmd_label_funnel_report,
-    "input/reports/IPBES_Label_Funnel_Report.qmd",
-    format = "file"
-  ),
-
-  # Rendered once per (assessment, label) combination via Quarto's
-  # params:/execute_params= mechanism (this project's first use of it —
-  # every other multi-output render, td_doc_html, branches over distinct
-  # source files instead of one file rendered N times). deployment = "main"
-  # avoids concurrent quarto_render() calls against the same source .qmd
-  # racing on separate crew workers.
-  # assessment is deliberately NOT in this pattern -- refutes_funnel_data's
-  # own cross(assessment, nli_granularities) branching already has 6
-  # branches (2 assessments x 3 granularities), so a plain map() over the
-  # 2-branch assessment target here would mismatch lengths. assessment_id/
-  # granularity are read back out of the funnel data rds itself instead
-  # (both already stored there), which naturally stays aligned with
-  # whichever branch of refutes_funnel_data/_figures/_tables this is.
-  tar_target(
-    report_refutes_funnel_html,
-    {
-      # Bare references only to establish DAG edges — the qmd re-reads
-      # everything via tar_read_raw()/readRDS(); quarto_render() re-reads
-      # the qmd from disk.
-      qmd_label_funnel_report
-      refutes_funnel_figures
-      refutes_funnel_tables
-      x <- readRDS(refutes_funnel_data)
-      gran <- x$granularity %||% "naive_bm"
-      model <- x$nli_active %||% "deberta_zeroshot"
-      out <- paste0("IPBES_REFUTES_Report_", x$assessment, nli_model_suffix(model), granularity_suffix(gran), ".html")
-      # Renders next to the input (input/reports/), regardless of
-      # execute_dir -- see td_doc_html's comment for why. file.rename()
-      # is the whole relocation step.
-      quarto::quarto_render(
-        "input/reports/IPBES_Label_Funnel_Report.qmd",
-        output_file = out,
-        execute_dir = getwd(),
-        execute_params = list(assessment_id = x$assessment, label = "REFUTES", granularity = gran, nli_active = model)
-      )
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      file.rename(file.path("input/reports", out), file.path("output/reports", out))
-      file.path("output/reports", out)
-    },
-    pattern = map(refutes_funnel_data, refutes_funnel_figures, refutes_funnel_tables),
-    format = "file",
-    deployment = "main"
-  ),
-
-  tar_target(
-    report_supports_funnel_html,
-    {
-      qmd_label_funnel_report
-      supports_funnel_figures
-      supports_funnel_tables
-      x <- readRDS(supports_funnel_data)
-      gran <- x$granularity %||% "naive_bm"
-      model <- x$nli_active %||% "deberta_zeroshot"
-      out <- paste0("IPBES_SUPPORTS_Report_", x$assessment, nli_model_suffix(model), granularity_suffix(gran), ".html")
-      quarto::quarto_render(
-        "input/reports/IPBES_Label_Funnel_Report.qmd",
-        output_file = out,
-        execute_dir = getwd(),
-        execute_params = list(assessment_id = x$assessment, label = "SUPPORTS", granularity = gran, nli_active = model)
-      )
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      file.rename(file.path("input/reports", out), file.path("output/reports", out))
-      file.path("output/reports", out)
-    },
-    pattern = map(supports_funnel_data, supports_funnel_figures, supports_funnel_tables),
-    format = "file",
-    deployment = "main"
-  ),
-
-  tar_target(
-    qmd_fact_checker,
-    "input/reports/IPBES_Fact_Checker.qmd",
-    format = "file"
-  ),
-
-  tar_target(
     claude_md,
     "CLAUDE.md",
     format = "file"
   ),
 
-  # Technical Design (TD_<name>.qmd) documents — each is a single
-  # self-contained file (Quarto YAML header + prose in the same file) so
-  # they render with consistent styling and are openable as standalone
-  # HTML pages linked from the report. Branched over td_doc_names rather
-  # than six hand-written targets so adding a new TD doc is a one-line
-  # change (plus the new .qmd file itself).
-  tar_target(
-    td_doc_names,
-    c(
-      "TD_targets",
-      "TD_BM_NLI_approach",
-      "TD_LLM_approach",
-      "TD_NLI_LLM_two_phase",
-      "TD_NLI_training",
-      "TD_formatting"
-    )
+  # ── Reports ──────────────────────────────────────────────────────────────
+  #
+  # These three replace nineteen former targets: nine that each called
+  # quarto::quarto_render() and then file.rename()d the result out of
+  # input/reports/ into output/reports/, their nine companion *_qmd
+  # file-tracking targets, and report_output_dir.
+  #
+  # input/reports/_quarto.yml is now the single source of shared format and,
+  # via output-dir, of where rendered html lands -- so nothing moves files by
+  # hand any more. tar_quarto() also derives each report's dependencies from
+  # the tar_read() calls in the project's sources, which is the real win: the
+  # old report_fact_checker target listed eight dependencies by hand and
+  # MISSED five that the qmd genuinely reads (fig_pub_per_year,
+  # nli_overview_figures, overlap_key_paper_table and the two
+  # overlap_after_2018_* tables). Those were DAG leaves, rebuilt only because
+  # a bare tar_make() builds everything.
+
+  # Every report except the main one: the 27 generated wrapper documents plus
+  # the six TD design docs.
+  tarchetypes::tar_quarto(
+    reports_project,
+    path = "input/reports"
   ),
 
-  tar_target(
-    td_doc_qmd,
-    paste0("input/reports/", td_doc_names, ".qmd"),
-    pattern = map(td_doc_names),
-    format = "file"
-  ),
-
-  tar_target(
-    td_doc_html,
-    {
-      # diagram_workflow_nli/diagram_pipeline_nli are referenced only to
-      # establish a DAG dependency: TD_targets.qmd embeds these rendered
-      # figures via a plain markdown image link, which targets can't see
-      # into — without this, regenerating a diagram would silently NOT
-      # invalidate the HTML that embeds it. Broadcast to every branch (not
-      # mapped), since only one of the several TD docs actually uses them.
-      diagram_workflow_nli
-      diagram_pipeline_nli
-      # embed-resources: true means Quarto's own rendered .html is the
-      # ONLY artifact it produces (no native _files/ sidecar) -- it lands
-      # next to the input (input/reports/), regardless of execute_dir,
-      # which only affects code-execution cwd, not output placement
-      # (verified directly before this design was adopted). The
-      # file.rename() below is the entire relocation step; nothing is
-      # left behind in input/reports/ once this target finishes.
-      out_html <- sub("\\.qmd$", ".html", td_doc_qmd)
-      quarto::quarto_render(td_doc_qmd, execute_dir = getwd())
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      final <- file.path("output/reports", basename(out_html))
-      file.rename(out_html, final)
-      final
-    },
-    pattern = map(td_doc_qmd),
-    format = "file"
-  ),
-
-  tar_target(
+  # The main report, rendered separately and AFTER the project above, because
+  # it links to -- and copies into its own _files/ sidecar -- the rendered
+  # html of every sibling report. A single project render gives no ordering
+  # guarantee, so IPBES_Fact_Checker.qmd is excluded from the project's
+  # `render:` list and gets its own target here; the qmd's own
+  # tar_read(reports_project) call is what creates the edge that orders them.
+  # Rendering the single file still picks up _quarto.yml's format and
+  # output-dir, since the file sits inside the project.
+  tarchetypes::tar_quarto(
     report_fact_checker,
-    {
-      # All referenced only to establish DAG dependencies (targets detects
-      # deps by static-scanning this expression) — the qmd itself re-reads
-      # nli_bm_explorer_html's and td_doc_html's actual values via
-      # tar_read(), and quarto_render() re-reads the qmd from disk by path.
-      # Without nli_bm_explorer_html/td_doc_html/report_refutes_funnel_html/
-      # report_supports_funnel_html/bm_split_report_html/
-      # nli_scores_qa_report_html/llm_verification_qa_report_html,
-      # tar_make() would happily render the report against stale/missing
-      # dependents rather than building them first. Without
-      # qmd_fact_checker (file-hash tracked), targets has no visibility
-      # into the qmd's own content — editing the qmd (prose, code chunks,
-      # or YAML header, e.g. embed-resources) would silently NOT invalidate
-      # this target.
-      #
-      # llm_verification_qa_report_html pulls in a genuinely NEW paid-API
-      # dependency here: llm_verification_keypaper_parquet (see that
-      # target's own comment) — a bare tar_make()/tar_make(names =
-      # "report_fact_checker") now also dispatches real OpenRouter calls
-      # for every key paper, not just the routed citing-works subset that
-      # llm_verification_parquet already made this target dependent on.
-      nli_bm_explorer_html
-      report_refutes_funnel_html
-      report_supports_funnel_html
-      bm_split_report_html
-      nli_scores_qa_report_html
-      llm_verification_qa_report_html
-      qmd_fact_checker
-      td_doc_html
-      # See td_doc_html's own comment: embed-resources: true means the
-      # rendered .html is Quarto's only output artifact (lands next to
-      # the input regardless of execute_dir), so file.rename() is the
-      # whole relocation step.
-      quarto::quarto_render("input/reports/IPBES_Fact_Checker.qmd", execute_dir = getwd())
-      dir.create("output/reports", recursive = TRUE, showWarnings = FALSE)
-      file.rename("input/reports/IPBES_Fact_Checker.html", "output/reports/IPBES_Fact_Checker.html")
-      "output/reports/IPBES_Fact_Checker.html"
-    },
-    format = "file"
+    path = "input/reports/IPBES_Fact_Checker.qmd"
   ),
 
-  # Deployable copy: the report + every TD doc + every per-assessment
-  # label funnel report (REFUTES and SUPPORTS), each with its _files/
-  # sidecar if it has one, plus CLAUDE.md (TD_targets.qmd links to it by a
-  # plain relative path), collected into one self-contained directory.
-  # deploy-pages.yml publishes this directory's contents verbatim to the
-  # gh-pages branch — it doesn't need its own logic to find which htmls
-  # exist or pair them with a _files/ folder.
+  # Deploy extras that Quarto itself does not produce: .github/workflows/
+  # deploy-pages.yml rsyncs output/reports/ verbatim to gh-pages, and it needs
+  # a .nojekyll, an index.html, and the CLAUDE.md that TD_targets.qmd links to
+  # by plain relative path. index.html is a byte-identical COPY of the report
+  # rather than a redirect, so its relative _files/ links still resolve.
+  #
+  # This is all that survives of build_report_output_dir(). Its pruning half
+  # was dropped because it was actively harmful -- it deleted two reports that
+  # were never added to its `expected` list -- but note that nothing replaced
+  # it: Quarto's project render was measured NOT to remove files it does not
+  # manage (a stray file and a .nojekyll both survived one), so stale outputs
+  # from earlier naming conventions now persist until removed by hand. See
+  # CLAUDE.md.
   tar_target(
     report_output_dir,
     build_report_output_dir(
       report_fact_checker,
-      c(td_doc_html, report_refutes_funnel_html, report_supports_funnel_html, bm_split_report_html, nli_scores_qa_report_html, llm_verification_qa_report_html),
+      reports_project,
       claude_md,
       "output/reports"
     ),
     format = "file"
+  ),
+
+  # Single entry point for "build every report". Depends on the whole report
+  # chain -- the project render, the main report that must follow it, and the
+  # deploy extras -- so one name covers all three.
+  #
+  # Deliberately NOT format = "file": report_output_dir already returns the
+  # full listing of output/reports (~115 MB), and re-hashing all of it here to
+  # produce a second copy of the same information would cost real time on every
+  # check for no benefit. The value is a small summary instead; the actual
+  # outputs stay tracked by the three targets below it.
+  #
+  # Two ways to invoke it, and the difference matters:
+  #
+  #   tar_make(names = "report")
+  #     Full dependency check. Correct, and what you want when the pipeline is
+  #     current -- but it walks the ENTIRE upstream, so it will rebuild
+  #     nli_scores_by_claim_evidence (RunPod GPU) and llm_verification_parquet
+  #     (OpenRouter spend) if those are outdated.
+  #
+  #   tar_make(names = c("reports_project", "report_fact_checker",
+  #                      "report_output_dir"), shortcut = TRUE)
+  #     Re-render against whatever is on disk, touching nothing upstream.
+  #     Naming "report" with shortcut = TRUE does NOT work: shortcut builds
+  #     only the named targets and loads their dependencies from the store, so
+  #     nothing is re-rendered.
+  tar_target(
+    report,
+    list(
+      project_documents = length(reports_project),
+      main_report = report_fact_checker[grepl("\\.html$", report_fact_checker)],
+      deployed_files = length(report_output_dir)
+    )
   ),
 
   NULL

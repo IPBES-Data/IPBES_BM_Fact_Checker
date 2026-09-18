@@ -73,3 +73,11 @@ IPBES_Fact_Checker.zip
 
 /runpod_migration_IPBES_BM_Fact_Checker - done/
 
+
+# Generated report wrappers — one tiny .qmd per (report x dimension)
+# combination, written by generate_report_wrappers() (R/) from config.yaml's
+# `reports:` section every time _targets.R is sourced. Derived artifacts: the
+# shared bodies (_*_body.qmd) and _quarto.yml are the real sources.
+/input/reports/IPBES_REFUTES_Report_*.qmd
+/input/reports/IPBES_SUPPORTS_Report_*.qmd
+/input/reports/QA_*_Report_*.qmd

@@ -2,15 +2,13 @@
 title: "targets Pipeline Documentation"
 subtitle: Technical Design Document
 date: today
+# Everything else (toc, embed-resources, code-fold, code-summary, keep-md)
+# comes from input/reports/_quarto.yml. Only the two deviations from that
+# shared block are repeated here.
 format:
     html:
-        toc: true
         toc-depth: 6
         toc_expand: true
-        embed-resources: true
-        code-fold: true
-        code-summary: 'Show the code'
-        keep-md: false
 ---
 
 # targets Pipeline Documentation
@@ -21,7 +19,7 @@ This document describes the `targets` pipeline for the IPBES BM Fact Checker pro
 that respect** — it does not describe the `nli_ready_evidence_parquet` →
 `nli_claim_units_evidence` → `nli_scores_by_claim_evidence` chain, or the
 downstream `nli_overview_data`, `nli_overview_figures`, `nli_bm_explorer_html`,
-`td_doc_html`, and `report_fact_checker` targets, all of which exist and run
+`reports_project`, and `report_fact_checker` targets, all of which exist and run
 today. See `_targets.R` and [CLAUDE.md](CLAUDE.md)'s R-files table for the
 current, authoritative target list.
 
@@ -691,18 +689,22 @@ Details section for the exact column-curation rationale (bypasses
 `IPBES.R::table_dt()`, since its wrapper can't pass through DT's top-level
 `filter` argument).
 
-Rendered into a standalone report parameterized by **both** assessment and
-label, `IPBES_Label_Funnel_Report.qmd` → `report_refutes_funnel_html`/
-`report_supports_funnel_html`, via Quarto's `params:`/`execute_params=`
-mechanism (this project's first parameterized render — every other
-multi-output render, `td_doc_html`, branches over distinct source files
-instead of one file rendered N times). Target names stay label-specific
-(`report_refutes_funnel_html`, not one generic target) since each is its
-own `pattern = map(assessment, ...)` branch set; the qmd itself resolves
-which label's data to read at render time via `targets::tar_read_raw()`
-(the string-based variant of `tar_read()`) keyed off `params$label`. Linked
-from `IPBES_Fact_Checker.qmd`'s final section and folded into
-`report_output_dir`'s deployable copy alongside `td_doc_html`.
+Rendered into standalone reports parameterized by both assessment and label.
+**This section describes the pre-2026-09-18 design and is kept for the
+record; see `CLAUDE.md`'s "Quarto Report" section for what the pipeline does
+now.** Formerly: `IPBES_Label_Funnel_Report.qmd` →
+`report_refutes_funnel_html`/`report_supports_funnel_html` via Quarto's
+`params:`/`execute_params=`, with the qmd resolving which label's data to
+read through `targets::tar_read_raw()` keyed off `params$label`.
+
+Today all reports live in one Quarto project (`input/reports/_quarto.yml`)
+rendered by `tarchetypes::tar_quarto()`. Because a project renders each
+`.qmd` exactly once, the parameterized families became a shared body
+(`_IPBES_Label_Funnel_Report_body.qmd`) plus one generated wrapper per
+combination, written from `config.yaml`'s `reports:` section by
+`generate_report_wrappers()`. `tar_read_raw()` is gone: it was invisible to
+`tarchetypes`, so these reports contributed no dependency edges at all and
+each render target had to fake them with bare symbol references.
 
 `SUPPORTS` was added to every `llm_verification` config's `nli_labels`
 (`input/config.yaml`) at the same time the SUPPORTS funnel report was

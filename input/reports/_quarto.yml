@@ -1,0 +1,42 @@
+# Quarto project for every report this pipeline renders.
+#
+# Rendered by the single `reports_project` target in _targets.R via
+# tarchetypes::tar_quarto(). This replaced nine separate tar_target() bodies
+# that each called quarto::quarto_render() and then file.rename()d the result
+# out of input/reports/ into output/reports/ -- Quarto writes its output next
+# to the INPUT regardless of execute_dir, so every one of them had to move the
+# file by hand. `output-dir` below makes that whole step unnecessary.
+#
+# The project root is input/reports/ rather than the repo root on purpose:
+# Quarto mirrors each input's project-relative path underneath output-dir, so
+# a repo-root project would emit output/reports/input/reports/*.html.
+project:
+  type: default
+  output-dir: ../../output/reports
+  # IPBES_Fact_Checker.qmd is deliberately EXCLUDED from the project render.
+  # It links to, and copies into its own _files/ sidecar, the rendered HTML of
+  # every other report here -- so it must run strictly AFTER them. A single
+  # project render gives no ordering guarantee, so the main report gets its own
+  # `report_fact_checker` target (tar_quarto() on the single file, which still
+  # picks up this project's format and output-dir) that depends on
+  # `reports_project`. targets then enforces the order.
+  render:
+    - "*.qmd"
+    - "!IPBES_Fact_Checker.qmd"
+
+# Shared format. This is the QA-report profile, which is what the ~24
+# GENERATED wrapper documents use (see R/generate_report_wrappers.R), so those
+# wrappers carry no format: block at all. The seven hand-written documents --
+# IPBES_Fact_Checker.qmd and the six TD_*.qmd -- override what they need:
+# toc-depth: 6 + toc_expand: true, and embed-resources: false for the main
+# report only (deliberate, for file size -- in a project its _files/ sidecar
+# lands under output-dir beside the html, which is what fixes the long-standing
+# stale-libs/ bug).
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    embed-resources: true
+    code-fold: true
+    code-summary: 'Show the code'
+    keep-md: false

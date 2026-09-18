@@ -1,19 +1,11 @@
----
-title: QA LLM Verification Report
-subtitle: QA check for Phase 2 (LLM verification) of NLI-flagged claim/work pairs
-date: today
-params:
-  assessment_id: "GA1"
-  llm_config: "openrouter_cheap"
-format:
-    html:
-        toc: true
-        toc-depth: 4
-        embed-resources: true
-        code-fold: true
-        code-summary: 'Show the code'
-        keep-md: false
----
+<!-- Shared BODY for the QA_LLM_Verification_Report report family.
+     Rendered only via the generated wrapper .qmd files that `{{< include >}}`
+     this file -- see R/generate_report_wrappers.R and config.yaml's `reports:`
+     section. The leading underscore keeps Quarto from rendering it on its own
+     -- but it also keeps it out of the project entirely, so tar_quarto() never
+     scans this file for dependencies. That is why the tar_read() calls live in
+     the wrapper and arrive here as `report_deps`; `params$...` likewise comes
+     from the wrapper. -->
 
 ```{r}
 #| label: setup
@@ -33,17 +25,23 @@ expected_name <- function(ext) {
   sprintf("llm_verification_qa_%s_%s.%s", params$assessment_id, params$llm_config, ext)
 }
 
-data_path <- targets::tar_read_raw("llm_verification_qa_data") |>
+data_path <- report_deps$llm_verification_qa_data |>
   (\(x) x[basename(x) == expected_name("rds")])()
-x <- readRDS(data_path)
+# config.yaml's `reports:` declares every (assessment x granularity)
+# combination, but a granularity that has not been built yet produces no rds
+# at all -- different from an rds that exists and reports x$empty, and it used
+# to abort the WHOLE project render on the first such combination rather than
+# just that one document. Route both into the same empty-state below.
+data_path <- data_path[file.exists(data_path)]
+x <- if (length(data_path) == 1L) readRDS(data_path) else list(empty = TRUE)
 
 # Embedded as base64 data: URIs (xfun::base64_uri()), same convention
 # QA_NLI_Scores_Report.qmd already uses and already confirmed necessary --
 # Quarto/pandoc's own resource resolution mangles plain paths here even
 # when absolute.
-decile_path <- targets::tar_read_raw("llm_verification_qa_figures") |>
+decile_path <- report_deps$llm_verification_qa_figures |>
   (\(paths) paths[basename(paths) == sprintf("llm_verification_qa_decile_%s_%s.png", params$assessment_id, params$llm_config)])()
-alluvial_path <- targets::tar_read_raw("llm_verification_qa_figures") |>
+alluvial_path <- report_deps$llm_verification_qa_figures |>
   (\(paths) paths[basename(paths) == sprintf("llm_verification_qa_alluvial_%s_%s.png", params$assessment_id, params$llm_config)])()
 ```
 

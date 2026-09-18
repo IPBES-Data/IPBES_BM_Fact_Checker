@@ -1,20 +1,11 @@
----
-title: QA NLI Scores Report
-subtitle: QA check for Phase 1 (zero-shot NLI) scoring of claims against citing works
-date: today
-params:
-  assessment_id: "GA1"
-  granularity: "naive_bm"
-  nli_config: "deberta_zeroshot"
-format:
-    html:
-        toc: true
-        toc-depth: 4
-        embed-resources: true
-        code-fold: true
-        code-summary: 'Show the code'
-        keep-md: false
----
+<!-- Shared BODY for the QA_NLI_Scores_Report report family.
+     Rendered only via the generated wrapper .qmd files that `{{< include >}}`
+     this file -- see R/generate_report_wrappers.R and config.yaml's `reports:`
+     section. The leading underscore keeps Quarto from rendering it on its own
+     -- but it also keeps it out of the project entirely, so tar_quarto() never
+     scans this file for dependencies. That is why the tar_read() calls live in
+     the wrapper and arrive here as `report_deps`; `params$...` likewise comes
+     from the wrapper. -->
 
 ```{r}
 #| label: setup
@@ -42,9 +33,15 @@ expected_name <- function(ext) {
   )
 }
 
-data_path <- targets::tar_read_raw("nli_scores_qa_data") |>
+data_path <- report_deps$nli_scores_qa_data |>
   (\(x) x[basename(x) == expected_name("rds")])()
-x <- readRDS(data_path)
+# config.yaml's `reports:` declares every (assessment x granularity)
+# combination, but a granularity that has not been built yet produces no rds
+# at all -- different from an rds that exists and reports x$empty, and it used
+# to abort the WHOLE project render on the first such combination rather than
+# just that one document. Route both into the same empty-state below.
+data_path <- data_path[file.exists(data_path)]
+x <- if (length(data_path) == 1L) readRDS(data_path) else list(empty = TRUE)
 
 # Embedded as a base64 data URI (via xfun::base64_uri(), a knitr/xfun
 # dependency already present) rather than through a report_files_dir/
@@ -65,7 +62,7 @@ expected_ternary_name <- function() {
     params$assessment_id, model_suffix, gran_suffix
   )
 }
-ternary_path <- targets::tar_read_raw("nli_scores_qa_figures") |>
+ternary_path <- report_deps$nli_scores_qa_figures |>
   (\(x) x[basename(x) == expected_ternary_name()])()
 ```
 

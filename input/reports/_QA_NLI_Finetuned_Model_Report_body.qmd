@@ -1,18 +1,11 @@
----
-title: QA NLI Fine-Tuned Model Report
-subtitle: QA check for a locally fine-tuned NLI classifier (scripts/training/train_nli.py)
-date: today
-params:
-  nli_config: "bge_m3_zeroshot_atomic_bm"
-format:
-    html:
-        toc: true
-        toc-depth: 4
-        embed-resources: true
-        code-fold: true
-        code-summary: 'Show the code'
-        keep-md: false
----
+<!-- Shared BODY for the QA_NLI_Finetuned_Model_Report report family.
+     Rendered only via the generated wrapper .qmd files that `{{< include >}}`
+     this file -- see R/generate_report_wrappers.R and config.yaml's `reports:`
+     section. The leading underscore keeps Quarto from rendering it on its own
+     -- but it also keeps it out of the project entirely, so tar_quarto() never
+     scans this file for dependencies. That is why the tar_read() calls live in
+     the wrapper and arrive here as `report_deps`; `params$...` likewise comes
+     from the wrapper. -->
 
 ```{r}
 #| label: setup
@@ -32,9 +25,15 @@ expected_name <- function(ext) {
   sprintf("nli_finetuned_model_qa_%s.%s", params$nli_config, ext)
 }
 
-data_path <- targets::tar_read_raw("nli_finetuned_model_qa_data") |>
+data_path <- report_deps$nli_finetuned_model_qa_data |>
   (\(x) x[basename(x) == expected_name("rds")])()
-x <- readRDS(data_path)
+# config.yaml's `reports:` declares every (assessment x granularity)
+# combination, but a granularity that has not been built yet produces no rds
+# at all -- different from an rds that exists and reports x$empty, and it used
+# to abort the WHOLE project render on the first such combination rather than
+# just that one document. Route both into the same empty-state below.
+data_path <- data_path[file.exists(data_path)]
+x <- if (length(data_path) == 1L) readRDS(data_path) else list(empty = TRUE)
 ```
 
 # nli_config: `r params$nli_config`

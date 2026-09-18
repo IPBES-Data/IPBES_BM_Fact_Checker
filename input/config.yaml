@@ -24,6 +24,68 @@ assessments:
     ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Business%20and%20Biodiversity%20Assessment/BBA_v01.ttl
     full_text: true
 
+# Which reports to render, and over which dimensions.
+#
+# Consumed by generate_report_wrappers() (R/generate_report_wrappers.R), which
+# is called from _targets.R's preamble -- BEFORE the pipeline is defined -- and
+# writes one small wrapper .qmd per combination into input/reports/. Each
+# wrapper is a params: block plus a {{< include _<qmd_name>_body.qmd >}}, and
+# the Quarto project (input/reports/_quarto.yml) then renders them all.
+#
+# Generation has to happen in the preamble because tarchetypes::tar_quarto()
+# inspects the project and resolves its dependency edges when _targets.R is
+# SOURCED, not when the target runs -- a wrapper produced by an upstream target
+# would contribute nothing on the run that created it.
+#
+# `qmd_name` names the shared body and prefixes every generated wrapper.
+# `title` is a template; {...} placeholders are filled from that wrapper's own
+# parameter values. Every other key lists the values of one dimension to expand
+# over, and the generator takes the Cartesian product of whichever keys are
+# present. Omit a dimension and it is derived (granularity defaults to all
+# three; nli_config is resolved per granularity by nli_config_for_granularity(),
+# which is the safe default -- naming the wrong config silently makes
+# already-scored data look unscored).
+#
+# `label` is deliberately NOT a key here: the funnel report always expands over
+# both REFUTES and SUPPORTS, which is what collapses the two former
+# byte-for-byte twin targets into the single entry below.
+#
+# Adding an assessment therefore means updating BOTH `assessments:` above and
+# the relevant entries here. That is deliberate -- until now the set of rendered
+# reports was an accident of which data happened to exist on disk.
+reports:
+  - qmd_name: IPBES_Label_Funnel_Report
+    title: "{label} - {assessment} ({granularity})"
+    assessment: [GA1, IAS]
+    granularity: [naive_bm, complete_bm, atomic_bm]
+
+  - qmd_name: QA_BM_Split_Report
+    title: "QA BM Split - {assessment} ({granularity})"
+    assessment: [GA1, IAS]
+    granularity: [naive_bm, complete_bm, atomic_bm]
+
+  - qmd_name: QA_NLI_Scores_Report
+    title: "QA NLI Scores - {assessment} ({granularity})"
+    assessment: [GA1, IAS]
+    granularity: [naive_bm, complete_bm, atomic_bm]
+
+  - qmd_name: QA_LLM_Verification_Report
+    title: "QA LLM Verification - {assessment}"
+    assessment: [GA1]
+    llm_config: [openrouter_cheap]
+
+  - qmd_name: QA_NLI_Training_Data_Report
+    title: "QA NLI Training Data - {assessment} ({granularity})"
+    assessment: [GA1]
+    granularity: [atomic_bm]
+
+  # No assessment dimension at all -- one report per nli_config. Only
+  # generated when that config has train: true, which replaces the old
+  # `.skipped_<cfg>` placeholder-file hack outright.
+  - qmd_name: QA_NLI_Finetuned_Model_Report
+    title: "QA NLI Fine-tuned Model - {nli_config}"
+    nli_config: [bge_m3_zeroshot_atomic_bm]
+
 # NLI alignment backend. The pipeline POSTs (premise, hypothesis) pairs to a
 # zero-shot NLI server (see external/runpod/docker/nli-runpod/). Switch models by changing
 # `active` to a key under `configs`. Use `~` to disable.

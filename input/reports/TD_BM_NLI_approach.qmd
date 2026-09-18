@@ -2,15 +2,13 @@
 title: "Assessing Reference Support for IPBES Background Messages via NLI"
 subtitle: Technical Design Document
 date: today
+# Everything else (toc, embed-resources, code-fold, code-summary, keep-md)
+# comes from input/reports/_quarto.yml. Only the two deviations from that
+# shared block are repeated here.
 format:
     html:
-        toc: true
         toc-depth: 6
         toc_expand: true
-        embed-resources: true
-        code-fold: true
-        code-summary: 'Show the code'
-        keep-md: false
 ---
 
 # Assessing Reference Support for IPBES Background Messages via NLI

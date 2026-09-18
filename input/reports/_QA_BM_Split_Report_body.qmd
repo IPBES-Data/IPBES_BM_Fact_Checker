@@ -1,19 +1,11 @@
----
-title: QA BM Split Report
-subtitle: QA check for how each Background Message was split into claims
-date: today
-params:
-  assessment_id: "GA1"
-  granularity: "naive_bm"
-format:
-    html:
-        toc: true
-        toc-depth: 4
-        embed-resources: true
-        code-fold: true
-        code-summary: 'Show the code'
-        keep-md: false
----
+<!-- Shared BODY for the QA_BM_Split_Report report family.
+     Rendered only via the generated wrapper .qmd files that `{{< include >}}`
+     this file -- see R/generate_report_wrappers.R and config.yaml's `reports:`
+     section. The leading underscore keeps Quarto from rendering it on its own
+     -- but it also keeps it out of the project entirely, so tar_quarto() never
+     scans this file for dependencies. That is why the tar_read() calls live in
+     the wrapper and arrive here as `report_deps`; `params$...` likewise comes
+     from the wrapper. -->
 
 ```{r}
 #| label: setup
@@ -37,10 +29,19 @@ expected_name <- function(ext) {
   )
 }
 
-data_path <- targets::tar_read_raw("bm_split_report_highlighted") |>
+data_path <- report_deps$bm_split_report_highlighted |>
   (\(x) x[basename(x) == expected_name("rds")])()
-x <- readRDS(data_path)
+# config.yaml's `reports:` declares every (assessment x granularity)
+# combination, but a granularity that has not been built yet produces no rds
+# at all -- different from an rds that exists and reports x$empty, and it used
+# to abort the WHOLE project render on the first such combination rather than
+# just that one document. Route both into the same empty-state below.
+data_path <- data_path[file.exists(data_path)]
+x <- if (length(data_path) == 1L) readRDS(data_path) else list(empty = TRUE)
 
+if (isTRUE(x$empty)) {
+  n_bm <- 0L; n_claims <- 0L; has_confidence <- FALSE; pct_with_confidence <- NA
+} else {
 n_bm <- x$data |> distinct(km, bm) |> nrow()
 n_claims <- nrow(x$data)
 has_confidence <- "confidence" %in% names(x$data) && any(!is.na(x$data$confidence))
@@ -48,6 +49,21 @@ pct_with_confidence <- if (has_confidence) {
   round(100 * mean(!is.na(x$data$confidence)), 1)
 } else {
   NA
+}
+}
+```
+
+```{r}
+#| label: empty-check
+#| results: asis
+# This body had no empty-state at all, unlike its five siblings -- a missing
+# input was an error rather than a rendered explanation.
+if (isTRUE(x$empty)) {
+  cat(sprintf(
+    "No BM-split QA data for `%s` at granularity `%s` -- that granularity has not been segmented/scored yet. Run the `nli_ready_evidence_parquet` chain for it and re-render.\n\n",
+    params$assessment_id, params$granularity
+  ))
+  knitr::knit_exit()
 }
 ```
 
