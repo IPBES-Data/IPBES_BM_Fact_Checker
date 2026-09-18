@@ -28,6 +28,45 @@ editing **both** `assessments:` and the relevant `reports:` entries.
 
 ## Build System
 
+### Several targets projects, one repository
+
+`_targets.yaml` defines the projects; each has its own script and its own store.
+The split is in progress — see `TODO_PIPELINE_SPLIT.md` for the design and the
+remaining steps.
+
+| Project | Script / store | Holds | Credentials |
+|---|---|---|---|
+| `main` | `_targets.R` / `_targets/` | collection (LOD → refs → zotero → works → snowball → works_citing) **plus the citing-works scoring chain, not yet extracted** | `API_openalex` + `API_openrouter` |
+| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → fine-tune | `API_openrouter` only |
+| `reporting` | `_targets_reporting.R` / `_targets_reporting/` | everything that renders | **none** |
+
+```r
+targets::tar_make()                                   # main (the default)
+Sys.setenv(TAR_PROJECT = "training"); targets::tar_make()
+targets::tar_make(script = "_targets_reporting.R", store = "_targets_reporting")
+```
+
+**`main` keeps the original store deliberately.** A fresh store makes every
+target outdated by definition, and `download_works()` `unlink()`s its output
+before refetching while `build_snowball_parquet()` has no existence check at
+all — re-running them would cost days of OpenAlex time *and* produce a
+different corpus from the one every existing score was computed against. So
+targets are *deleted from* `_targets.R` as they move out; its metadata survives
+untouched. Do **not** run `tar_prune()` mid-migration: orphaned metadata for
+removed targets is harmless (`targets` ignores rows for targets not in the
+pipeline) and keeps a rollback available.
+
+**A fresh consumer store makes even a no-op pass do work.** Both scoring chains
+depend on `nli_pool_health`, which fails hard if any host in the active config
+is unreachable — so a training run that will delta-skip every claim still needs
+a live pool first. One pod in the active config's `host:` list satisfies it.
+
+**Cross-project state that no DAG describes** (named in
+`TODO_PIPELINE_SPLIT.md`): the per-host lock directory
+`output/nli_scores/.locks/`, shared by both scoring projects (deliberate — one
+pool, one queue), and the two append-only LLM caches
+`output/claim_completion/raw/` and `output/llm_verification/raw*/`.
+
 ### targets Pipeline (primary)
 
 ```r
@@ -38,7 +77,7 @@ targets::tar_outdated()      # list what needs re-running
 
 **System dependency:** `fuseki-server` must be on `PATH` when `sparql_url: fuseki` (default). Install with `brew install fuseki`.
 
-**System dependency (fine-tuning only):** `nli_finetuned_model` shells out to `scripts/training/train_nli.py` via a Python venv, defaulting to `~/.venvs/specter2-merge/bin/python3` (override with the `python_bin` argument at the call site in `_targets.R`). Only needed when an nli config sets `train: true`.
+**System dependency (fine-tuning only):** `nli_finetuned_model` shells out to `scripts/training/train_nli.py` via a Python venv, defaulting to `~/.venvs/specter2-merge/bin/python3` (override with the `python_bin` argument at the call site in `_targets_training.R`). Only needed when an nli config sets `train: true`.
 
 **Credentials:** `_targets.R` reads `API_openalex` and `API_openrouter` from the macOS keyring at startup via `keyring::key_get()`. Set them before running `tar_make()`:
 
@@ -192,7 +231,7 @@ input/Query_Submessage_ref_GA.csv
 ### Key Design Patterns
 
 - **targets caching**: each target is re-run only when its inputs change. Delete `_targets/` to force a full rebuild.
-- **Fine-grained config**: `config` is split into `sparql_url`, `workers`, `assessments_list`, `nli_active`/`nli_config`/`nli_configs_all`, `granularity`, `max_length`, `nli_train_enabled`, `nli_downsample_seed`, `claim_completion_model`, and `llm_verification_active`/`llm_verification_config` targets so unrelated config sections don't cascade invalidation. Note `granularity`, `max_length`, `nli_train_enabled` and `nli_downsample_seed` are all read out of *the active nli config*, so switching `nli.active` invalidates them together; `nli_granularities` is a fixed literal `c("naive_bm", "complete_bm", "atomic_bm")`, deliberately **not** read from config.
+- **Fine-grained config**: `config` is split into `sparql_url`, `workers`, `assessments_list`, `nli_active`/`nli_config`/`nli_configs_all`, `granularity`, `max_length`, `nli_train_enabled`, `nli_downsample_seed`, `claim_completion_model`, and `llm_verification_active`/`llm_verification_config` targets so unrelated config sections don't cascade invalidation. Note `granularity`, `max_length`, `nli_train_enabled` and `nli_downsample_seed` are all read out of *the active nli config*, so switching `nli.active` invalidates them together (`nli_train_enabled`/`nli_downsample_seed` now live only in `_targets_training.R`, with their consumer; `nli_configs_all` only in `_targets_reporting.R`); `nli_granularities` is a fixed literal `c("naive_bm", "complete_bm", "atomic_bm")`, deliberately **not** read from config.
 - **Fuseki lifecycle**: started and stopped inside the parquet builders; cleanup is idempotent and handled by `on.exit()`.
 - **Assessment branching**: `assessment` is the branch key, so adding a new assessment only computes the new branch.
 - **Separated materialization**: refs, sections, key_messages, Zotero, works, snowball, works_citing, NLI scores, and LLM verification scores are all built independently; there is no cached combined `lod_data` object.
@@ -212,7 +251,7 @@ input/Query_Submessage_ref_GA.csv
 | `R/manage_fuseki.R` | helpers | Start/stop Fuseki sessions and resolve endpoints |
 | `R/branch_helpers.R` | helpers | Assessment IDs and branch output paths. Also `nli_config_for_granularity(nli_configs, granularities, fallback)`: resolves, per granularity, the `nli.configs.<name>` entry that actually *produced* that granularity's scores (whichever config has a matching `granularity:` field), rather than assuming it's whichever config is currently `nli.active`. Needed because `nli.active` is a single global choice but `naive_bm`/`complete_bm`/`atomic_bm` are each normally scored under their own dedicated config — without this, switching `active` made `nli_overview_data`/`refutes_funnel_data`/`supports_funnel_data` (below) look under the wrong `nli_config=` subdirectory for every non-active granularity and silently report already-scored data as unscored. Falls back to `fallback` (`nli_active`) for any granularity with no config declaring it. |
 | `R/generate_report_wrappers.R` | *(no target — called from `_targets.R`'s preamble)* | Writes one small wrapper `.qmd` per (report x dimension) combination into `input/reports/`, from `config.yaml`'s `reports:` section — 27 of them currently. Each wrapper is a `params:` block, a `tar_read()` chunk declaring that combination's dependencies, and a `{{< include _<qmd_name>_body.qmd >}}`; its **filename is the output filename**, so no `output_file` plumbing exists anywhere. Reuses `granularity_suffix()`/`nli_model_suffix()`/`nli_config_for_granularity()` from `R/branch_helpers.R` rather than re-deriving names, so output matches exactly what the nine former render targets produced. **Not a target, deliberately**: `tar_quarto()` resolves the project's file list and its dependency edges when `_targets.R` is *sourced*, so a wrapper produced by an upstream target would contribute nothing on the run that created it. Consequently it runs on every `tar_make()`/`tar_outdated()`/`tar_visnetwork()` and must stay cheap — `write_if_changed()` rewrites nothing when bytes are unchanged (watch two traps there: `writeLines()` appends its own newline, and `c()` propagates `dep_lines`' names, either of which silently defeats the comparison), and stale wrappers are pruned, but only ever files carrying its `GENERATED FILE` marker so a hand-written qmd can never be deleted. Validates loudly since a failure here makes `_targets.R` unsourceable: unknown `qmd_name`, an assessment absent from `assessments:`, an unknown granularity, or a pinned `nli_config` that doesn't declare the requested granularity all `stop()` with the offending value named. |
-| `R/render_diagrams.R` | `mmd_workflow_nli`, `diagram_workflow_nli`, `pipeline_mmd`, `diagram_pipeline_nli` | Render Mermaid `.mmd` sources to SVG. The hand-authored conceptual workflow is **split per project** — `workflow_main.mmd` and `workflow_reporting.mmd` — cut along the original single file's own subgraph boundaries when the pipeline became several projects: every `qa_*`/`report_*` node went to the reporting file because those targets did, the rest stayed in main. All 34 clickable node ids were verified to survive the cut (25 main, 9 reporting, none lost), and the force-ordering `linkStyle` indices were recomputed programmatically — the original file's own comment warned they must be recounted whenever edges change, and removing the reporting edges invalidated all three. `workflow_nli.mmd` no longer exists; `build_pipeline_mmd()` auto-generates a DAG picture from the live `tar_mermaid()` call — and renders **whatever project it is run inside**, so each project writes its own: `_targets.R` writes `input/mmd/pipeline_main.mmd`, `_targets_reporting.R` writes `pipeline_reporting.mmd`. This is why the target is duplicated per project rather than owned by reporting: while it lived there during the split it silently regenerated the old `pipeline_nli.mmd` as a picture of the 52-target *reporting* graph, with `snowball_parquet` and `nli_scores_by_claim_evidence` missing and `works_citing_parquet` present only as reporting's own input stub. The old `pipeline_nli.*` artifacts are no longer produced by anything. The `_lm` variants of both (frozen snapshots of the earlier single-phase LLM-comparison approach) were removed once that approach's source was deleted outright rather than kept parked — see [TD_LLM_approach.qmd](TD_LLM_approach.qmd) |
+| `R/render_diagrams.R` | `mmd_workflow_main`, `diagram_workflow_main`, `pipeline_mmd`, `diagram_pipeline_main` (and each other project's own `mmd_workflow_*`/`diagram_*`) | Render Mermaid `.mmd` sources to SVG. The hand-authored conceptual workflow is **split per project** — `workflow_main.mmd` and `workflow_reporting.mmd` — cut along the original single file's own subgraph boundaries when the pipeline became several projects: every `qa_*`/`report_*` node went to the reporting file because those targets did, the rest stayed in main. All 34 clickable node ids were verified to survive the cut (25 main, 9 reporting, none lost), and the force-ordering `linkStyle` indices were recomputed programmatically — the original file's own comment warned they must be recounted whenever edges change, and removing the reporting edges invalidated all three. `workflow_nli.mmd` no longer exists; `build_pipeline_mmd()` auto-generates a DAG picture from the live `tar_mermaid()` call — and renders **whatever project it is run inside**, so each project writes its own: `_targets.R` writes `input/mmd/pipeline_main.mmd`, `_targets_reporting.R` writes `pipeline_reporting.mmd`, `_targets_training.R` writes `pipeline_training.mmd`. The self-exclusion list (so a pipeline picture never depicts the targets that draw it) is derived **by pattern from the live manifest**, not hardcoded — a fixed list silently stops excluding anything the moment a target is renamed, which is exactly what the split did to it: it still said `..._nli` while the real targets had become `..._main`/`..._reporting`, so `diagram_pipeline_reporting`, `diagram_workflow_reporting` and `mmd_workflow_reporting` were drawn into `pipeline_reporting.mmd` itself. This is why the target is duplicated per project rather than owned by reporting: while it lived there during the split it silently regenerated the old `pipeline_nli.mmd` as a picture of the 52-target *reporting* graph, with `snowball_parquet` and `nli_scores_by_claim_evidence` missing and `works_citing_parquet` present only as reporting's own input stub. The old `pipeline_nli.*` artifacts are no longer produced by anything. The `_lm` variants of both (frozen snapshots of the earlier single-phase LLM-comparison approach) were removed once that approach's source was deleted outright rather than kept parked — see [TD_LLM_approach.qmd](TD_LLM_approach.qmd) |
 | `R/extract_lod.R` | `refs_parquet`, `key_messages_parquet` | SPARQL extraction helpers; reads queries from `queries/*.sparql` |
 | `R/write_refs_parquet.R` | `refs_parquet` | Build DB1 directly into `output/refs/assessment=<id>/` |
 | `R/write_sections_parquet.R` | *(disabled — target commented out in `_targets.R`)* | Built DB2 into `output/sections/assessment=<id>/`. Nothing consumed it; disabled and its output deleted 2026-09-15. Uncomment the `sections_sparql`/`sections_parquet` block in `_targets.R` to restore. |

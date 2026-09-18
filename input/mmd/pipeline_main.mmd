@@ -4,127 +4,82 @@ graph TD
     xf8f6f156e3c3b679(["assessments_list"]) --> x7096e63b1af7fc2e(["assessment"])
     x9909b451a6a56060(["config_file"]) --> xf8f6f156e3c3b679(["assessments_list"])
     x9909b451a6a56060(["config_file"]) --> xf490f5be80b63214(["claim_completion_model"])
-    x9909b451a6a56060(["config_file"]) --> x147e43907afa8f25(["granularity"])
     xdaa9eaf14bf7d9fb(["nli_active"]) --> x147e43907afa8f25(["granularity"])
+    x9909b451a6a56060(["config_file"]) --> x147e43907afa8f25(["granularity"])
     x7096e63b1af7fc2e(["assessment"]) --> x1b5c1cdf9ba064e4["key_messages_parquet"]
     xda2ef7d9d7074388["ttl_path"] --> x1b5c1cdf9ba064e4["key_messages_parquet"]
     xcae032f895dcdbee(["sparql_url"]) --> x1b5c1cdf9ba064e4["key_messages_parquet"]
     x71e70b33567e8c77(["key_messages_sparql"]) --> x1b5c1cdf9ba064e4["key_messages_parquet"]
-    x4c5608b5b57c599b["refs_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
-    xf490f5be80b63214(["claim_completion_model"]) --> xb40398e1577a790f["llm_candidate_scope_parquet"]
-    xdb22778f9ff9b079["snowball_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
-    xbe4dac68e009ada6["nli_ready_evidence_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
+    x31e4fc98a3c6921c["works_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
     x147e43907afa8f25(["granularity"]) --> xb40398e1577a790f["llm_candidate_scope_parquet"]
     x1b5c1cdf9ba064e4["key_messages_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
-    x31e4fc98a3c6921c["works_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
+    xdb22778f9ff9b079["snowball_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
+    x4c5608b5b57c599b["refs_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
+    xf490f5be80b63214(["claim_completion_model"]) --> xb40398e1577a790f["llm_candidate_scope_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> xb40398e1577a790f["llm_candidate_scope_parquet"]
+    xbe4dac68e009ada6["nli_ready_evidence_parquet"] --> xb40398e1577a790f["llm_candidate_scope_parquet"]
     x9909b451a6a56060(["config_file"]) --> x1f52e3f395a512d7(["llm_verification_active"])
     x9909b451a6a56060(["config_file"]) --> x026aa16cae84ff2f(["llm_verification_config"])
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    x7096e63b1af7fc2e(["assessment"]) --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    xe05d1a5bee1ca75c(["llm_verification_system_prompt_file"]) --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    x1f52e3f395a512d7(["llm_verification_active"]) --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    x5c0a917856325802(["llm_verification_user_prompt_file"]) --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    x026aa16cae84ff2f(["llm_verification_config"]) --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    x147e43907afa8f25(["granularity"]) --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"] --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    x29d83fad976ae6aa(["nli_scores_keypaper_evidence_consolidated"]) --> x41a75836b2e1c821["llm_verification_keypaper_parquet"]
-    x80ce0d6e61e2afef(["nli_scores_evidence_consolidated"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
-    xe05d1a5bee1ca75c(["llm_verification_system_prompt_file"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
-    x7096e63b1af7fc2e(["assessment"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
-    x5c0a917856325802(["llm_verification_user_prompt_file"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
     x026aa16cae84ff2f(["llm_verification_config"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
-    x147e43907afa8f25(["granularity"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
+    xe05d1a5bee1ca75c(["llm_verification_system_prompt_file"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
     xb40398e1577a790f["llm_candidate_scope_parquet"] --> x975618f85e5ca6cb["llm_verification_parquet"]
-    x1f52e3f395a512d7(["llm_verification_active"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
+    x147e43907afa8f25(["granularity"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
     xbe4dac68e009ada6["nli_ready_evidence_parquet"] --> x975618f85e5ca6cb["llm_verification_parquet"]
-    x9909b451a6a56060(["config_file"]) --> x0ab61cd30577603d(["max_length"])
+    x5c0a917856325802(["llm_verification_user_prompt_file"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
+    x1f52e3f395a512d7(["llm_verification_active"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
+    xdaa9eaf14bf7d9fb(["nli_active"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
+    x80ce0d6e61e2afef(["nli_scores_evidence_consolidated"]) --> x975618f85e5ca6cb["llm_verification_parquet"]
     xdaa9eaf14bf7d9fb(["nli_active"]) --> x0ab61cd30577603d(["max_length"])
+    x9909b451a6a56060(["config_file"]) --> x0ab61cd30577603d(["max_length"])
     x9909b451a6a56060(["config_file"]) --> xdaa9eaf14bf7d9fb(["nli_active"])
+    x2a70a19ca5bda07e["nli_ready_parquet"] --> x2c6c2bd1b14aa53d["nli_claim_units"]
     x7096e63b1af7fc2e(["assessment"]) --> x2c6c2bd1b14aa53d["nli_claim_units"]
     x0ab61cd30577603d(["max_length"]) --> x2c6c2bd1b14aa53d["nli_claim_units"]
-    x2a70a19ca5bda07e["nli_ready_parquet"] --> x2c6c2bd1b14aa53d["nli_claim_units"]
-    x7096e63b1af7fc2e(["assessment"]) --> x9be7a889ec11d50c["nli_claim_units_evidence"]
     xbe4dac68e009ada6["nli_ready_evidence_parquet"] --> x9be7a889ec11d50c["nli_claim_units_evidence"]
     x0ab61cd30577603d(["max_length"]) --> x9be7a889ec11d50c["nli_claim_units_evidence"]
+    x7096e63b1af7fc2e(["assessment"]) --> x9be7a889ec11d50c["nli_claim_units_evidence"]
     x9be7a889ec11d50c["nli_claim_units_evidence"] --> xb35639b28214b947(["nli_claim_units_evidence_flat"])
-    x7096e63b1af7fc2e(["assessment"]) --> x34f9320b7dad72dd["nli_claim_units_evidence_keypaper"]
-    x0ab61cd30577603d(["max_length"]) --> x34f9320b7dad72dd["nli_claim_units_evidence_keypaper"]
-    xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"] --> x34f9320b7dad72dd["nli_claim_units_evidence_keypaper"]
-    x34f9320b7dad72dd["nli_claim_units_evidence_keypaper"] --> x5b94edfda6bdc868(["nli_claim_units_evidence_keypaper_flat"])
     x2c6c2bd1b14aa53d["nli_claim_units"] --> x51165e9dec51c0e2(["nli_claim_units_flat"])
     x9909b451a6a56060(["config_file"]) --> xc1390bdb2b35a1c0(["nli_config"])
-    x9909b451a6a56060(["config_file"]) --> xfc37fc95ed94ad75(["nli_configs_all"])
-    x9909b451a6a56060(["config_file"]) --> xb0984c58f0b410d6(["nli_downsample_seed"])
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> xb0984c58f0b410d6(["nli_downsample_seed"])
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> xc308b7824bcd1ddd(["nli_finetuned_model"])
-    xb0984c58f0b410d6(["nli_downsample_seed"]) --> xc308b7824bcd1ddd(["nli_finetuned_model"])
-    x3ff54b3ab6f59d51(["nli_train_enabled"]) --> xc308b7824bcd1ddd(["nli_finetuned_model"])
-    x6eed056a522ba4b6["nli_training_data"] --> xc308b7824bcd1ddd(["nli_finetuned_model"])
     x848f6ce08c0f5882["nli_scores_by_claim_evidence"] --> x6ceacced589e9717(["nli_host_locks_cleanup"])
     xdaa9eaf14bf7d9fb(["nli_active"]) --> xa97d1735ba09b196(["nli_pool_health"])
     xc1390bdb2b35a1c0(["nli_config"]) --> xa97d1735ba09b196(["nli_pool_health"])
-    x7096e63b1af7fc2e(["assessment"]) --> xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"]
-    x359cd01ce3cd9deb(["workers"]) --> xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"]
-    x1b5c1cdf9ba064e4["key_messages_parquet"] --> xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"]
-    xdb22778f9ff9b079["snowball_parquet"] --> xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"]
-    x31e4fc98a3c6921c["works_parquet"] --> xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"]
-    x147e43907afa8f25(["granularity"]) --> xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"]
-    xf490f5be80b63214(["claim_completion_model"]) --> xd166ae24a44b13dd["nli_ready_evidence_keypaper_parquet"]
     x359cd01ce3cd9deb(["workers"]) --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
-    x6bd40d1623e4b2a6["works_citing_parquet"] --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
-    x1b5c1cdf9ba064e4["key_messages_parquet"] --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
-    xf490f5be80b63214(["claim_completion_model"]) --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
     x147e43907afa8f25(["granularity"]) --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
+    xf490f5be80b63214(["claim_completion_model"]) --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
-    x6bd40d1623e4b2a6["works_citing_parquet"] --> x2a70a19ca5bda07e["nli_ready_parquet"]
+    x1b5c1cdf9ba064e4["key_messages_parquet"] --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
+    x6bd40d1623e4b2a6["works_citing_parquet"] --> xbe4dac68e009ada6["nli_ready_evidence_parquet"]
     x359cd01ce3cd9deb(["workers"]) --> x2a70a19ca5bda07e["nli_ready_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> x2a70a19ca5bda07e["nli_ready_parquet"]
     x1b5c1cdf9ba064e4["key_messages_parquet"] --> x2a70a19ca5bda07e["nli_ready_parquet"]
-    xc1390bdb2b35a1c0(["nli_config"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
+    x6bd40d1623e4b2a6["works_citing_parquet"] --> x2a70a19ca5bda07e["nli_ready_parquet"]
     xa97d1735ba09b196(["nli_pool_health"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
     x147e43907afa8f25(["granularity"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
+    xdaa9eaf14bf7d9fb(["nli_active"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
+    xc1390bdb2b35a1c0(["nli_config"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
     xb35639b28214b947(["nli_claim_units_evidence_flat"]) --> x848f6ce08c0f5882["nli_scores_by_claim_evidence"]
+    x147e43907afa8f25(["granularity"]) --> x80ce0d6e61e2afef(["nli_scores_evidence_consolidated"])
     xdaa9eaf14bf7d9fb(["nli_active"]) --> x80ce0d6e61e2afef(["nli_scores_evidence_consolidated"])
     x848f6ce08c0f5882["nli_scores_by_claim_evidence"] --> x80ce0d6e61e2afef(["nli_scores_evidence_consolidated"])
-    x147e43907afa8f25(["granularity"]) --> x80ce0d6e61e2afef(["nli_scores_evidence_consolidated"])
     xb35639b28214b947(["nli_claim_units_evidence_flat"]) --> x80ce0d6e61e2afef(["nli_scores_evidence_consolidated"])
-    x5b94edfda6bdc868(["nli_claim_units_evidence_keypaper_flat"]) --> xdcd2288529c7d657["nli_scores_keypaper_evidence"]
-    xa97d1735ba09b196(["nli_pool_health"]) --> xdcd2288529c7d657["nli_scores_keypaper_evidence"]
-    x147e43907afa8f25(["granularity"]) --> xdcd2288529c7d657["nli_scores_keypaper_evidence"]
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> xdcd2288529c7d657["nli_scores_keypaper_evidence"]
-    xc1390bdb2b35a1c0(["nli_config"]) --> xdcd2288529c7d657["nli_scores_keypaper_evidence"]
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> x29d83fad976ae6aa(["nli_scores_keypaper_evidence_consolidated"])
-    x147e43907afa8f25(["granularity"]) --> x29d83fad976ae6aa(["nli_scores_keypaper_evidence_consolidated"])
-    x5b94edfda6bdc868(["nli_claim_units_evidence_keypaper_flat"]) --> x29d83fad976ae6aa(["nli_scores_keypaper_evidence_consolidated"])
-    xdcd2288529c7d657["nli_scores_keypaper_evidence"] --> x29d83fad976ae6aa(["nli_scores_keypaper_evidence_consolidated"])
-    x9909b451a6a56060(["config_file"]) --> x3ff54b3ab6f59d51(["nli_train_enabled"])
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> x3ff54b3ab6f59d51(["nli_train_enabled"])
-    x31e4fc98a3c6921c["works_parquet"] --> x6eed056a522ba4b6["nli_training_data"]
-    x1f52e3f395a512d7(["llm_verification_active"]) --> x6eed056a522ba4b6["nli_training_data"]
-    xdaa9eaf14bf7d9fb(["nli_active"]) --> x6eed056a522ba4b6["nli_training_data"]
-    x6bd40d1623e4b2a6["works_citing_parquet"] --> x6eed056a522ba4b6["nli_training_data"]
-    x147e43907afa8f25(["granularity"]) --> x6eed056a522ba4b6["nli_training_data"]
-    x41a75836b2e1c821["llm_verification_keypaper_parquet"] --> x6eed056a522ba4b6["nli_training_data"]
-    x7096e63b1af7fc2e(["assessment"]) --> x6eed056a522ba4b6["nli_training_data"]
-    x7096e63b1af7fc2e(["assessment"]) --> x4c5608b5b57c599b["refs_parquet"]
-    xcae032f895dcdbee(["sparql_url"]) --> x4c5608b5b57c599b["refs_parquet"]
-    xda2ef7d9d7074388["ttl_path"] --> x4c5608b5b57c599b["refs_parquet"]
     xf258716a437e6a24(["refs_sparql"]) --> x4c5608b5b57c599b["refs_parquet"]
+    xcae032f895dcdbee(["sparql_url"]) --> x4c5608b5b57c599b["refs_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x4c5608b5b57c599b["refs_parquet"]
+    xda2ef7d9d7074388["ttl_path"] --> x4c5608b5b57c599b["refs_parquet"]
     x31e4fc98a3c6921c["works_parquet"] --> xdb22778f9ff9b079["snowball_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> xdb22778f9ff9b079["snowball_parquet"]
     x9909b451a6a56060(["config_file"]) --> xcae032f895dcdbee(["sparql_url"])
     x7096e63b1af7fc2e(["assessment"]) --> xda2ef7d9d7074388["ttl_path"]
     x9909b451a6a56060(["config_file"]) --> x359cd01ce3cd9deb(["workers"])
     x31e4fc98a3c6921c["works_parquet"] --> x6bd40d1623e4b2a6["works_citing_parquet"]
-    x7096e63b1af7fc2e(["assessment"]) --> x6bd40d1623e4b2a6["works_citing_parquet"]
     xdb22778f9ff9b079["snowball_parquet"] --> x6bd40d1623e4b2a6["works_citing_parquet"]
-    x4c5608b5b57c599b["refs_parquet"] --> x31e4fc98a3c6921c["works_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> x6bd40d1623e4b2a6["works_citing_parquet"]
     x7096e63b1af7fc2e(["assessment"]) --> x31e4fc98a3c6921c["works_parquet"]
+    x4c5608b5b57c599b["refs_parquet"] --> x31e4fc98a3c6921c["works_parquet"]
     xe6d26d705b0e239b["zotero_parquet"] --> x31e4fc98a3c6921c["works_parquet"]
-    x7096e63b1af7fc2e(["assessment"]) --> xe6d26d705b0e239b["zotero_parquet"]
     x4c5608b5b57c599b["refs_parquet"] --> xe6d26d705b0e239b["zotero_parquet"]
+    x7096e63b1af7fc2e(["assessment"]) --> xe6d26d705b0e239b["zotero_parquet"]
     x7f99ed3353708b85(["nli_granularities"])
   end

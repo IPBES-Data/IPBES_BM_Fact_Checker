@@ -16,3 +16,6 @@ main:
 reporting:
   script: _targets_reporting.R
   store: _targets_reporting
+training:
+  script: _targets_training.R
+  store: _targets_training

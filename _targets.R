@@ -125,7 +125,7 @@ list(
     format = "file"
   ),
   tar_target(
-    diagram_pipeline_nli,
+    diagram_pipeline_main,
     render_mmd(pipeline_mmd),
     format = "file"
   ),
@@ -146,16 +146,6 @@ list(
     nli <- yaml::read_yaml(config_file)[["nli"]]
     nli[["configs"]][[nli[["active"]]]]
   }),
-  # ALL named nli configs (not just the active one) -- needed by
-  # nli_config_for_granularity() (R/branch_helpers.R) so the reporting layer
-  # can resolve which config actually produced a given granularity's scores,
-  # independent of whichever config `nli.active` currently points to. Read
-  # directly from config_file (not derived from nli_config) so an edit to
-  # the active config's own fields doesn't spuriously invalidate this.
-  tar_target(
-    nli_configs_all,
-    yaml::read_yaml(config_file)[["nli"]][["configs"]]
-  ),
   # The active config's own claim-granularity setting ("naive_bm" default /
   # "complete_bm") -- drives nli_ready_evidence_parquet/
   # nli_scores_by_claim_evidence's own output_root (they run against
@@ -181,27 +171,6 @@ list(
   tar_target(
     max_length,
     yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["max_length"]]
-  ),
-  # Same reasoning again: whether to fine-tune the active config's model
-  # (scripts/training/train_nli.py, via nli_finetuned_model below) is its
-  # own field, read directly rather than through the full nli_config blob,
-  # so an unrelated field edit (host list, uncertain_threshold, ...) never
-  # spuriously re-triggers a real ~25min local training run. Defaults to
-  # FALSE -- every existing config leaves train: false explicitly in
-  # input/config.yaml, but %||% covers a config that omits the field entirely.
-  tar_target(
-    nli_train_enabled,
-    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["train"]] %||% FALSE
-  ),
-  # Same reasoning again: NULL (the default) trains nli_finetuned_model on
-  # the full pooled dataset as-is; a seed downsamples every label class down
-  # to the smallest class's count first, for class balance -- see
-  # scripts/training/train_nli.py's own downsample_seed handling and the
-  # comment on `train` above for why this is read directly rather than
-  # through the full nli_config blob.
-  tar_target(
-    nli_downsample_seed,
-    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["downsample_seed"]]
   ),
   # Fixed, not read from config: the reporting layer (nli_overview_data,
   # the label funnel reports, etc.) renders one output per (assessment,
@@ -581,88 +550,13 @@ list(
     unlink(lock_dir, recursive = TRUE, force = TRUE)
     sprintf("removed %d lock file(s) from %s", n, lock_dir)
   }),
-  # Target 2h3' (QA, key papers): scores the actual seed/reference papers
-  # IPBES cites as evidence for a BM (relation == "keypaper" in the
-  # snowball nodes -- same set as works_parquet, one row per (paper, km,
-  # bm) it's evidence for) against their OWN BM's claim text. Not part of
-  # the main scoring corpus -- a sanity check: a key paper IS the evidence
-  # a BM was written from, so it should overwhelmingly land in the
-  # SUPPORTS region; if it doesn't, that's a signal worth investigating; see
-  # the ternary figure in nli_scores_qa_figures, which overlays these
-  # points on the citing-works density. Mirrors nli_ready_evidence_parquet
-  # -> nli_claim_units_evidence -> ..._flat -> nli_scores_by_claim_evidence
-  # exactly (same reuse-build_nli_claim_units()/score_one_claim()-unchanged
-  # pattern that chain's own comment documents) -- only the premise source
-  # (R/build_nli_ready_evidence_keypaper_parquet.R, a separate file so as
-  # not to touch the delicate, already-scored citing-works builder) and the
-  # output roots differ, so this can never collide with or invalidate the
-  # existing citing-works chain. Single-active-granularity, same as that
-  # chain (not cross()'d over nli_granularities) -- nli_scores_qa_data
-  # below resolves whichever granularities actually have data the same way
-  # it already does for citing-works scores.
-  #
-  # RUNS AS PART OF A BARE tar_make() -- nli_scores_qa_data below takes
-  # nli_scores_keypaper_evidence as a bare (non-pattern) argument purely to
-  # establish the DAG dependency (same convention llm_verification_parquet
-  # already uses for nli_scores_by_claim_evidence), so it flows into the QA
-  # report automatically. This calls the same live RunPod host pool as the
-  # citing-works chain -- a plain tar_make()/tar_make(names="report_fact_checker")
-  # now dispatches real key-paper NLI classification calls too, not just the
-  # main citing-works corpus. Use tar_make(names = ..., shortcut = TRUE) to
-  # render against on-disk data without triggering a fresh run, same escape
-  # hatch documented for llm_verification_parquet.
-  tar_target(
-    nli_ready_evidence_keypaper_parquet,
-    build_nli_ready_evidence_keypaper_parquet(
-      assessment,
-      key_messages_parquet,
-      works_parquet,
-      snowball_parquet,
-      workers,
-      file.path("output/nli_ready_evidence_keypaper", paste0("granularity=", granularity)),
-      granularity,
-      claim_completion_model
-    ),
-    pattern = map(assessment, key_messages_parquet, works_parquet, snowball_parquet),
-    format = "file",
-    deployment = "main",
-    garbage_collection = TRUE
-  ),
-  tar_target(
-    nli_claim_units_evidence_keypaper,
-    build_nli_claim_units(assessment, nli_ready_evidence_keypaper_parquet, max_length),
-    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
-    iteration = "list"
-  ),
-  tar_target(
-    nli_claim_units_evidence_keypaper_flat,
-    unlist(nli_claim_units_evidence_keypaper, recursive = FALSE),
-    iteration = "list"
-  ),
-  # Same scratch-then-consolidate split as the citing-works chain above.
-  tar_target(
-    nli_scores_keypaper_evidence,
-    score_one_claim(
-      nli_claim_units_evidence_keypaper_flat,
-      nli_config,
-      nli_active,
-      nli_pool_health,
-      output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity))
-    ),
-    pattern = map(nli_claim_units_evidence_keypaper_flat),
-    error = "continue"
-  ),
-  tar_target(
-    nli_scores_keypaper_evidence_consolidated,
-    consolidate_nli_scores(
-      nli_scores_keypaper_evidence,
-      nli_claim_units_evidence_keypaper_flat,
-      output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity)),
-      nli_active = nli_active
-    ),
-    format = "file",
-    deployment = "main"
-  ),
+  # The key-paper arm -- nli_ready_evidence_keypaper_parquet through
+  # nli_finetuned_model -- now lives in _targets_training.R (see _targets.yaml
+  # and TODO_PIPELINE_SPLIT.md). It moved out because it is a separate spend
+  # decision from the citing-works corpus and can run for an assessment whose
+  # citing-works chain has not: IAS, VA and TCA all have key-paper Phase 2
+  # output with no citing-works Phase 2 output at all.
+
   # Target 2h4a: Per-claim evidence scope feeding Phase 2's
   # `direct_evidence_match` tag (see R/build_llm_candidate_scope_parquet.R
   # and TD_NLI_LLM_two_phase.qmd; this fed a candidate-narrowing FILTER
@@ -742,140 +636,6 @@ list(
     # concurrently.
     deployment = "main",
     garbage_collection = TRUE
-  ),
-  # Target 2h4b' (QA, key papers): full-coverage LLM verification of key
-  # papers — QA sanity check, NOT the main Phase 2 corpus. Reviews EVERY key
-  # paper's NLI-scored pair (the same relation == "keypaper" snowball set
-  # nli_scores_keypaper_evidence itself scores), irrespective of NLI's own
-  # label/confidence — unlike the main citing-works chain above, which is
-  # routed by nli_labels/nli_certainty purely for cost control, key papers
-  # are a small, bounded, high-importance set where every one is worth an
-  # independent LLM check. See R/build_llm_verification_keypaper_parquet.R
-  # for the full design (in particular why it duplicates the orchestration
-  # loop rather than calling build_llm_verification_parquet() — that
-  # function was only just stabilized against a pair_id collision bug and
-  # shouldn't be touched again for an unrelated variant). Writes to its own
-  # output/llm_verification/scores_keypaper/ root — never collides with or
-  # invalidates the main citing-works output tree.
-  #
-  # NEW PAID API SURFACE, same caution as llm_verification_parquet and
-  # nli_scores_keypaper_evidence themselves: a plain tar_make()/
-  # tar_make(names = "report_fact_checker") now also dispatches real
-  # OpenRouter calls for every key paper, not just the routed citing-works
-  # subset. Use tar_make(names = ..., shortcut = TRUE) to render against
-  # on-disk data without triggering a fresh run.
-  tar_target(
-    llm_verification_keypaper_parquet,
-    build_llm_verification_keypaper_parquet(
-      assessment,
-      nli_ready_evidence_keypaper_parquet,
-      file.path(
-        "output/nli_scores_evidence_keypaper", paste0("granularity=", granularity),
-        paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)
-      ),
-      nli_active,
-      llm_verification_active,
-      llm_verification_config,
-      llm_verification_system_prompt_file,
-      llm_verification_user_prompt_file,
-      nli_scores_keypaper_evidence_consolidated
-    ),
-    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
-    format = "file",
-    deployment = "main",
-    garbage_collection = TRUE
-  ),
-  # Target 2h4d: NLI fine-tuning training data (TD_NLI_training.qmd) — reads
-  # only already-built output/llm_verification/scores* data (no new LLM/API
-  # calls). Single-active-granularity, same scope as llm_verification_parquet
-  # itself (not cross()'d over nli_granularities). Hive-partitioned
-  # granularity=<g>/nli_config=<cfg>/assessment=<id>/ — the SAME scheme
-  # output/nli_scores_evidence and friends already use, not Phase 2's own
-  # (llm_config/assessment/nli_route/km/bm); llm_config is carried through
-  # as a plain column instead, passed in explicitly as llm_verification_active
-  # rather than read back from llm_verification_parquet/
-  # llm_verification_keypaper_parquet's own data — those paths are already
-  # scoped INSIDE a `llm_config=<val>/` partition directory, so Arrow does
-  # not reconstruct that segment as a column when reading at that path
-  # level (confirmed directly: "Column `llm_config` doesn't exist"), same
-  # fix build_llm_verification_qa_data.R already uses for its own llm_active
-  # handling. See R/build_nli_training_data.R.
-  #
-  # Deliberately does NOT take llm_verification_parquet (the main citing-works
-  # Phase 2 chain) as a tracked pattern dependency, only
-  # llm_verification_keypaper_parquet -- an assessment can have real
-  # snowball/keypaper data (and be worth pulling keypaper-derived training
-  # rows from) long before its full citing-works corpus has been scored
-  # through Phase 1 + Phase 2 (a much bigger, separately-gated spend; see
-  # TD_NLI_training.qmd). Taking llm_verification_parquet as a real pattern
-  # dependency would force targets to build that assessment's ENTIRE
-  # citing-works chain (Phase 1 NLI scoring of every citing work, then Phase
-  # 2 LLM review of whatever gets flagged) just to compute this target, even
-  # for an assessment nobody has asked to score that way yet -- confirmed
-  # this would happen for IAS specifically (its refs/works/snowball,
-  # including the keypaper partition, already exist on disk; nothing
-  # NLI/LLM-related does). Instead the main-corpus path is *computed*
-  # (mirrors build_llm_verification_parquet()'s own output_path formula)
-  # rather than taken from the tracked target, so it carries no targets
-  # dependency at all -- build_nli_training_data()'s own has_data() check
-  # (already needed for the ordinary "nothing routed yet" case) handles a
-  # not-yet-existing path exactly the same as an empty one. An assessment
-  # whose citing-works chain already exists (GA1) still gets full benefit
-  # from it once built; one that doesn't (IAS, for now) simply contributes
-  # keypaper-only rows until/unless its citing-works chain is run later.
-  tar_target(
-    nli_training_data,
-    build_nli_training_data(
-      assessment,
-      file.path(
-        "output/llm_verification/scores",
-        paste0("llm_config=", llm_verification_active),
-        paste0("assessment=", assessment$id)
-      ),
-      llm_verification_keypaper_parquet,
-      works_parquet,
-      works_citing_meta_paths(works_citing_parquet),
-      nli_active,
-      llm_verification_active,
-      granularity,
-      "output/nli_training"
-    ),
-    pattern = map(
-      assessment, llm_verification_keypaper_parquet,
-      works_parquet, works_citing_parquet
-    ),
-    format = "file",
-    deployment = "main",
-    garbage_collection = TRUE
-  ),
-  # Target 2h4e: fine-tune the active nli config's model, IFF that config's
-  # own train: field is true (default false) -- see R/build_nli_finetuned_model.R
-  # for the full "why a real train:true/false gate, not just running
-  # train_nli.py by hand" reasoning. A real local CPU training run (~tens of
-  # minutes; see scripts/training/train_nli.py's own module docstring),
-  # opt-in per config so a bare tar_make() never triggers one by surprise.
-  #
-  # nli_training_data is passed as a bare (non-pattern) argument purely to
-  # establish the DAG dependency -- same convention nli_scores_qa_data/
-  # llm_verification_qa_data already use for their own upstream
-  # dependencies, needed here because nli_training_data branches per
-  # assessment (pattern = map(assessment, ...)) while nli_finetuned_model is
-  # a single, non-branching target, so a real pattern= dependency isn't
-  # possible. build_nli_finetuned_model() never reads this argument's value
-  # -- train_nli.py reads output/nli_training directly off disk at runtime
-  # -- it exists only so editing R/build_nli_training_data.R (e.g. the
-  # real_refutes() filter) or re-running nli_training_data for any
-  # assessment correctly marks nli_finetuned_model outdated too, rather than
-  # silently training on stale data the next time train:true triggers it.
-  tar_target(
-    nli_finetuned_model,
-    build_nli_finetuned_model(
-      nli_train_enabled, nli_active,
-      downsample_seed = nli_downsample_seed,
-      nli_training_data_dep = nli_training_data
-    ),
-    format = "file",
-    deployment = "main"
   ),
   NULL
 )
