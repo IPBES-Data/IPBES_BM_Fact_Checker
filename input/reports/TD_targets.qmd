@@ -53,13 +53,32 @@ targets::tar_load(refs_parquet)
 
 ### Rendered Workflow (NLI approach)
 
-![Workflow](output/figures/workflow_nli.png)
+Hand-authored, and split per project along the same boundaries as the pipeline
+diagrams below.
+
+#### `main` — collection and scoring
+
+![Workflow: main](output/figures/workflow_main.png)
+
+#### `reporting`
+
+![Workflow: reporting](output/figures/workflow_reporting.png)
 
 ### Pipeline
 
-Auto-generated pipeline flow based on `_targets.R` definition:
+Auto-generated from the live `targets` DAG. Since the pipeline was split into
+separate projects (see `TODO_PIPELINE_SPLIT.md` and `_targets.yaml`), there is
+no longer a single DAG to draw, so each project renders its own:
+`build_pipeline_mmd()` depicts whatever graph it is run inside. These can be
+combined into one overview later.
 
-![Pipeline](output/figures/pipeline_nli.png)
+#### `main` — collection and scoring (`_targets.R`)
+
+![Pipeline: main](output/figures/pipeline_main.png)
+
+#### `reporting` (`_targets_reporting.R`)
+
+![Pipeline: reporting](output/figures/pipeline_reporting.png)
 
 ## Pipeline DAG
 

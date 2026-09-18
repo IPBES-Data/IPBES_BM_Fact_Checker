@@ -37,8 +37,20 @@ mod_workflow_server <- function(id, manifest, nav_state, repo_root) {
     ns <- session$ns
 
     output$svg <- shiny::renderUI({
-      shiny::req(!is.na(manifest$workflow_svg))
-      shiny::HTML(paste(readLines(manifest$workflow_svg, warn = FALSE), collapse = "\n"))
+      # One section per project diagram. All render INSIDE svg_container, so the
+      # click-interception JS above (bound to the container, not to a single svg)
+      # keeps working unchanged -- and workflow_node_metadata still covers every
+      # clickable id, checked when the diagram was split: 25 in workflow_main,
+      # 9 in workflow_reporting, none lost.
+      svgs <- manifest$workflow_svgs
+      shiny::req(length(svgs) > 0)
+      shiny::tagList(lapply(svgs, function(f) {
+        project <- sub("^workflow_", "", sub("[.]svg$", "", basename(f)))
+        shiny::div(
+          shiny::h3(sprintf("Pipeline: %s", project)),
+          shiny::HTML(paste(readLines(f, warn = FALSE), collapse = "\n"))
+        )
+      }))
     })
 
     shiny::observeEvent(input$node_click, {

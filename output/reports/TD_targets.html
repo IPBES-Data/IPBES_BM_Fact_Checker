@@ -2217,8 +2217,16 @@ vertical-align: -.125em;
   <li><a href="#running-the-pipeline" id="toc-running-the-pipeline" class="nav-link" data-scroll-target="#running-the-pipeline">Running the Pipeline</a></li>
   <li><a href="#pipeline-diagrams" id="toc-pipeline-diagrams" class="nav-link" data-scroll-target="#pipeline-diagrams">Pipeline Diagrams</a>
   <ul>
-  <li><a href="#rendered-workflow-nli-approach" id="toc-rendered-workflow-nli-approach" class="nav-link" data-scroll-target="#rendered-workflow-nli-approach">Rendered Workflow (NLI approach)</a></li>
-  <li><a href="#pipeline" id="toc-pipeline" class="nav-link" data-scroll-target="#pipeline">Pipeline</a></li>
+  <li><a href="#rendered-workflow-nli-approach" id="toc-rendered-workflow-nli-approach" class="nav-link" data-scroll-target="#rendered-workflow-nli-approach">Rendered Workflow (NLI approach)</a>
+  <ul>
+  <li><a href="#main-collection-and-scoring" id="toc-main-collection-and-scoring" class="nav-link" data-scroll-target="#main-collection-and-scoring"><code>main</code> — collection and scoring</a></li>
+  <li><a href="#reporting" id="toc-reporting" class="nav-link" data-scroll-target="#reporting"><code>reporting</code></a></li>
+  </ul></li>
+  <li><a href="#pipeline" id="toc-pipeline" class="nav-link" data-scroll-target="#pipeline">Pipeline</a>
+  <ul>
+  <li><a href="#main-collection-and-scoring-_targets.r" id="toc-main-collection-and-scoring-_targets.r" class="nav-link" data-scroll-target="#main-collection-and-scoring-_targets.r"><code>main</code> — collection and scoring (<code>_targets.R</code>)</a></li>
+  <li><a href="#reporting-_targets_reporting.r" id="toc-reporting-_targets_reporting.r" class="nav-link" data-scroll-target="#reporting-_targets_reporting.r"><code>reporting</code> (<code>_targets_reporting.R</code>)</a></li>
+  </ul></li>
   </ul></li>
   <li><a href="#pipeline-dag" id="toc-pipeline-dag" class="nav-link" data-scroll-target="#pipeline-dag">Pipeline DAG</a></li>
   <li><a href="#configuration-inputconfig.yaml" id="toc-configuration-inputconfig.yaml" class="nav-link" data-scroll-target="#configuration-inputconfig.yaml">Configuration (<code>input/config.yaml</code>)</a></li>
@@ -2331,22 +2339,47 @@ vertical-align: -.125em;
 <h2 class="anchored" data-anchor-id="pipeline-diagrams">Pipeline Diagrams</h2>
 <section id="rendered-workflow-nli-approach" class="level3">
 <h3 class="anchored" data-anchor-id="rendered-workflow-nli-approach">Rendered Workflow (NLI approach)</h3>
+<p>Hand-authored, and split per project along the same boundaries as the pipeline diagrams below.</p>
+<section id="main-collection-and-scoring" class="level4">
+<h4 class="anchored" data-anchor-id="main-collection-and-scoring"><code>main</code> — collection and scoring</h4>
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
-<p><img role="img" src="output/figures/workflow_nli.png" class="img-fluid figure-img"></p>
-<figcaption>Workflow</figcaption>
+<p><img role="img" src="output/figures/workflow_main.png" class="img-fluid figure-img"></p>
+<figcaption>Workflow: main</figcaption>
 </figure>
 </div>
 </section>
-<section id="pipeline" class="level3">
-<h3 class="anchored" data-anchor-id="pipeline">Pipeline</h3>
-<p>Auto-generated pipeline flow based on <code>_targets.R</code> definition:</p>
+<section id="reporting" class="level4">
+<h4 class="anchored" data-anchor-id="reporting"><code>reporting</code></h4>
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
-<p><img role="img" src="output/figures/pipeline_nli.png" class="img-fluid figure-img"></p>
-<figcaption>Pipeline</figcaption>
+<p><img role="img" src="output/figures/workflow_reporting.png" class="img-fluid figure-img"></p>
+<figcaption>Workflow: reporting</figcaption>
 </figure>
 </div>
+</section>
+</section>
+<section id="pipeline" class="level3">
+<h3 class="anchored" data-anchor-id="pipeline">Pipeline</h3>
+<p>Auto-generated from the live <code>targets</code> DAG. Since the pipeline was split into separate projects (see <code>TODO_PIPELINE_SPLIT.md</code> and <code>_targets.yaml</code>), there is no longer a single DAG to draw, so each project renders its own: <code>build_pipeline_mmd()</code> depicts whatever graph it is run inside. These can be combined into one overview later.</p>
+<section id="main-collection-and-scoring-_targets.r" class="level4">
+<h4 class="anchored" data-anchor-id="main-collection-and-scoring-_targets.r"><code>main</code> — collection and scoring (<code>_targets.R</code>)</h4>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img role="img" src="output/figures/pipeline_main.png" class="img-fluid figure-img"></p>
+<figcaption>Pipeline: main</figcaption>
+</figure>
+</div>
+</section>
+<section id="reporting-_targets_reporting.r" class="level4">
+<h4 class="anchored" data-anchor-id="reporting-_targets_reporting.r"><code>reporting</code> (<code>_targets_reporting.R</code>)</h4>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img role="img" src="output/figures/pipeline_reporting.png" class="img-fluid figure-img"></p>
+<figcaption>Pipeline: reporting</figcaption>
+</figure>
+</div>
+</section>
 </section>
 </section>
 <section id="pipeline-dag" class="level2">

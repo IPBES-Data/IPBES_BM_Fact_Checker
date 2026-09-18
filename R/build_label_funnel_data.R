@@ -20,6 +20,13 @@ build_label_funnel_data <- function(
   assessment,
   target_label,
   works_citing_path,
+  # The slim (km, bm, id) MAPPING is what level 1 counts over; `doi` lives in
+  # the separate one-row-per-work METADATA since works_citing_parquet was split
+  # (see R/build_works_citing_parquet.R). Both are needed, so both are passed --
+  # selecting `doi` off the mapping was the pre-split behaviour and errors with
+  # "Column `doi` doesn't exist" the moment this target is genuinely rebuilt.
+  # It went unnoticed because the stored funnel values predate that split.
+  works_citing_meta_path,
   nli_scores_evidence_path,
   llm_verification_path,
   output_root = "output/tables",
@@ -53,7 +60,8 @@ build_label_funnel_data <- function(
   # verification, which may not have reached this assessment yet -- treat
   # either missing directory as "nothing to show" rather than erroring, same
   # convention as build_nli_overview_data().
-  if (!dir.exists(works_citing_path) || !dir.exists(nli_scores_evidence_path) ||
+  if (!dir.exists(works_citing_path) || !dir.exists(works_citing_meta_path) ||
+    !dir.exists(nli_scores_evidence_path) ||
     !dir.exists(llm_verification_path)) {
     return(empty_result())
   }
@@ -83,7 +91,7 @@ build_label_funnel_data <- function(
   # is the same "https://openalex.org/W..." string as work_id elsewhere; a
   # work can appear once per km/bm partition it's cited from, so collapse to
   # one row per work_id before joining to avoid fan-out.
-  doi_lookup <- arrow::open_dataset(works_citing_path) |>
+  doi_lookup <- arrow::open_dataset(works_citing_meta_path) |>
     dplyr::select(work_id = id, doi) |>
     dplyr::collect() |>
     dplyr::group_by(work_id) |>

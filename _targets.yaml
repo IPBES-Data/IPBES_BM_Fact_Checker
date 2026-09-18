@@ -1,0 +1,18 @@
+# Multi-project targets configuration -- see TODO_PIPELINE_SPLIT.md.
+#
+# `main` is the COLLECTION project and deliberately keeps the original
+# _targets/ store: a fresh store would make every target outdated, and
+# download_works() unlink()s its output before refetching while
+# build_snowball_parquet() has no existence check at all, so re-running them
+# would cost days of OpenAlex time AND produce a different corpus from the one
+# every existing score was computed against.
+#
+#   tar_make()                                    # collection (default)
+#   Sys.setenv(TAR_PROJECT = "reporting"); tar_make()
+#   tar_make(script = "_targets_reporting.R", store = "_targets_reporting")
+main:
+  script: _targets.R
+  store: _targets
+reporting:
+  script: _targets_reporting.R
+  store: _targets_reporting

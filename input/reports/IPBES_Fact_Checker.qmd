@@ -212,27 +212,26 @@ overlap_key_paper_html <- overlap_key_paper_html[grepl(
 )]
 overlap_key_paper_html <- copy_into_report_files(overlap_key_paper_html)
 
-overlap_after_2018_sub_messages_html <- targets::tar_read(
-  overlap_after_2018_sub_messages_table
-)
-overlap_after_2018_sub_messages_html <- overlap_after_2018_sub_messages_html[grepl(
-  "\\.html$",
-  overlap_after_2018_sub_messages_html
-)]
-overlap_after_2018_sub_messages_html <- copy_into_report_files(
-  overlap_after_2018_sub_messages_html
-)
-
-overlap_after_2018_background_messages_html <- targets::tar_read(
-  overlap_after_2018_background_messages_table
-)
-overlap_after_2018_background_messages_html <- overlap_after_2018_background_messages_html[grepl(
-  "\\.html$",
-  overlap_after_2018_background_messages_html
-)]
-overlap_after_2018_background_messages_html <- copy_into_report_files(
-  overlap_after_2018_background_messages_html
-)
+# DISABLED 2026-09-18 along with the two overlap_after_2018_* targets -- see
+# _targets_reporting.R for why (a ~39 GB collect that crashed the machine, plus
+# an unresolved question about what these tables are for). Left commented
+# rather than deleted so re-enabling is one edit here and one there.
+#
+# overlap_after_2018_sub_messages_html <- targets::tar_read(
+#   overlap_after_2018_sub_messages_table
+# )
+# overlap_after_2018_sub_messages_html <- overlap_after_2018_sub_messages_html[grepl(
+#   "\\.html$", overlap_after_2018_sub_messages_html)]
+# overlap_after_2018_sub_messages_html <- copy_into_report_files(
+#   overlap_after_2018_sub_messages_html)
+#
+# overlap_after_2018_background_messages_html <- targets::tar_read(
+#   overlap_after_2018_background_messages_table
+# )
+# overlap_after_2018_background_messages_html <- overlap_after_2018_background_messages_html[grepl(
+#   "\\.html$", overlap_after_2018_background_messages_html)]
+# overlap_after_2018_background_messages_html <- copy_into_report_files(
+#   overlap_after_2018_background_messages_html)
 ```
 
 The dataset contains **`r refs |> dplyr::distinct(doi) |> nrow()`** papers
@@ -330,21 +329,33 @@ Only papers occurring in more than 1 background message are shown.
 
 <iframe src="`r overlap_key_paper_html`" width="100%" height="500px"></iframe>
 
-### Overlap of Papers after 2018 in Sub Messages
+### Overlap of Papers after 2018 {#sec-overlap-after-2018}
 
-The second table shows the overlap of all papers after 2018 regarding sub messages.
+::: {.callout-warning title="Temporarily removed — needs review"}
+The two tables that used to appear here — **overlap of papers after 2018 across
+sub messages, and across background messages** — are currently disabled, so this
+section is incomplete.
 
-Only papers with in more then 5 Sub Messages are shown.
+They were withdrawn on 2026-09-18 because building them collected roughly 39 GB
+in a single step (doi, title and abstract for all 25.7 million post-2018
+work × background-message combinations, *before* reducing to the papers actually
+cited more than five times) and exhausted the machine's memory.
 
-<iframe src="`r overlap_after_2018_sub_messages_html`" width="100%" height="500px"></iframe>
+Making that query efficient is straightforward. What needs a decision first is
+what these tables should show: the two most recent versions disagree with each
+other (6,727 vs 805,028 rows) even though both group the data the same way, and
+the "more than 5" threshold dates from when the citing corpus was a small
+fraction of its current 2.7 million works — so it no longer selects a meaningful
+subset.
 
-### Overlap of Papers after 2018 in Background Messages
+**This is on the to-do list to look into.** The key-paper overlap table above is
+unaffected and current.
+:::
 
-The third table shows the overlap of all papers after 2018 regarding background messages.
-
-Only papers with in more then 5 Background Messages are shown.
-
-<iframe src="`r overlap_after_2018_background_messages_html`" width="100%" height="500px"></iframe>
+<!--
+Implementation note: re-enabling means uncommenting the tar_read() block earlier
+in this file AND the two targets in _targets_reporting.R. See TODO.md.
+-->
 
 ## NLI Alignment Scores
 

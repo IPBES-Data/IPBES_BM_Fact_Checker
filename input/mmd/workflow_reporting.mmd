@@ -1,0 +1,71 @@
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementStrategy: BRANDES_KOEPF
+---
+flowchart TD
+
+  %% Reporting project (_targets_reporting.R). Split out of workflow_nli.mmd:
+  %% every qa_*/report_* node lives here, because those targets do. The
+  %% databases they read are drawn as EXTERNAL inputs -- they are produced by
+  %% the other projects and reach this one as tar_file() declarations.
+
+  subgraph upstream["Inputs (produced by the other projects)"]
+    direction TB
+  nli_ready_db@{ shape: lin-cyl, label: "NLI-Ready DB (claim × citing-work premise)<br/><tt>output/nli_ready_evidence/granularity=&lt;gran&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+  nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores_evidence/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+  nli_scores_kp_db@{ shape: lin-cyl, label: "Key-paper NLI Scores DB<br/><tt>output/nli_scores_evidence_keypaper/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/</tt>" }
+  llm_scores_db@{ shape: lin-cyl, label: "LLM Verification Scores DB<br/><tt>output/llm_verification/scores/llm_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+  llm_scores_kp_db@{ shape: lin-cyl, label: "Key-paper LLM Verification Scores DB<br/><tt>output/llm_verification/scores_keypaper/llm_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+  training_db@{ shape: lin-cyl, label: "Training Data DB<br/><tt>output/nli_training/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/</tt>" }
+  citing_db@{ shape: lin-cyl, label: "Citing Works DB<br/><tt>output/works_citing/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+  works_db@{ shape: lin-cyl, label: "OpenAlex Works DB<br/><tt>output/works/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+  end
+
+    qa_bm_split@{ shape: doc, label: "QA report<br/><tt>[bm_split_report_html]</tt>" }
+    qa_nli_scores@{ shape: doc, label: "QA report<br/><tt>[nli_scores_qa_report_html]</tt>" }
+    qa_llm_verify@{ shape: doc, label: "QA report<br/><tt>[llm_verification_qa_report_html]</tt>" }
+    qa_training@{ shape: doc, label: "QA report<br/><tt>[nli_training_qa_report_html]</tt>" }
+  qa_finetuned@{ shape: doc, label: "QA report<br/><tt>[nli_finetuned_model_qa_report_html]</tt>" }
+
+  subgraph general_reports["General & Additional Reports (dynamic Shiny display, no new computation)"]
+    direction TB
+
+    %% Nodes -- these are read-only reporting/browsing views over data
+    %% already produced above; none of them triggers new scoring/LLM calls.
+    report_overview@{ shape: doc, label: "NLI label/confidence/alignment overview + interactive BM explorer<br/><tt>[nli_overview_data -> nli_overview_figures, nli_bm_explorer_html]</tt>" }
+    report_overlap@{ shape: doc, label: "Overlap tables: key papers cited by >1 BM; post-2018 citing works cited by >5 BMs<br/><tt>[overlap_key_paper_table, overlap_after_2018_sub_messages_table, overlap_after_2018_background_messages_table]</tt>" }
+    report_pub_year@{ shape: doc, label: "New publications per year, by background message<br/><tt>[fig_pub_per_year]</tt>" }
+    report_funnel@{ shape: doc, label: "REFUTES/SUPPORTS label funnel: corpus -&gt; NLI-flagged -&gt; LLM-confirmed<br/><tt>[refutes_funnel_data/figures/tables, supports_funnel_data/figures/tables]</tt>" }
+  end
+
+  nli_ready_db --> qa_bm_split
+  nli_scores_db --> qa_nli_scores
+  nli_scores_kp_db --> qa_nli_scores
+  llm_scores_db --> qa_llm_verify
+  llm_scores_kp_db --> qa_llm_verify
+  training_db --> qa_training
+  training_db --> qa_finetuned
+  nli_scores_db --> report_overview
+  citing_db --> report_overview
+  works_db --> report_overlap
+  citing_db --> report_overlap
+  citing_db --> report_pub_year
+  nli_scores_db --> report_funnel
+  llm_scores_db --> report_funnel
+
+  click qa_bm_split href "#!qa_bm_split" "QA report: BM split"
+  click qa_nli_scores href "#!qa_nli_scores" "QA report: NLI scores"
+  click qa_llm_verify href "#!qa_llm_verify" "QA report: LLM verification"
+  click qa_training href "#!qa_training" "QA report: training data"
+  click qa_finetuned href "#!qa_finetuned" "QA report: fine-tuned model"
+  click report_overview href "#!report_overview" "NLI overview + BM explorer"
+  click report_overlap href "#!report_overlap" "Overlap tables"
+  click report_pub_year href "#!report_pub_year" "Publications per year"
+  click report_funnel href "#!report_funnel" "REFUTES/SUPPORTS label funnel"
+
+  classDef database  fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
+  classDef qa_report fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:1.5px;
+  class nli_ready_db,nli_scores_db,nli_scores_kp_db,llm_scores_db,llm_scores_kp_db,training_db,citing_db,works_db database;
+  class qa_bm_split,qa_finetuned,qa_llm_verify,qa_nli_scores,qa_training,report_funnel,report_overlap,report_overview,report_pub_year qa_report;

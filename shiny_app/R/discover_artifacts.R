@@ -143,7 +143,12 @@ discover_artifacts <- function(
     overlap_sub_messages_rds = existing_or_na(file.path(tables_dir, "overlap_after_2018_sub_messages.rds")),
     overlap_background_messages_rds = existing_or_na(file.path(tables_dir, "overlap_after_2018_background_messages.rds")),
     fig_pub_per_year = existing_or_na(file.path(figures_dir, "fig_pub_per_year.png")),
-    workflow_svg = existing_or_na(file.path(figures_dir, "workflow_nli.svg")),
+    # One SVG per pipeline project since the workflow diagram was split
+    # (workflow_main, workflow_reporting, ...). Globbed rather than named so
+    # extracting the remaining projects needs no change here.
+    workflow_svgs = sort(list.files(
+      figures_dir, pattern = "^workflow_.*[.]svg$", full.names = TRUE
+    )),
     training_partitions = training_partitions,
     training_dir = training_dir
   )

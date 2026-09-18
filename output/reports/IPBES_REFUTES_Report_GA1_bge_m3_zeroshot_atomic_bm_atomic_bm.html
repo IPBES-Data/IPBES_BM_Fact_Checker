@@ -2214,6 +2214,9 @@ vertical-align: -.125em;
   <li><a href="#refutes-funnel-ga1" id="toc-refutes-funnel-ga1" class="nav-link active" data-scroll-target="#refutes-funnel-ga1">REFUTES Funnel — GA1</a>
   <ul>
   <li><a href="#methodology" id="toc-methodology" class="nav-link" data-scroll-target="#methodology">Methodology</a></li>
+  <li><a href="#overall-numbers" id="toc-overall-numbers" class="nav-link" data-scroll-target="#overall-numbers">Overall numbers</a></li>
+  <li><a href="#per-bm-numbers" id="toc-per-bm-numbers" class="nav-link" data-scroll-target="#per-bm-numbers">Per-BM numbers</a></li>
+  <li><a href="#level-3-llm-confirmed-refutes" id="toc-level-3-llm-confirmed-refutes" class="nav-link" data-scroll-target="#level-3-llm-confirmed-refutes">Level 3: LLM-confirmed REFUTES</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -2275,7 +2278,397 @@ vertical-align: -.125em;
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  knitr<span class="sc">::</span><span class="fu">knit_exit</span>()</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<p>No data available yet for this assessment — the snowball, NLI, or LLM verification stage hasn’t produced output here.</p>
+</section>
+<section id="overall-numbers" class="level2">
+<h2 class="anchored" data-anchor-id="overall-numbers">Overall numbers</h2>
+<div class="cell">
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  x<span class="sc">$</span>funnel_overall,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">&quot;Level&quot;</span>, <span class="st">&quot;Description&quot;</span>, <span class="st">&quot;Distinct works&quot;</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Level</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: right;">Distinct works</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">level1</td>
+<td style="text-align: left;">Snowball corpus</td>
+<td style="text-align: right;">2224446</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">level2</td>
+<td style="text-align: left;">NLI REFUTES (certain)</td>
+<td style="text-align: right;">6691</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">level3</td>
+<td style="text-align: left;">LLM-confirmed REFUTES</td>
+<td style="text-align: right;">87</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(fig_overall)) <span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;![](%s)</span><span class="sc">\n\n</span><span class="st">&quot;</span>, fig_overall))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<p><img role="img" src="IPBES_REFUTES_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm_files/fig_refutes_funnel_overall_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.png" class="img-fluid"></p>
+</section>
+<section id="per-bm-numbers" class="level2">
+<h2 class="anchored" data-anchor-id="per-bm-numbers">Per-BM numbers</h2>
+<div class="cell">
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  x<span class="sc">$</span>funnel_by_bm,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">col.names =</span> <span class="fu">c</span>(</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;KM&quot;</span>, <span class="st">&quot;BM&quot;</span>, <span class="st">&quot;Corpus&quot;</span>, <span class="fu">sprintf</span>(<span class="st">&quot;NLI %s&quot;</span>, params<span class="sc">$</span>label), <span class="st">&quot;LLM-confirmed&quot;</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;% 2 of 1&quot;</span>, <span class="st">&quot;% 3 of 2&quot;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">KM</th>
+<th style="text-align: left;">BM</th>
+<th style="text-align: right;">Corpus</th>
+<th style="text-align: right;">NLI REFUTES</th>
+<th style="text-align: right;">LLM-confirmed</th>
+<th style="text-align: right;">% 2 of 1</th>
+<th style="text-align: right;">% 3 of 2</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A1</td>
+<td style="text-align: right;">164236</td>
+<td style="text-align: right;">1635</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">1.0</td>
+<td style="text-align: right;">0.1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A2</td>
+<td style="text-align: right;">257708</td>
+<td style="text-align: right;">410</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">0.2</td>
+<td style="text-align: right;">1.5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A3</td>
+<td style="text-align: right;">142277</td>
+<td style="text-align: right;">27</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">3.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A4</td>
+<td style="text-align: right;">34619</td>
+<td style="text-align: right;">37</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.1</td>
+<td style="text-align: right;">2.7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A5</td>
+<td style="text-align: right;">129146</td>
+<td style="text-align: right;">261</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">0.2</td>
+<td style="text-align: right;">1.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A6</td>
+<td style="text-align: right;">113914</td>
+<td style="text-align: right;">819</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">0.7</td>
+<td style="text-align: right;">1.2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A7</td>
+<td style="text-align: right;">16135</td>
+<td style="text-align: right;">49</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.3</td>
+<td style="text-align: right;">4.1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A8</td>
+<td style="text-align: right;">107426</td>
+<td style="text-align: right;">146</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">0.1</td>
+<td style="text-align: right;">4.1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">A.</td>
+<td style="text-align: left;">A9</td>
+<td style="text-align: right;">52213</td>
+<td style="text-align: right;">118</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.2</td>
+<td style="text-align: right;">1.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B1</td>
+<td style="text-align: right;">13595</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B10</td>
+<td style="text-align: right;">75014</td>
+<td style="text-align: right;">1884</td>
+<td style="text-align: right;">18</td>
+<td style="text-align: right;">2.5</td>
+<td style="text-align: right;">1.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B11</td>
+<td style="text-align: right;">13813</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B3</td>
+<td style="text-align: right;">98636</td>
+<td style="text-align: right;">552</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">0.6</td>
+<td style="text-align: right;">1.1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B4</td>
+<td style="text-align: right;">36935</td>
+<td style="text-align: right;">460</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">1.2</td>
+<td style="text-align: right;">0.7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">B.</td>
+<td style="text-align: left;">B5</td>
+<td style="text-align: right;">82345</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">5.9</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C2</td>
+<td style="text-align: right;">29720</td>
+<td style="text-align: right;">27</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.1</td>
+<td style="text-align: right;">0.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C4</td>
+<td style="text-align: right;">7603</td>
+<td style="text-align: right;">45</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.6</td>
+<td style="text-align: right;">2.2</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C5</td>
+<td style="text-align: right;">40175</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C6</td>
+<td style="text-align: right;">117454</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">66.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C7</td>
+<td style="text-align: right;">71001</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C.</td>
+<td style="text-align: left;">C8</td>
+<td style="text-align: right;">55127</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D1</td>
+<td style="text-align: right;">12840</td>
+<td style="text-align: right;">20</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.2</td>
+<td style="text-align: right;">10.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D10</td>
+<td style="text-align: right;">31243</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D11</td>
+<td style="text-align: right;">68133</td>
+<td style="text-align: right;">16</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">6.2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D12</td>
+<td style="text-align: right;">53844</td>
+<td style="text-align: right;">64</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">0.1</td>
+<td style="text-align: right;">6.2</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D2</td>
+<td style="text-align: right;">3039</td>
+<td style="text-align: right;">15</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.5</td>
+<td style="text-align: right;">6.7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D3</td>
+<td style="text-align: right;">9826</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">66.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D5</td>
+<td style="text-align: right;">72096</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">33.3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D6</td>
+<td style="text-align: right;">60568</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">8.3</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D7</td>
+<td style="text-align: right;">95012</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">17.6</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D8</td>
+<td style="text-align: right;">97910</td>
+<td style="text-align: right;">11</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">9.1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D.</td>
+<td style="text-align: left;">D9</td>
+<td style="text-align: right;">60843</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">28.6</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(fig_by_bm)) <span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;![](%s)</span><span class="sc">\n\n</span><span class="st">&quot;</span>, fig_by_bm))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<p><img role="img" src="IPBES_REFUTES_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm_files/fig_refutes_funnel_by_bm_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.png" class="img-fluid"></p>
+<p>Normalized so every BM’s own snowball corpus reads 1 (dashed line) — lets BMs be compared on conversion rate regardless of raw corpus size.</p>
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(fig_by_bm_norm)) <span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;![](%s)</span><span class="sc">\n\n</span><span class="st">&quot;</span>, fig_by_bm_norm))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<p><img role="img" src="IPBES_REFUTES_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm_files/fig_refutes_funnel_by_bm_normalized_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.png" class="img-fluid"></p>
+</section>
+<section id="level-3-llm-confirmed-refutes" class="level2">
+<h2 class="anchored" data-anchor-id="level-3-llm-confirmed-refutes">Level 3: LLM-confirmed REFUTES</h2>
+<p>Every citing work where the LLM’s own independent review agreed with NLI’s REFUTES verdict (and, by construction, judged the evidence for it sufficient — see Methodology). Use the BM dropdown in the filter row below the header to narrow to one Background Message.</p>
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(table_l3)) {</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="fu">sprintf</span>(</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&#39;&lt;iframe src=&quot;%s&quot; width=&quot;100%%&quot; height=&quot;800px&quot; style=&quot;border:none;&quot;&gt;&lt;/iframe&gt;</span><span class="sc">\n\n</span><span class="st">&#39;</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    table_l3</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  ))</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<iframe role="img" src="IPBES_REFUTES_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm_files/refutes_funnel_table_l3_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.html" width="100%" height="800px" style="border:none;">
+</iframe>
 </section>
 </section>
 

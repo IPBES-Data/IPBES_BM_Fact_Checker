@@ -2,6 +2,23 @@
 
 ## Active
 
+- [ ] **Re-enable (or retire) the two "Overlap of Papers after 2018" tables.** Disabled
+  2026-09-18 in `_targets_reporting.R` and `input/reports/IPBES_Fact_Checker.qmd` after
+  `build_overlap_after_2018_background_messages_table()` crashed the machine: it collects
+  doi/title/**abstract** for every post-2018 `(work × km × bm)` mapping row *before*
+  deduplicating — **25,717,725 rows, ~39 GB in one `collect()`**. Latent in the pipeline, not
+  caused by the project split: the committed output predates the snowball growing
+  `works_citing` to 36.8M mapping rows. The sibling `..._sub_messages_table` has the identical
+  shape minus `abstract`. `overlap_key_paper_table` is unaffected and still runs.
+
+  The performance fix is straightforward (count BM-groups lazily in Arrow, filter `n > 5`, then
+  fetch metadata for the survivors only), but three content questions should be settled first:
+  the two committed rds files disagree (6,727 vs 805,028 rows) although CLAUDE.md records that
+  the two group *identically* — the pipeline has no sub-message level and "sub_messages" is a
+  legacy name, so one may simply be redundant; an 805k-row DT widget carrying abstracts in a
+  500px iframe is not browsable; and the `n > 5` threshold was chosen when the corpus was a
+  fraction of today's size.
+
 - [ ] Optional: replace truncation with abstract chunking for long `(premise, claim)` pairs in `nli_scores_by_claim`/`nli_scores_by_claim_evidence` (pairs where `approx_tokens > max_length`): split long premises into overlapping windows, score each chunk, aggregate with `max(p_supports)`. Currently these pairs are NOT skipped — the server truncates the abstract tail and scores them (see `R/score_one_claim.R`); chunking would be a lossless alternative. See NEXT_STEPS.md for design.
 
 - [ ] Fix `read_csv()` deprecation warning in SPARQL response parsing (`refs_parquet`, `key_messages_parquet`): wrap literal CSV strings in `I()` — readr 2.2.0+ deprecation, will become an error in a future version
