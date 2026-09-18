@@ -103,7 +103,7 @@ find_orphaned_nli_scores_all <- function(
 ) {
   cfg <- yaml::read_yaml(config_path)
   assessment_ids <- vapply(cfg[["assessments"]], `[[`, character(1), "id")
-  nli_active <- cfg[["nli"]][["active"]]
+  nli_active <- purpose_config(cfg, "fact_checking")$nli
   nli_configs_all <- cfg[["nli"]][["configs"]]
 
   combos <- expand.grid(

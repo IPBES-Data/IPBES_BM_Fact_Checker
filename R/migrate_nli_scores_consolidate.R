@@ -142,7 +142,7 @@ migrate_nli_scores_consolidate_all <- function(
   dry_run = TRUE
 ) {
   cfg <- yaml::read_yaml(config_path)
-  nli_active <- cfg[["nli"]][["active"]]
+  nli_active <- purpose_config(cfg, "fact_checking")$nli
   nli_configs_all <- cfg[["nli"]][["configs"]]
 
   combos <- expand.grid(

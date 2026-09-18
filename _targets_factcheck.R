@@ -49,8 +49,9 @@ tar_option_set(
   # DAG describes; see TODO_PIPELINE_SPLIT.md's "Cross-project contracts".
   controller = crew::crew_controller_local(
     workers = tryCatch({
-      nli_cfg <- yaml::read_yaml("input/config.yaml")[["nli"]]
-      n <- length(unlist(nli_cfg[["configs"]][[nli_cfg[["active"]]]][["host"]]))
+      cfg <- yaml::read_yaml("input/config.yaml")
+      sel <- cfg[["fact_checking"]][["nli"]]
+      n <- length(unlist(cfg[["nli"]][["configs"]][[sel]][["host"]]))
       max(1L, n)
     }, error = function(e) 1L)
   )
@@ -83,12 +84,12 @@ list(
 
   # ---- configuration (re-derived here; every project reads the same file) ---
   tar_target(config_file, "input/config.yaml", format = "file"),
-  tar_target(nli_active, yaml::read_yaml(config_file)[["nli"]][["active"]]),
+  # Selections come from config.yaml's `fact_checking:` purpose block, not a
+  # global `active:` -- see purpose_config() in R/branch_helpers.R for why.
+  tar_target(purpose, purpose_config(yaml::read_yaml(config_file), "fact_checking")),
+  tar_target(nli_active, purpose$nli),
   tar_target(workers, yaml::read_yaml(config_file)[["workers"]]),
-  tar_target(nli_config, {
-    nli <- yaml::read_yaml(config_file)[["nli"]]
-    nli[["configs"]][[nli[["active"]]]]
-  }),
+  tar_target(nli_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]]),
   tar_target(
     granularity,
     yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["granularity"]] %||% "naive_bm"
@@ -97,15 +98,14 @@ list(
     max_length,
     yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["max_length"]]
   ),
-  tar_target(claim_completion_model, {
-    cc <- yaml::read_yaml(config_file)[["nli"]][["claim_completion"]]
-    cc[["configs"]][[cc[["active"]]]][["model"]]
-  }),
+  tar_target(claim_completion_model, purpose$claim_completion_model),
+  # Scoped to fact_checking.assessments -- this is the expensive arm, so it is
+  # deliberately narrower than training. purpose_assessments_list() preserves
+  # the element shape assessments_list has always produced, so a purpose
+  # listing every assessment yields a byte-identical value.
   tar_target(
     assessments_list,
-    lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
-      a[setdiff(names(a), "full_text")]
-    })
+    purpose_assessments_list(yaml::read_yaml(config_file), "fact_checking")
   ),
   tar_target(
     assessment,
@@ -116,14 +116,11 @@ list(
     },
     iteration = "list"
   ),
+  tar_target(llm_verification_active, purpose$llm),
   tar_target(
-    llm_verification_active,
-    yaml::read_yaml(config_file)[["llm_verification"]][["active"]]
+    llm_verification_config,
+    yaml::read_yaml(config_file)[["llm_verification"]][["configs"]][[llm_verification_active]]
   ),
-  tar_target(llm_verification_config, {
-    lv <- yaml::read_yaml(config_file)[["llm_verification"]]
-    lv[["configs"]][[lv[["active"]]]]
-  }),
   tar_target(
     llm_verification_system_prompt_file,
     "input/prompts/llm_verification_system.md",

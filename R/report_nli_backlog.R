@@ -22,8 +22,8 @@
 #   source("R/report_nli_backlog.R"); nli_backlog_report()
 #
 # `pairs_per_sec` is per pod -- the measured 33.6 for bge-m3 at batch_size 64
-# on one L4 (see input/config.yaml). `n_pods` defaults to the active config's
-# own host count so the time estimate tracks the pool actually configured.
+# on one L4 (see input/config.yaml). `n_pods` defaults to the host count of the
+# config fact_checking selects, so the estimate tracks the pool configured.
 nli_backlog_report <- function(
   granularity = "atomic_bm",
   nli_config_name = NULL,
@@ -34,14 +34,15 @@ nli_backlog_report <- function(
   n_pods = NULL,
   top_n = 10L
 ) {
-  cfg_all <- yaml::read_yaml(config_file)[["nli"]]
+  cfg      <- yaml::read_yaml(config_file)
+  cfg_all  <- cfg[["nli"]]
 
   # Resolve the config that actually PRODUCED this granularity, not whichever
-  # one nli.active currently points at -- same reasoning as
+  # one fact_checking currently selects -- same reasoning as
   # nli_config_for_granularity() in R/branch_helpers.R.
   if (is.null(nli_config_name)) {
     nli_config_name <- unname(nli_config_for_granularity(
-      cfg_all[["configs"]], granularity, cfg_all[["active"]]
+      cfg_all[["configs"]], granularity, purpose_config(cfg, "fact_checking")$nli
     ))
   }
   if (is.null(n_pods)) {

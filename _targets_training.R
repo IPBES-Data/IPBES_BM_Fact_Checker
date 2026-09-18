@@ -32,7 +32,7 @@
 #
 # ALSO NEEDED, for nli_finetuned_model only: the Python venv at
 # ~/.venvs/specter2-merge/bin/python3 (see R/build_nli_finetuned_model.R),
-# and that target only runs when the active nli config sets train: true.
+# and that target only runs when config.yaml's `training.finetune.enabled` is true.
 library(targets)
 
 Sys.setenv(
@@ -45,7 +45,7 @@ tar_option_set(
     "jsonlite", "digest", "ellmer", "filelock", "crew", "keyring"
   ),
   # Same sizing as the collection project's own controller, and for the same
-  # reason: score_one_claim() dispatches claims across the active NLI pool's
+  # reason: score_one_claim() dispatches claims across the NLI pool selected by `training.nli`'s
   # hosts by taking a per-host file lock, so local concurrency has to match the
   # host count or hosts sit idle. Read straight from config.yaml at
   # pipeline-definition time rather than via a target -- this is worker-pool
@@ -59,8 +59,9 @@ tar_option_set(
   # named in TODO_PIPELINE_SPLIT.md's "Cross-project contracts".
   controller = crew::crew_controller_local(
     workers = tryCatch({
-      nli_cfg <- yaml::read_yaml("input/config.yaml")[["nli"]]
-      n <- length(unlist(nli_cfg[["configs"]][[nli_cfg[["active"]]]][["host"]]))
+      cfg <- yaml::read_yaml("input/config.yaml")
+      sel <- cfg[["training"]][["nli"]]
+      n <- length(unlist(cfg[["nli"]][["configs"]][[sel]][["host"]]))
       max(1L, n)
     }, error = function(e) 1L)
   )
@@ -106,12 +107,11 @@ list(
   # real ~25 min local CPU run, and routing them through the coarse nli_config
   # blob would let a host-list edit re-trigger one.
   tar_target(config_file, "input/config.yaml", format = "file"),
-  tar_target(nli_active, yaml::read_yaml(config_file)[["nli"]][["active"]]),
+  # Selections come from config.yaml's `training:` purpose block.
+  tar_target(purpose, purpose_config(yaml::read_yaml(config_file), "training")),
+  tar_target(nli_active, purpose$nli),
   tar_target(workers, yaml::read_yaml(config_file)[["workers"]]),
-  tar_target(nli_config, {
-    nli <- yaml::read_yaml(config_file)[["nli"]]
-    nli[["configs"]][[nli[["active"]]]]
-  }),
+  tar_target(nli_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]]),
   tar_target(
     granularity,
     yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["granularity"]] %||% "naive_bm"
@@ -120,23 +120,14 @@ list(
     max_length,
     yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["max_length"]]
   ),
-  tar_target(
-    nli_train_enabled,
-    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["train"]] %||% FALSE
-  ),
-  tar_target(
-    nli_downsample_seed,
-    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["downsample_seed"]]
-  ),
-  tar_target(claim_completion_model, {
-    cc <- yaml::read_yaml(config_file)[["nli"]][["claim_completion"]]
-    cc[["configs"]][[cc[["active"]]]][["model"]]
-  }),
+  # training.finetune, not a `train:` field on the serving config -- how a
+  # model is served and whether this project trains one are different things.
+  tar_target(nli_train_enabled, purpose$finetune_enabled),
+  tar_target(nli_downsample_seed, purpose$downsample_seed),
+  tar_target(claim_completion_model, purpose$claim_completion_model),
   tar_target(
     assessments_list,
-    lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
-      a[setdiff(names(a), "full_text")]
-    })
+    purpose_assessments_list(yaml::read_yaml(config_file), "training")
   ),
   tar_target(
     assessment,
@@ -147,14 +138,11 @@ list(
     },
     iteration = "list"
   ),
+  tar_target(llm_verification_active, purpose$llm),
   tar_target(
-    llm_verification_active,
-    yaml::read_yaml(config_file)[["llm_verification"]][["active"]]
+    llm_verification_config,
+    yaml::read_yaml(config_file)[["llm_verification"]][["configs"]][[llm_verification_active]]
   ),
-  tar_target(llm_verification_config, {
-    lv <- yaml::read_yaml(config_file)[["llm_verification"]]
-    lv[["configs"]][[lv[["active"]]]]
-  }),
   tar_target(
     llm_verification_system_prompt_file,
     "input/prompts/llm_verification_system.md",

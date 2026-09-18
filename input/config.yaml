@@ -53,6 +53,67 @@ assessments:
 # Adding an assessment therefore means updating BOTH `assessments:` above and
 # the relevant entries here. That is deliberate -- until now the set of rendered
 # reports was an accident of which data happened to exist on disk.
+
+# ---------------------------------------------------------------------------
+# Purpose blocks: scope + selection.
+#
+# `nli:` and `llm_verification:` below are LIBRARIES of named definitions and
+# select nothing. Each pipeline picks what it uses here, because "active" is a
+# single global answer to a question every project answers for itself: fact
+# checking scores one assessment's citing works, training pools all five key-
+# paper sets, and they need not agree on the model. While there was one DAG the
+# conflation was invisible; with four projects it is wrong.
+#
+# Scope lives here too, rather than as per-assessment flags inside
+# `assessments:`. Flags there would change `assessments_list`'s value and so
+# invalidate `assessment`, and with it ttl_path, works_parquet,
+# snowball_parquet and everything downstream -- days of OpenAlex time. A
+# purpose block avoids that hazard instead of defusing it.
+#
+# Resolved and validated by purpose_config() in R/branch_helpers.R: a name that
+# is not in the corresponding library is a hard error, because it would
+# otherwise read as "nothing has been scored yet" and re-dispatch a corpus at
+# real GPU cost.
+# ---------------------------------------------------------------------------
+
+# _targets_factcheck.R -- the citing-works corpus. Deliberately narrower than
+# training: this is the expensive arm (millions of pairs, GPU hours, real
+# OpenRouter spend), so it is scoped to the assessment actually being worked
+# on. Widen it here when another assessment is ready to be scored -- IAS
+# already has Phase 1 citing-works scores on disk from before this scoping, and
+# they stay there; they are simply no longer maintained by this pipeline until
+# IAS is listed here again.
+fact_checking:
+  assessments: [GA1]
+  nli: bge_m3_zeroshot_atomic_bm
+  llm: openrouter_cheap
+  claim_completion: haiku_completion
+
+# _targets_training.R -- the key-paper arm. All five, because a key paper IS
+# the evidence a BM was written from, so every assessment's seed set is worth
+# scoring: it is both the QA sanity check and the source of the positive class
+# for fine-tuning, and it is small and bounded where the citing-works corpus is
+# not.
+#
+# finetune: is the gate on nli_finetuned_model, a real ~25 min local CPU run.
+# It lives here rather than in the serving config where it used to sit -- how a
+# model is SERVED and whether this project TRAINS one are different questions,
+# and putting `train:` in the serving block meant every config carried a field
+# only one pipeline ever read.
+training:
+  assessments: [GA1, VA, TCA, IAS, BBA]
+  nli: bge_m3_zeroshot_atomic_bm
+  llm: openrouter_cheap
+  claim_completion: haiku_completion
+  finetune:
+    enabled: true
+    # null = train on the full pooled dataset as-is. A seed downsamples every
+    # label class to the smallest class's count first, for class balance --
+    # a real risk once assessments are pooled and one (e.g. a keypaper-only
+    # assessment) contributes far more SUPPORTS/NOT_ENOUGH_INFO than REFUTES.
+    # See scripts/training/train_nli.py.
+    downsample_seed: 13
+
 reports:
   - qmd_name: IPBES_Label_Funnel_Report
     title: "{label} - {assessment} ({granularity})"
@@ -88,7 +149,7 @@ reports:
 
 # NLI alignment backend. The pipeline POSTs (premise, hypothesis) pairs to a
 # zero-shot NLI server (see external/runpod/docker/nli-runpod/). Switch models by changing
-# `active` to a key under `configs`. Use `~` to disable.
+# `nli:`/`llm:` in a purpose block to a key under `configs`. Use `~` to disable.
 #
 # bge_m3_zeroshot is now the sole production config -- deberta_zeroshot/
 # deberta_zeroshot_v3 are RETIRED, not just
@@ -137,16 +198,13 @@ nli:
   # whole one-time job. claude-haiku-4.5 chosen for its strong track record
   # on precise, constrained rewriting instructions; not empirically
   # A/B-tested against alternatives the way gpt-oss-20b was for Phase 2
-  # verification earlier -- swap `active` below if that's ever done.
+  # verification earlier -- swap `claim_completion:` in the purpose blocks
+  # above if that's ever done.
   claim_completion:
-    active: haiku_completion   # which entry under configs: is active
-
     configs:
       haiku_completion:
         model: "anthropic/claude-haiku-4.5"
 
-
-  active: bge_m3_zeroshot_atomic_bm   # which entry under configs: is active -- the only config with running pods
 
   configs:
     # ACTIVE -- the sole production NLI config (see the comment above nli:
@@ -174,12 +232,10 @@ nli:
       uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
       nei_threshold: 0.90
       granularity: complete_bm    #  naive_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
-      train: false   # fine-tune this config's model (scripts/training/train_nli.py, via the nli_finetuned_model target) -- real local CPU time (~25min for GA1-only data), opt-in, default false. See nli_finetuned_model/R/build_nli_finetuned_model.R.
-      downsample_seed: null   # null (default) = train on the full pooled dataset as-is. A seed (e.g. 42) downsamples every label class down to the smallest class's count before training, for class balance -- real risk once multiple assessments are pooled and one (e.g. a keypaper-only assessment) contributes far more SUPPORTS/NOT_ENOUGH_INFO than REFUTES. See scripts/training/train_nli.py.
 
     bge_m3_zeroshot_atomic_bm:
       scheme: https
-      host: ["56rthl6af1mtj8-8080.proxy.runpod.net", "bvlpunvz9e2op2-8080.proxy.runpod.net", "ka0islqoebsby7-8080.proxy.runpod.net", "6i71tmmvg0wn6b-8080.proxy.runpod.net", "4pq8yzotwbddf9-8080.proxy.runpod.net", "j99fm3kxmzzz8e-8080.proxy.runpod.net", "7rpjj8eg2alov3-8080.proxy.runpod.net", "3buqxkqws77d95-8080.proxy.runpod.net", "9u87i9nx064rpb-8080.proxy.runpod.net", "qjqrxzgqk4psru-8080.proxy.runpod.net"]
+      host: ["bpudv76nwd84ux-8080.proxy.runpod.net"]
       # kuhykgssi61j0v-8080.proxy.runpod.net dropped for now -- confirmed
       # unreachable (HTTP 404 on /health, not just a boot-time delay) while
       # the other 5 were healthy. Add it back once its pod is confirmed up.
@@ -193,8 +249,6 @@ nli:
       uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
       nei_threshold: 0.90
       granularity: atomic_bm    #  naive_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
-      train: true   # see bge_m3_zeroshot_complete_bm's own train: comment above
-      downsample_seed: 13   # see bge_m3_zeroshot_complete_bm's own downsample_seed: comment above
 
     bge_m3_zeroshot_naive_bm:
       scheme: https
@@ -210,8 +264,6 @@ nli:
       uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
       nei_threshold: 0.90
       granularity:  naive_bm   # complete_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
-      train: false   # see bge_m3_zeroshot_complete_bm's own train: comment above
-      downsample_seed: null   # see bge_m3_zeroshot_complete_bm's own downsample_seed: comment above
 
     # nli_finetuned: a directly fine-tuned 3-way classifier (scripts/training/
     # train_nli.py), NOT a zero-shot model -- passes: 1 tells score_one_claim.R
@@ -239,8 +291,8 @@ nli:
 
 # Phase 2 — LLM verification of NLI-flagged pairs (see TD_NLI_LLM_two_phase.qmd
 # and R/build_llm_verification_parquet.R). One ellmer::chat_openrouter() call
-# per (claim, work) pair via OpenRouter. Switch models by changing `active` to
-# a key under `configs`, same pattern as `nli.active` above.
+# per (claim, work) pair via OpenRouter. Switch models by changing `llm:` in a
+# purpose block above to a key under `configs`, same pattern as `nli:` there.
 #
 # max_active and max_tokens are carried over unchanged from the sibling
 # Categorisation_Literature project's proven epistemology-classifier configs
@@ -293,8 +345,6 @@ nli:
 # from when it fed a filter) and R/build_llm_verification_parquet.R (where
 # the tag is now attached) for the full design.
 llm_verification:
-  active: openrouter_cheap   # which entry under configs: is active
-
   configs:
     # Default: cheap, fast, non-reasoning. First step: high-confidence
     # REFUTES/SUPPORTS.

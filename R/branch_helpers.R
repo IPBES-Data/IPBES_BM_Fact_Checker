@@ -106,3 +106,87 @@ alignement_branch_dir <- function(output_root, assessment_id, run_id) {
     paste0("run_id=", sanitize_partition_value(run_id))
   )
 }
+
+# ---------------------------------------------------------------------------
+# Purpose blocks: which named config each pipeline actually uses.
+#
+# input/config.yaml keeps `nli:` and `llm_verification:` as LIBRARIES of named
+# definitions, and puts the SELECTION in a per-purpose block (`fact_checking:`,
+# `training:`). That split exists because "active" is a single global answer to
+# a question each project answers for itself: fact checking may score one
+# assessment with one model while training pools five with another. While there
+# was one DAG the conflation was invisible; with four projects it is wrong.
+#
+# It also keeps scope out of `assessments:`. Per-assessment `training: true` /
+# `fact_checking: false` flags would change `assessments_list`'s value and so
+# invalidate `assessment`, and with it ttl_path, works_parquet,
+# snowball_parquet and everything downstream. A purpose block avoids that
+# hazard rather than defusing it.
+#
+# Returns a list: assessments (character, the ids this purpose is scoped to),
+# nli, llm, claim_completion (config NAMES), claim_completion_model (resolved),
+# finetune_enabled, downsample_seed.
+#
+# Validates loudly. A name that does not exist in the corresponding library is
+# a typo that would otherwise read as "nothing has been scored yet" and quietly
+# re-dispatch a corpus at real GPU cost, so every one is checked here.
+purpose_config <- function(cfg, purpose) {
+  p <- cfg[[purpose]]
+  if (is.null(p)) {
+    stop(sprintf(
+      "config.yaml has no `%s:` block (expected one of: fact_checking, training)",
+      purpose
+    ), call. = FALSE)
+  }
+
+  pick <- function(field, library, required = TRUE) {
+    name <- p[[field]]
+    if (is.null(name) || !length(name)) {
+      if (!required) return(NULL)
+      stop(sprintf("config.yaml: `%s:` is missing `%s:`", purpose, field), call. = FALSE)
+    }
+    name <- as.character(name)[[1L]]
+    known <- names(library)
+    if (!name %in% known) {
+      stop(sprintf(
+        "config.yaml: `%s.%s: %s` is not a known config (known: %s)",
+        purpose, field, name, paste(known, collapse = ", ")
+      ), call. = FALSE)
+    }
+    name
+  }
+
+  nli_name <- pick("nli", cfg[["nli"]][["configs"]])
+  llm_name <- pick("llm", cfg[["llm_verification"]][["configs"]])
+  cc_name  <- pick("claim_completion", cfg[["nli"]][["claim_completion"]][["configs"]])
+
+  ids <- as.character(unlist(p[["assessments"]], use.names = FALSE))
+  known_ids <- vapply(cfg[["assessments"]], `[[`, character(1), "id")
+  unknown <- setdiff(ids, known_ids)
+  if (length(unknown)) {
+    stop(sprintf(
+      "config.yaml: `%s.assessments` names unknown assessment(s): %s (known: %s)",
+      purpose, paste(unknown, collapse = ", "), paste(known_ids, collapse = ", ")
+    ), call. = FALSE)
+  }
+
+  list(
+    assessments            = ids,
+    nli                    = nli_name,
+    llm                    = llm_name,
+    claim_completion       = cc_name,
+    claim_completion_model = cfg[["nli"]][["claim_completion"]][["configs"]][[cc_name]][["model"]],
+    finetune_enabled       = isTRUE(p[["finetune"]][["enabled"]]),
+    downsample_seed        = p[["finetune"]][["downsample_seed"]]
+  )
+}
+
+# Scope `assessments:` to one purpose block, preserving the exact element shape
+# `assessments_list` has always produced (the `full_text` strip included), so a
+# purpose listing every assessment yields a byte-identical value and invalidates
+# nothing downstream.
+purpose_assessments_list <- function(cfg, purpose) {
+  ids <- purpose_config(cfg, purpose)$assessments
+  out <- lapply(cfg[["assessments"]], function(a) a[setdiff(names(a), "full_text")])
+  out[vapply(out, `[[`, character(1), "id") %in% ids]
+}

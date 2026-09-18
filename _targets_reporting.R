@@ -99,12 +99,19 @@ list(
 
   # ---- configuration (re-derived here; every project reads the same file) ---
   tar_target(config_file, "input/config.yaml", format = "file"),
-  tar_target(nli_active, yaml::read_yaml(config_file)[["nli"]][["active"]]),
+  # Reporting renders BOTH arms, so it resolves both purpose blocks rather
+  # than one global `active:`. The fact-checking selection drives the
+  # citing-works funnels and QA; the training selection drives the key-paper,
+  # training-set and fine-tuned-model views. They happen to name the same nli
+  # config today, which is exactly why keeping them distinct matters -- the
+  # moment they diverge, a single `nli_active` would send half these targets
+  # to the wrong nli_config=<name> directory and report scored data as unscored.
+  tar_target(purpose_fc, purpose_config(yaml::read_yaml(config_file), "fact_checking")),
+  tar_target(purpose_tr, purpose_config(yaml::read_yaml(config_file), "training")),
+  tar_target(nli_active, purpose_fc$nli),
+  tar_target(nli_active_training, purpose_tr$nli),
   tar_target(nli_configs_all, yaml::read_yaml(config_file)[["nli"]][["configs"]]),
-  tar_target(nli_config, {
-    nli <- yaml::read_yaml(config_file)[["nli"]]
-    nli[["configs"]][[nli[["active"]]]]
-  }),
+  tar_target(nli_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]]),
   tar_target(
     granularity,
     yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["granularity"]] %||% "naive_bm"
@@ -113,14 +120,9 @@ list(
   # granularities even though only one is ever "active" for scoring, so a
   # granularity scored earlier under its own config still gets a report.
   tar_target(nli_granularities, c("naive_bm", "complete_bm", "atomic_bm")),
-  tar_target(
-    llm_verification_active,
-    yaml::read_yaml(config_file)[["llm_verification"]][["active"]]
-  ),
-  tar_target(claim_completion_model, {
-    cc <- yaml::read_yaml(config_file)[["nli"]][["claim_completion"]]
-    cc[["configs"]][[cc[["active"]]]][["model"]]
-  }),
+  tar_target(llm_verification_active, purpose_fc$llm),
+  tar_target(llm_verification_active_training, purpose_tr$llm),
+  tar_target(claim_completion_model, purpose_fc$claim_completion_model),
   tar_target(
     assessments_list,
     lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
@@ -240,7 +242,7 @@ list(
     llm_verification_keypaper_parquet,
     file.path(
       "output/llm_verification/scores_keypaper",
-      paste0("llm_config=", llm_verification_active),
+      paste0("llm_config=", llm_verification_active_training),
       paste0("assessment=", assessment$id)
     ),
     pattern = map(assessment)
@@ -263,7 +265,7 @@ list(
     nli_training_data,
     file.path(
       "output/nli_training", paste0("granularity=", granularity),
-      paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)
+      paste0("nli_config=", nli_active_training), paste0("assessment=", assessment$id)
     ),
     pattern = map(assessment)
   ),
@@ -279,7 +281,7 @@ list(
       if (file.exists(sentinel)) {
         readLines(sentinel, warn = FALSE)[[1L]]
       } else {
-        file.path("output/nli_training_finetuned", ".disabled", nli_active)
+        file.path("output/nli_training_finetuned", ".disabled", nli_active_training)
       }
     }
   ),
@@ -510,7 +512,7 @@ list(
   tar_target(
     nli_training_qa_data,
     build_nli_training_qa_data(
-      nli_training_data, assessment$id, nli_active, granularity, "output/tables"
+      nli_training_data, assessment$id, nli_active_training, granularity, "output/tables"
     ),
     pattern = map(assessment, nli_training_data),
     format = "file"
@@ -522,7 +524,7 @@ list(
   # not per-assessment), so no cross()/map() over assessment here.
   tar_target(
     nli_finetuned_model_qa_data,
-    build_nli_finetuned_model_qa_data(nli_finetuned_model, nli_active, "output/tables")
+    build_nli_finetuned_model_qa_data(nli_finetuned_model, nli_active_training, "output/tables")
   ),
   # Target 2h3: NLI overview figures — label split (overall/per-KM/per-BM),
   # confidence density, alignment density, per assessment.

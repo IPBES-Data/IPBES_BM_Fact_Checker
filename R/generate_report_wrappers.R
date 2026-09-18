@@ -286,7 +286,9 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
   if ("llm_config" %in% dims) {
     l <- unlist(entry[["llm_config"]])
     if (is.null(l) || !length(l)) {
-      l <- cfg$llm_verification$active
+      # Default to the fact-checking selection: the only llm_config-dimensioned
+      # report today is the citing-works Phase 2 QA view.
+      l <- purpose_config(cfg, "fact_checking")$llm
     }
     unknown <- setdiff(l, names(cfg$llm_verification$configs))
     if (length(unknown)) {
@@ -353,7 +355,7 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
         ), call. = FALSE)
       }
       grid$nli_config <- nli_config_for_granularity(
-        nli_configs, grid$granularity, cfg$nli$active
+        nli_configs, grid$granularity, purpose_config(cfg, "fact_checking")$nli
       )
     }
   }
@@ -364,8 +366,12 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
   # trained. This replaces the old `.skipped_<cfg>` placeholder-file hack:
   # no wrapper, so nothing is rendered and nothing needs pruning downstream.
   if (identical(qmd_name, "QA_NLI_Finetuned_Model_Report") && nrow(grid)) {
+    # Fine-tuning is now gated by training.finetune.enabled on the TRAINING
+    # purpose block, not by a `train:` field on each serving config -- so the
+    # report exists for exactly the one config that block selects, when enabled.
+    tr <- purpose_config(cfg, "training")
     trained <- vapply(grid$nli_config, function(cf) {
-      isTRUE(nli_configs[[cf]][["train"]])
+      isTRUE(tr$finetune_enabled) && identical(cf, tr$nli)
     }, logical(1))
     dropped <- grid$nli_config[!trained]
     if (length(dropped)) {

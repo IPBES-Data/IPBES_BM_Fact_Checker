@@ -1,4 +1,7 @@
 name|type|data|command|depend|seed|path|time|size|bytes|format|repository|iteration|parent|children|seconds|warnings|error
+nli_cfg|object|655d0c7c2f6ca082
+r_files|stem|bdd4f1b050a9cc2a|ee85abe78ce69f3d|2c530c1562a7fbd1|969205733|R/branch_helpers.R*R/build_bm_split_highlighted.R*R/build_claim_completion.R*R/build_fig_pub_per_year.R*R/build_fulltext.R*R/build_label_funnel_data.R*R/build_label_funnel_figures.R*R/build_label_funnel_tables.R*R/build_llm_candidate_scope_parquet.R*R/build_llm_verification_keypaper_parquet.R*R/build_llm_verification_parquet.R*R/build_llm_verification_qa_data.R*R/build_llm_verification_qa_figures.R*R/build_nli_bm_explorer.R*R/build_nli_claim_units.R*R/build_nli_finetuned_model_qa_data.R*R/build_nli_finetuned_model.R*R/build_nli_overview_data.R*R/build_nli_overview_figures.R*R/build_nli_ready_evidence_keypaper_parquet.R*R/build_nli_ready_evidence_parquet.R*R/build_nli_ready_parquet.R*R/build_nli_scores_qa_data.R*R/build_nli_scores_qa_figures.R*R/build_nli_training_data.R*R/build_nli_training_qa_data.R*R/build_overlap_after_2018_background_messages_table.R*R/build_overlap_after_2018_sub_messages_table.R*R/build_overlap_key_paper_table.R*R/build_report_output_dir.R*R/build_snowball_parquet.R*R/build_works_citing_parquet.R*R/check_nli_pool_health.R*R/clean_text.R*R/consolidate_nli_scores.R*R/download_ttls.R*R/download_works.R*R/download_zotero.R*R/extract_lod.R*R/find_orphaned_nli_scores.R*R/generate_report_wrappers.R*R/manage_fuseki.R*R/migrate_nli_scores_consolidate.R*R/nli_http_helpers.R*R/render_diagrams.R*R/report_nli_backlog.R*R/resolve_citations.R*R/score_one_claim.R*R/write_key_messages_parquet.R*R/write_refs_parquet.R*R/write_sections_parquet.R|t20714.7668629518s|s414051b|414051|file|local|vector|||0.166||
+pipeline_mmd|stem|51bf4d5e71f0d393|0e066c21d9f4a3ee|f8345ca6bd930657|-164121517|input/mmd/pipeline_factcheck.mmd|t20714.7814581624s|s5329b|5329|file|local|vector|||1.102||
 nli_scores_path_cols|object|d760333d84122e98
 read_consolidated_group|function|99a3d49de162b3b9
 write_if_changed|function|b6f53541b340d717
@@ -18,6 +21,7 @@ works_citing_meta_paths|function|a39dba2a73388032
 nli_classify_request|function|124e7f5646347be0
 bm_align_surviving_indices|function|96380b8aec3b10c7
 load_text_file|function|7eb985e9c5b3ef26
+cfg|object|13b736c2746fd10e
 llm_verification_qa_datatable|function|a4398f8be668fa50
 render_title_template|function|c3f125583dd2c13b
 bm_highlight_palette|object|6f88dc11ab64ed84
@@ -29,6 +33,7 @@ render_template|function|48a8db5605bb43f0
 nli_route_label|function|8bb48a754845ddc3
 build_nli_training_qa_data|function|9fa253545b49f415
 nli_config_for_granularity|function|623e07d65a3951a5
+purpose_config|function|3b17d32aa9d79713
 branch_output_dir|function|6f401328a4b9575a
 resolve_lod_endpoint|function|6d7679ec1f7f22d4
 write_refs_parquet|function|d4675cddc66fc8f6
@@ -44,7 +49,6 @@ works_citing_meta_root|function|fadaa2c902db1424
 claim_completion_connective_stopwords|object|4e47382da489b0c1
 nli_health|function|3785a2c2aa7991fd
 nli_scores_qa_datatable|function|54248e0c817af46e
-nli_cfg|object|655d0c7c2f6ca082
 bm_highlight_regex_escape|function|7c4020ec73b4ecde
 report_wrapper_labels|function|0745451395298a40
 report_wrapper_default_granularities|function|3d6902450e5739ca
@@ -54,6 +58,7 @@ quote_is_verbatim|function|f75f5e7d22d8ccc9
 sanitize_partition_value|function|f86f6b55f98b32df
 llm_verification_output_type|function|ddba0f06ddb7a9dc
 infer_zotero_group_id|function|10e164ee81c0a6e4
+sel|object|7ce6eed60b5dc1db
 normalize_evidence_token|function|9a070b47a705eaf4
 build_pipeline_mmd|function|c7674d243793e2a0
 build_nli_training_data|function|0e41a5955843d9b2
@@ -92,7 +97,8 @@ build_nli_bm_explorer|function|f82ed7dd75b4d1a1
 llm_verification_qa_alluvial_plot|function|a775f2376599aa1c
 report_wrapper_lines|function|a49557451e212b84
 select_llm_verification_candidates|function|790344b34327c052
-nli_backlog_report|function|cc9fc5e1b90c0e0d
+nli_backlog_report|function|3e7f59f764994b4d
+purpose_assessments_list|function|ba0f22eefd32a45c
 download_works|function|ffde34ddb58488af
 download_ttl|function|a1341e281ccb212b
 stop_fuseki_session|function|3144aa9096c58d1e
@@ -102,11 +108,11 @@ build_works_citing_parquet|function|b64580d61827265f
 claim_completion_is_faithful|function|212e22e885615b97
 build_nli_scores_qa_data|function|941f96be9afa6b67
 bm_highlight_flexible_pattern|function|4eb8bbb6be1fefe9
-report_wrapper_combinations|function|35da2e771fc36ae6
+report_wrapper_combinations|function|a034546ecf2577b4
 alignement_branch_dir|function|269b2cd6e90f8dc4
 download_zotero|function|08305864b6527b19
 tokenize_evidence_field|function|e7c6190258483cff
-find_orphaned_nli_scores_all|function|6759e92b466cdfa8
+find_orphaned_nli_scores_all|function|ac24fcbafe599c43
 clean_abstract|function|7c2067e3c6bf977d
 clean_title|function|df5b63bd17954c54
 read_sparql_query|function|586233eed73b594c
@@ -114,7 +120,7 @@ start_fuseki|function|8d2c8ff443dca7f5
 nli_classify_url|function|bb254ec83c615e50
 nli_hosts|function|5a48bd6ada2e25aa
 build_llm_verification_qa_data|function|76ef7c05e8ce904c
-migrate_nli_scores_consolidate_all|function|963ea107f9656764
+migrate_nli_scores_consolidate_all|function|5382c20e6d184e60
 build_nli_scores_qa_figures|function|cd077d9f2f8f8fd5
 segment_bm_atomic_raw|function|d875387a0fffab10
 segment_bm_atomic|function|f619fb5e3712acc4
@@ -132,7 +138,7 @@ build_llm_verification_keypaper_parquet|function|7da4735028108f37
 download_ttls|function|19a6118975a30c39
 complete_bm_fragments|function|656d687132198eb8
 bm_highlight_locate_segments|function|3ea409d5806b4d86
-generate_report_wrappers|function|6c5dc42a502c0ac9
+generate_report_wrappers|function|8ba1b838bd9e603b
 build_nli_ready_parquet|function|bfacaec5dc2b8472
 extract_refs_from_endpoint|function|28f95c1df922070c
 extract_sections_from_endpoint|function|d5f610ef88c07ce6
@@ -150,5 +156,7 @@ build_sections_parquet|function|9a500a604754b06c
 build_key_messages_parquet|function|1a02b0e88d088f28
 build_llm_candidate_scope_parquet|function|b486a771b2b0c718
 build_bm_split_highlighted|function|8b02a8897a8075a8
-r_files|stem|bdd4f1b050a9cc2a|ee85abe78ce69f3d|2c530c1562a7fbd1|969205733|R/branch_helpers.R*R/build_bm_split_highlighted.R*R/build_claim_completion.R*R/build_fig_pub_per_year.R*R/build_fulltext.R*R/build_label_funnel_data.R*R/build_label_funnel_figures.R*R/build_label_funnel_tables.R*R/build_llm_candidate_scope_parquet.R*R/build_llm_verification_keypaper_parquet.R*R/build_llm_verification_parquet.R*R/build_llm_verification_qa_data.R*R/build_llm_verification_qa_figures.R*R/build_nli_bm_explorer.R*R/build_nli_claim_units.R*R/build_nli_finetuned_model_qa_data.R*R/build_nli_finetuned_model.R*R/build_nli_overview_data.R*R/build_nli_overview_figures.R*R/build_nli_ready_evidence_keypaper_parquet.R*R/build_nli_ready_evidence_parquet.R*R/build_nli_ready_parquet.R*R/build_nli_scores_qa_data.R*R/build_nli_scores_qa_figures.R*R/build_nli_training_data.R*R/build_nli_training_qa_data.R*R/build_overlap_after_2018_background_messages_table.R*R/build_overlap_after_2018_sub_messages_table.R*R/build_overlap_key_paper_table.R*R/build_report_output_dir.R*R/build_snowball_parquet.R*R/build_works_citing_parquet.R*R/check_nli_pool_health.R*R/clean_text.R*R/consolidate_nli_scores.R*R/download_ttls.R*R/download_works.R*R/download_zotero.R*R/extract_lod.R*R/find_orphaned_nli_scores.R*R/generate_report_wrappers.R*R/manage_fuseki.R*R/migrate_nli_scores_consolidate.R*R/nli_http_helpers.R*R/render_diagrams.R*R/report_nli_backlog.R*R/resolve_citations.R*R/score_one_claim.R*R/write_key_messages_parquet.R*R/write_refs_parquet.R*R/write_sections_parquet.R|t20714.7668629518s|s414051b|414051|file|local|vector|||0.166||
-pipeline_mmd|stem|51bf4d5e71f0d393|0e066c21d9f4a3ee|f8345ca6bd930657|-164121517|input/mmd/pipeline_factcheck.mmd|t20714.7814581624s|s5329b|5329|file|local|vector|||1.102||
+config_file|stem|9e242630e7babab1|8a509d56b3459c7e|2c530c1562a7fbd1|-615108176|input/config.yaml|t20714.7852837358s|s22883b|22883|file|local|vector|||0.216||
+assessments_list|stem|a56d7202ec9b4486|530aab905ccd47a4|842c8de8d83a337b|-2022784872||t20714.7868227467s|s186b|186|rds|local|vector|||0.011||
+assessment|stem|8603be417a138ed2|ae1b74426a7e508a|d054f67a5a4983f7|1623788928||t20714.7868229298s|s205b|205|rds|local|list|||0||
+purpose|stem|809f10f3d55d14cc|016baa69371519a6|d190ad21fa09d579|-1069994102||t20714.7868230092s|s238b|238|rds|local|vector|||0||

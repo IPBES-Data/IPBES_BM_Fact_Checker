@@ -354,17 +354,17 @@ independently verifiable (render and diff against the current output), and it
 immediately removes the accidental-spend risk while everything else is still
 one pipeline.
 
-1. **Extract `_targets_reporting.R`.** Move the report-data, figure, table,
+1. **DONE** — Extract `_targets_reporting.R`. Move the report-data, figure, table,
    widget, diagram and render targets plus `generate_report_wrappers()`. Verify
    by rendering and comparing against the current `output/reports/`. Nothing
    upstream changes; the win (no credentials, no paid path) lands immediately.
-2. **Extract `_targets_training.R`.** The smaller scoring consumer, and the one
+2. **DONE** — Extract `_targets_training.R`. The smaller scoring consumer, and the one
    whose failure matters least. Verify that a no-op pass skips every claim.
-3. **Extract `_targets_factcheck.R`,** leaving `_targets.R` as collection on
+3. **DONE** — Extract `_targets_factcheck.R`, leaving `_targets.R` as collection on
    its existing store. This is where the 140 GB `nli_ready_evidence` rebuild is
    paid.
-4. **Restructure the configuration** into purpose blocks.
-5. **Resolve the per-sentence orphans.**
+4. **DONE** — Restructure the configuration into purpose blocks.
+5. **DONE (parked)** — Resolve the per-sentence orphans.
 
 Do this from a quiet point: no scoring run in flight, and the repository
 committed. A refactor of this size under a running system is how the
