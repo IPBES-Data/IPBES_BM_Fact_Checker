@@ -6,9 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-19">
+<meta name="dcterms.date" content="2026-09-18">
 
-<title>QA BM Split Report</title>
+<title>QA BM Split - GA1 (atomic_bm)</title>
 <style>
 
 span.smallcaps{font-variant: small-caps;}
@@ -2454,8 +2454,7 @@ window.Quarto = {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">QA BM Split Report</h1>
-<p class="subtitle lead">QA check for how each Background Message was split into claims</p>
+<h1 class="title">QA BM Split - GA1 (atomic_bm)</h1>
 </div>
 
 
@@ -2466,7 +2465,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 19, 2026</p>
+      <p class="date">September 18, 2026</p>
     </div>
   </div>
   
@@ -2478,6 +2477,27 @@ window.Quarto = {
 </header>
 
 
+<!-- GENERATED FILE -- edit config.yaml `reports:` instead, not this file. -->
+<!-- Shared BODY for the QA_BM_Split_Report report family.
+     Rendered only via the generated wrapper .qmd files that `{{< include >}}`
+     this file -- see R/generate_report_wrappers.R and config.yaml's `reports:`
+     section. The leading underscore keeps Quarto from rendering it on its own
+     -- but it also keeps it out of the project entirely, so tar_quarto() never
+     scans this file for dependencies. That is why the tar_read() calls live in
+     the wrapper and arrive here as `report_deps`; `params$...` likewise comes
+     from the wrapper. -->
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># This body had no empty-state at all, unlike its five siblings -- a missing</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># input was an error rather than a rendered explanation.</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">isTRUE</span>(x<span class="sc">$</span>empty)) {</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="fu">sprintf</span>(</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;No BM-split QA data for `%s` at granularity `%s` -- that granularity has not been segmented/scored yet. Run the `nli_ready_evidence_parquet` chain for it and re-render.</span><span class="sc">\n\n</span><span class="st">&quot;</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    params<span class="sc">$</span>assessment_id, params<span class="sc">$</span>granularity</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  ))</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  knitr<span class="sc">::</span><span class="fu">knit_exit</span>()</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <section id="ga1-granularity-atomic_bm" class="level1">
 <h1>GA1 – granularity: atomic_bm</h1>
 <section id="methodology" class="level2">
@@ -2485,33 +2505,33 @@ window.Quarto = {
 <p>Every Background Message (BM) in this assessment is split into claims by <code>nli_ready_evidence_parquet</code> under the currently active <code>granularity</code> setting (<code>input/config.yaml</code>’s <code>nli.active</code> config). This report is a <strong>QA check on that split, not a scoring result</strong> — for every BM field, it shows the original <code>bm_description</code>/<code>bm_label</code> text with each resulting claim’s source span colour-highlighted, followed by the claims themselves as a colour-matched list, so the segmentation can be sanity-checked by eye before any NLI/LLM scoring is run against it. Highlighting is based on the raw span each claim was cut from, before any confidence-qualifier removal or (for <code>atomic_bm</code>) LLM completion – so it covers at least the major part of a claim’s origin, even where the listed claim text itself was reworded. See <code>TD_BM_NLI_approach.qmd</code> for the full design rationale behind each granularity option (<code>naive_bm</code> / <code>complete_bm</code> / <code>atomic_bm</code>).</p>
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;- **%d** distinct BMs, **%d** resulting claims</span><span class="sc">\n</span><span class="st">&quot;</span>, n_bm, n_claims))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;- **%d** distinct BMs, **%d** resulting claims</span><span class="sc">\n</span><span class="st">&quot;</span>, n_bm, n_claims))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <ul>
-<li><strong>30</strong> distinct BMs, <strong>209</strong> resulting claims</li>
+<li><strong>32</strong> distinct BMs, <strong>229</strong> resulting claims</li>
 </ul>
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (has_confidence) {</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="fu">sprintf</span>(</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;- **%.1f%%** of claims had an IPBES confidence qualifier (</span><span class="sc">\&quot;</span><span class="st">well established</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">established but incomplete</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">unresolved</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">inconclusive</span><span class="sc">\&quot;</span><span class="st">) extracted out of the claim text into its own column</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    pct_with_confidence</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  ))</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;- This granularity&#39;s claims carry no separate confidence-qualifier column (whole-field claims, `complete_bm` only).</span><span class="sc">\n</span><span class="st">&quot;</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (has_confidence) {</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="fu">sprintf</span>(</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;- **%.1f%%** of claims had an IPBES confidence qualifier (</span><span class="sc">\&quot;</span><span class="st">well established</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">established but incomplete</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">unresolved</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">inconclusive</span><span class="sc">\&quot;</span><span class="st">) extracted out of the claim text into its own column</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    pct_with_confidence</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  ))</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;- This granularity&#39;s claims carry no separate confidence-qualifier column (whole-field claims, `complete_bm` only).</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <ul>
-<li><strong>72.2%</strong> of claims had an IPBES confidence qualifier (“well established” / “established but incomplete” / “unresolved” / “inconclusive”) extracted out of the claim text into its own column</li>
+<li><strong>70.3%</strong> of claims had an IPBES confidence qualifier (“well established” / “established but incomplete” / “unresolved” / “inconclusive”) extracted out of the claim text into its own column</li>
 </ul>
 </section>
 <section id="original-bm-vs.-resulting-claims" class="level2">
 <h2 class="anchored" data-anchor-id="original-bm-vs.-resulting-claims">Original BM vs. resulting claims</h2>
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(x<span class="sc">$</span>html)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(x<span class="sc">$</span>html)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <section id="nature-and-its-vital-contributions-to-people-which-together-embody-biodiversity-and-ecosystem-functions-and-services-are-deteriorating-worldwide-a." class="level3">
 <h3 class="anchored" data-anchor-id="nature-and-its-vital-contributions-to-people-which-together-embody-biodiversity-and-ecosystem-functions-and-services-are-deteriorating-worldwide-a.">Nature and its vital contributions to people, which together embody biodiversity and ecosystem functions and services, are deteriorating worldwide (A.)</h3>
@@ -2905,14 +2925,57 @@ Many organisms show ongoing biological evolution so rapid that it is detectable 
 <section id="b1----bm_description" class="level4">
 <h4 class="anchored" data-anchor-id="b1----bm_description">B1 -- bm_description</h4>
 <p>
-Although the pace of agricultural expansion into intact ecosystems {2.1.13} has varied from country to country, losses of intact ecosystems have occurred primarily in the tropics, home to the highest levels of biodiversity on the planet (for example, 100 million hectares of tropical forest from 1980 to 2000), due to cattle ranching in Latin America (~42 million ha) and plantations in South-East Asia (~7.5 million hectares, 80 per cent in oil palm) among others {2.1.13}, noting that plantations can also increase total forest area. Within land-use change, urban areas have more than doubled since 1992. In terms of direct exploitation, approximately 60 billion tons of renewable and non-renewable resources {2.1.2} are being extracted each year. That total has nearly doubled since 1980, as population has grown considerably while the average per capita consumption of materials (e.g., plants, animals, fossil fuels, ores, construction material) has risen by 15 per cent since 1980 (established but incomplete) {2.1.6, 2.1.11, 2.1.14}. This activity has generated unprecedented impacts: since 1980, greenhouse gas emissions have doubled {2.1.11, 2.1.12}, raising average global temperatures by at least 0.7 °C {2.1.12}, while plastic pollution in oceans has increased tenfold {2.1.15}. Over 80 per cent of global wastewater is being discharged back into the environment without treatment, while 300–400 million tons of heavy metals, solvents, toxic sludge and other wastes from industrial facilities are dumped into the world’s waters each year {2.1.15}. Excessive or inappropriate application of fertilizer can lead to run-off from fields and enter freshwater and coastal ecosystems, producing more than 400 hypoxic zones that affected a total area of more than 245,000 km2 as early as 2008{2.1.15}. In some island countries, invasive alien species have a significant impact on biodiversity, with introduced species being a key driver of extinctions.
+<mark style="background:#FFE8CC;">Although the pace of agricultural expansion into intact ecosystems {2.1.13}</mark> <mark style="background:#D3F9D8;">has varied from country to country, losses of intact ecosystems have occurred primarily in the tropics, home to the highest levels of biodiversity on the planet (for example, 100 million hectares of tropical forest from 1980 to 2000), due to cattle ranching in Latin America (~42 million ha) and plantations in South-East Asia (~7.5 million hectares, 80 per cent in oil palm) among others {2.1.13}</mark><mark style="background:#D0EBFF;">, noting that plantations can also increase total forest area. Within land-use change, urban areas have more than doubled since 1992. In terms of direct exploitation, approximately 60 billion tons of renewable and non-renewable resources {2.1.2}</mark> <mark style="background:#FFF3BF;">are being extracted each year. That total has nearly doubled since 1980, as population has grown considerably while the average per capita consumption of materials (e.g., plants, animals, fossil fuels, ores, construction material) has risen by 15 per cent since 1980 (established but incomplete) {2.1.6, 2.1.11, 2.1.14}</mark><mark style="background:#F3D9FA;">. This activity has generated unprecedented impacts: since 1980, greenhouse gas emissions have doubled {2.1.11, 2.1.12}</mark><mark style="background:#C5F6FA;">, raising average global temperatures by at least 0.7 °C {2.1.12}</mark><mark style="background:#FFDEEB;">, while plastic pollution in oceans has increased tenfold {2.1.15}</mark><mark style="background:#E9ECEF;">. Over 80 per cent of global wastewater is being discharged back into the environment without treatment, while 300–400 million tons of heavy metals, solvents, toxic sludge and other wastes from industrial facilities are dumped into the world’s waters each year {2.1.15}</mark><mark style="background:#D8F5A2;">. Excessive or inappropriate application of fertilizer can lead to run-off from fields and enter freshwater and coastal ecosystems, producing more than 400 hypoxic zones that affected a total area of more than 245,000 km2 as early as 2008{2.1.15}</mark><mark style="background:#B2F2BB;">. In some island countries, invasive alien species have a significant impact on biodiversity, with introduced species being a key driver of extinctions.</mark>
 </p>
+<ol>
+<li style="border-left: 4px solid #FFE8CC; padding-left: 8px; margin-bottom: 6px;">
+Although the pace of agricultural expansion into intact ecosystems<br>2.1.13<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #D3F9D8; padding-left: 8px; margin-bottom: 6px;">
+Although the pace of agricultural expansion into intact ecosystems has varied from country to country, losses of intact ecosystems have occurred primarily in the tropics, home to the highest levels of biodiversity on the planet (for example, 100 million hectares of tropical forest from 1980 to 2000), due to cattle ranching in Latin America (~42 million ha) and plantations in South-East Asia (~7.5 million hectares, 80 per cent in oil palm) among others.<br>2.1.13<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #D0EBFF; padding-left: 8px; margin-bottom: 6px;">
+Noting that plantations can also increase total forest area. Within land-use change, urban areas have more than doubled since 1992. In terms of direct exploitation, approximately 60 billion tons of renewable and non-renewable resources<br>2.1.2<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #FFF3BF; padding-left: 8px; margin-bottom: 6px;">
+Approximately 60 billion tons of renewable and non-renewable resources are being extracted each year. That total has nearly doubled since 1980, as population has grown considerably while the average per capita consumption of materials (e.g., plants, animals, fossil fuels, ores, construction material) has risen by 15 per cent since 1980.<br>2.1.6, 2.1.11, 2.1.14<br><strong>established but incomplete</strong>
+</li>
+<li style="border-left: 4px solid #F3D9FA; padding-left: 8px; margin-bottom: 6px;">
+This activity has generated unprecedented impacts: since 1980, greenhouse gas emissions have doubled<br>2.1.11, 2.1.12<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #C5F6FA; padding-left: 8px; margin-bottom: 6px;">
+raising average global temperatures by at least 0.7 °C<br>2.1.12<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #FFDEEB; padding-left: 8px; margin-bottom: 6px;">
+This activity has generated unprecedented impacts while plastic pollution in oceans has increased tenfold.<br>2.1.15<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #E9ECEF; padding-left: 8px; margin-bottom: 6px;">
+Over 80 per cent of global wastewater is being discharged back into the environment without treatment, while 300–400 million tons of heavy metals, solvents, toxic sludge and other wastes from industrial facilities are dumped into the world’s waters each year.<br>2.1.15<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #D8F5A2; padding-left: 8px; margin-bottom: 6px;">
+Excessive or inappropriate application of fertilizer can lead to run-off from fields and enter freshwater and coastal ecosystems, producing more than 400 hypoxic zones that affected a total area of more than 245,000 km2 as early as 2008<br>2.1.15<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #B2F2BB; padding-left: 8px; margin-bottom: 6px;">
+In some island countries, invasive alien species have a significant impact on biodiversity, with introduced species being a key driver of extinctions.<br>n/a<br><strong>n/a</strong>
+</li>
+</ol>
 </section>
 <section id="b1----bm_label" class="level4">
 <h4 class="anchored" data-anchor-id="b1----bm_label">B1 -- bm_label</h4>
 <p>
-Today, humans extract more from the Earth and produce more waste than ever before (well established). Globally, land-use change is the direct driver with the largest relative impact on terrestrial and freshwater ecosystems, while direct exploitation of fish and seafood has the largest relative impact in the oceans (well established) (Figure SPM.2) {2.2.6.2}. Climate change, pollution and invasive alien species have had a lower relative impact to date but are accelerating (established but incomplete) {2.2.6.2, 3.2, 4.2}.
+<mark style="background:#FFE8CC;">Today, humans extract more from the Earth and produce more waste than ever before (well established)</mark><mark style="background:#D3F9D8;">. Globally, land-use change is the direct driver with the largest relative impact on terrestrial and freshwater ecosystems, while direct exploitation of fish and seafood has the largest relative impact in the oceans (well established)</mark> (Figure SPM.2) {2.2.6.2}<mark style="background:#D0EBFF;">. Climate change, pollution and invasive alien species have had a lower relative impact to date but are accelerating (established but incomplete) {2.2.6.2, 3.2, 4.2}</mark>.
 </p>
+<ol>
+<li style="border-left: 4px solid #FFE8CC; padding-left: 8px; margin-bottom: 6px;">
+Today, humans extract more from the Earth and produce more waste than ever before.<br>n/a<br><strong>well established</strong>
+</li>
+<li style="border-left: 4px solid #D3F9D8; padding-left: 8px; margin-bottom: 6px;">
+Globally, land-use change is the direct driver with the largest relative impact on terrestrial and freshwater ecosystems, while direct exploitation of fish and seafood has the largest relative impact in the oceans<br>n/a<br><strong>well established</strong>
+</li>
+<li style="border-left: 4px solid #D0EBFF; padding-left: 8px; margin-bottom: 6px;">
+Climate change, pollution and invasive alien species have had a lower relative impact to date but are accelerating<br>2.2.6.2, 3.2, 4.2<br><strong>established but incomplete</strong>
+</li>
+</ol>
 </section>
 <section id="b10----bm_description" class="level4">
 <h4 class="anchored" data-anchor-id="b10----bm_description">B10 -- bm_description</h4>
@@ -3254,14 +3317,39 @@ To achieve the Sustainable Development Goals and the 2050 Vision for Biodiversit
 <section id="c5----bm_description" class="level4">
 <h4 class="anchored" data-anchor-id="c5----bm_description">C5 -- bm_description</h4>
 <p>
-All climate model trajectories show that limiting human-induced climate change to well below 2°C requires immediate, rapid reductions in greenhouse gas emissions or a reliance on substantial carbon dioxide removal from the atmosphere. However, the land areas required for bioenergy crops (with or without carbon capture and storage), afforestation and reforestation to achieve the targeted carbon uptake rates are projected to be very large {4.2.4.3., 4.5.3}. The biodiversity and environmental impact of large-scale afforestation and reforestation depends to a large degree on where these occur (prior vegetation cover, state of degradation), and the tree species planted (established but incomplete). Likewise, large bioenergy crop or afforested areas are expected to compete with areas set aside for conservation, including restoration, or agriculture (established but incomplete). Consequently, large-scale land-based mitigation measures may jeopardize the achievement of other Sustainable Development Goals that depend on land resources (well established) {4.5.3}. In contrast, the benefits of avoiding and reducing deforestation and promoting restoration can be significant for biodiversity (well established) and are expected to have co-benefits for local communities (established but incomplete) {4.2.4.3}.
+<mark style="background:#FFE8CC;">All climate model trajectories show that limiting human-induced climate change to well below 2°C requires immediate, rapid reductions in greenhouse gas emissions or a reliance on substantial carbon dioxide removal from the atmosphere. However, the land areas required for bioenergy crops (with or without carbon capture and storage), afforestation and reforestation to achieve the targeted carbon uptake rates are projected to be very large {4.2.4.3., 4.5.3}</mark><mark style="background:#D3F9D8;">. The biodiversity and environmental impact of large-scale afforestation and reforestation depends to a large degree on where these occur (prior vegetation cover, state of degradation), and the tree species planted (established but incomplete)</mark><mark style="background:#D0EBFF;">. Likewise, large bioenergy crop or afforested areas are expected to compete with areas set aside for conservation, including restoration, or agriculture (established but incomplete)</mark><mark style="background:#FFF3BF;">. Consequently, large-scale land-based mitigation measures may jeopardize the achievement of other Sustainable Development Goals that depend on land resources (well established) {4.5.3}</mark><mark style="background:#F3D9FA;">. In contrast, the benefits of avoiding and reducing deforestation and promoting restoration can be significant for biodiversity (well established)</mark> <mark style="background:#C5F6FA;">and are expected to have co-benefits for local communities (established but incomplete) {4.2.4.3}</mark>.
 </p>
+<ol>
+<li style="border-left: 4px solid #FFE8CC; padding-left: 8px; margin-bottom: 6px;">
+All climate model trajectories show that limiting human-induced climate change to well below 2°C requires immediate, rapid reductions in greenhouse gas emissions or a reliance on substantial carbon dioxide removal from the atmosphere. However, the land areas required for bioenergy crops (with or without carbon capture and storage), afforestation and reforestation to achieve the targeted carbon uptake rates are projected to be very large.<br>4.2.4.3., 4.5.3<br><strong>n/a</strong>
+</li>
+<li style="border-left: 4px solid #D3F9D8; padding-left: 8px; margin-bottom: 6px;">
+The biodiversity and environmental impact of large-scale afforestation and reforestation depends to a large degree on where these occur (prior vegetation cover, state of degradation), and the tree species planted<br>n/a<br><strong>established but incomplete</strong>
+</li>
+<li style="border-left: 4px solid #D0EBFF; padding-left: 8px; margin-bottom: 6px;">
+Likewise, large bioenergy crop or afforested areas are expected to compete with areas set aside for conservation, including restoration, or agriculture<br>n/a<br><strong>established but incomplete</strong>
+</li>
+<li style="border-left: 4px solid #FFF3BF; padding-left: 8px; margin-bottom: 6px;">
+Consequently, large-scale land-based mitigation measures may jeopardize the achievement of other Sustainable Development Goals that depend on land resources.<br>4.5.3<br><strong>well established</strong>
+</li>
+<li style="border-left: 4px solid #F3D9FA; padding-left: 8px; margin-bottom: 6px;">
+In contrast, the benefits of avoiding and reducing deforestation and promoting restoration can be significant for biodiversity<br>n/a<br><strong>well established</strong>
+</li>
+<li style="border-left: 4px solid #C5F6FA; padding-left: 8px; margin-bottom: 6px;">
+The benefits of avoiding and reducing deforestation and promoting restoration are expected to have co-benefits for local communities.<br>4.2.4.3<br><strong>established but incomplete</strong>
+</li>
+</ol>
 </section>
 <section id="c5----bm_label" class="level4">
 <h4 class="anchored" data-anchor-id="c5----bm_label">C5 -- bm_label</h4>
 <p>
-The adverse impacts of climate change on biodiversity are projected to increase with increasing warming, so limiting global warming to well below 2°C would have multiple co-benefits for nature and nature’s contributions to people and quality of life; however, it is projected that some large-scale land-based mitigation measures to achieve that objective will have significant impacts on biodiversity (established but incomplete) {4.2, 4.3, 4.4, 4.5}.
+<mark style="background:#FFE8CC;">The adverse impacts of climate change on biodiversity are projected to increase with increasing warming, so limiting global warming to well below 2°C would have multiple co-benefits for nature and nature’s contributions to people and quality of life; however, it is projected that some large-scale land-based mitigation measures to achieve that objective will have significant impacts on biodiversity (established but incomplete) {4.2, 4.3, 4.4, 4.5}</mark>.
 </p>
+<ol>
+<li style="border-left: 4px solid #FFE8CC; padding-left: 8px; margin-bottom: 6px;">
+The adverse impacts of climate change on biodiversity are projected to increase with increasing warming, so limiting global warming to well below 2°C would have multiple co-benefits for nature and nature’s contributions to people and quality of life; however, it is projected that some large-scale land-based mitigation measures to achieve that objective will have significant impacts on biodiversity<br>4.2, 4.3, 4.4, 4.5<br><strong>established but incomplete</strong>
+</li>
+</ol>
 </section>
 <section id="c6----bm_description" class="level4">
 <h4 class="anchored" data-anchor-id="c6----bm_description">C6 -- bm_description</h4>

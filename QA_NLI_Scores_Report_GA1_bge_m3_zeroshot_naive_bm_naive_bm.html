@@ -6,9 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-27">
+<meta name="dcterms.date" content="2026-09-18">
 
-<title>QA NLI Scores Report</title>
+<title>QA NLI Scores - GA1 (naive_bm)</title>
 <style>
 
 span.smallcaps{font-variant: small-caps;}
@@ -2222,8 +2222,7 @@ vertical-align: -.125em;
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">QA NLI Scores Report</h1>
-<p class="subtitle lead">QA check for Phase 1 (zero-shot NLI) scoring of claims against citing works</p>
+<h1 class="title">QA NLI Scores - GA1 (naive_bm)</h1>
 </div>
 
 
@@ -2234,7 +2233,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 27, 2026</p>
+      <p class="date">September 18, 2026</p>
     </div>
   </div>
   
@@ -2246,11 +2245,20 @@ vertical-align: -.125em;
 </header>
 
 
+<!-- GENERATED FILE -- edit config.yaml `reports:` instead, not this file. -->
+<!-- Shared BODY for the QA_NLI_Scores_Report report family.
+     Rendered only via the generated wrapper .qmd files that `{{< include >}}`
+     this file -- see R/generate_report_wrappers.R and config.yaml's `reports:`
+     section. The leading underscore keeps Quarto from rendering it on its own
+     -- but it also keeps it out of the project entirely, so tar_quarto() never
+     scans this file for dependencies. That is why the tar_read() calls live in
+     the wrapper and arrive here as `report_deps`; `params$...` likewise comes
+     from the wrapper. -->
 <section id="ga1-granularity-naive_bm-nli_config-bge_m3_zeroshot_naive_bm" class="level1">
 <h1>GA1 – granularity: naive_bm – nli_config: bge_m3_zeroshot_naive_bm</h1>
 <section id="methodology" class="level2">
 <h2 class="anchored" data-anchor-id="methodology">Methodology</h2>
-<p>This report is a <strong>QA check on Phase 1 (zero-shot NLI) scoring, not a scoring result in its own right</strong> — it lets each claim’s scored citing works be spot-checked by eye (title, abstract, DOI, label, confidence, and the underlying class probabilities), and shows the overall SUPPORTS/REFUTES/NOT_ENOUGH_INFO x confidence distribution. It covers <strong>Phase 1 only</strong> — a separate QA report for Phase 2 (LLM verification) is planned as a follow-up. See <code>TD_BM_NLI_approach.qmd</code> for the full NLI approach and <code>TD_NLI_LLM_two_phase.qmd</code> for how Phase 2 builds on this.</p>
+<p>This report is a <strong>QA check on Phase 1 (zero-shot NLI) scoring, not a scoring result in its own right</strong> — it lets each claim’s scored citing works be spot-checked by eye (title, abstract, DOI, label, confidence, and the underlying class probabilities), and shows the overall SUPPORTS/REFUTES/NOT_ENOUGH_INFO x confidence distribution. It covers <strong>Phase 1 only</strong> — see <code>QA_LLM_Verification_Report.qmd</code> for the equivalent Phase 2 (LLM verification) QA report. See <code>TD_BM_NLI_approach.qmd</code> for the full NLI approach and <code>TD_NLI_LLM_two_phase.qmd</code> for how Phase 2 builds on this.</p>
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">isTRUE</span>(x<span class="sc">$</span>empty)) {</span>
