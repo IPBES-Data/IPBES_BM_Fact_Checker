@@ -235,7 +235,7 @@ nli:
 
     bge_m3_zeroshot_atomic_bm:
       scheme: https
-      host: ["bpudv76nwd84ux-8080.proxy.runpod.net"]
+      host: ["79erot8kkavryo-8080.proxy.runpod.net"]
       # kuhykgssi61j0v-8080.proxy.runpod.net dropped for now -- confirmed
       # unreachable (HTTP 404 on /health, not just a boot-time delay) while
       # the other 5 were healthy. Add it back once its pod is confirmed up.
