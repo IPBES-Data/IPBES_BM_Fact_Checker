@@ -87,21 +87,30 @@ content hashing. See `TODO_PIPELINE_SPLIT.md` for the full design.
 Hand-authored, and split per project along the same boundaries as the pipeline
 diagrams below.
 
+<!-- Image paths are relative to THIS DOCUMENT, not to the execute dir.
+     tar_quarto() runs with execute_dir = repo root, so a bare
+     `output/figures/x.png` resolves for R code but NOT for Quarto's own
+     resource resolution, which looks next to the .qmd -- it then leaves
+     the path unembedded and unrewritten rather than erroring, so every
+     diagram here was a broken link in the rendered html despite
+     embed-resources: true. Same trap R/build_nli_scores_qa_figures.R
+     documents and sidesteps with xfun::base64_uri(). -->
+
 #### `main` — collection
 
-![Workflow: main](output/figures/workflow_main.png)
+![Workflow: main](../../output/figures/workflow_main.png)
 
 #### `factcheck` — citing works → NLI → LLM verification
 
-![Workflow: factcheck](output/figures/workflow_factcheck.png)
+![Workflow: factcheck](../../output/figures/workflow_factcheck.png)
 
 #### `training` — key papers → NLI → LLM → training set → fine-tune
 
-![Workflow: training](output/figures/workflow_training.png)
+![Workflow: training](../../output/figures/workflow_training.png)
 
 #### `reporting`
 
-![Workflow: reporting](output/figures/workflow_reporting.png)
+![Workflow: reporting](../../output/figures/workflow_reporting.png)
 
 ### Pipeline
 
@@ -113,19 +122,19 @@ combined into one overview later.
 
 #### `main` — collection (`_targets.R`)
 
-![Pipeline: main](output/figures/pipeline_main.png)
+![Pipeline: main](../../output/figures/pipeline_main.png)
 
 #### `factcheck` (`_targets_factcheck.R`)
 
-![Pipeline: factcheck](output/figures/pipeline_factcheck.png)
+![Pipeline: factcheck](../../output/figures/pipeline_factcheck.png)
 
 #### `training` (`_targets_training.R`)
 
-![Pipeline: training](output/figures/pipeline_training.png)
+![Pipeline: training](../../output/figures/pipeline_training.png)
 
 #### `reporting` (`_targets_reporting.R`)
 
-![Pipeline: reporting](output/figures/pipeline_reporting.png)
+![Pipeline: reporting](../../output/figures/pipeline_reporting.png)
 
 ## Pipeline DAG
 
