@@ -6,9 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-19">
+<meta name="dcterms.date" content="2026-09-18">
 
-<title>QA BM Split Report</title>
+<title>QA BM Split - GA1 (atomic_bm)</title>
 <style>
 
 span.smallcaps{font-variant: small-caps;}
@@ -2454,8 +2454,7 @@ window.Quarto = {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">QA BM Split Report</h1>
-<p class="subtitle lead">QA check for how each Background Message was split into claims</p>
+<h1 class="title">QA BM Split - GA1 (atomic_bm)</h1>
 </div>
 
 
@@ -2466,7 +2465,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 19, 2026</p>
+      <p class="date">September 18, 2026</p>
     </div>
   </div>
   
@@ -2478,6 +2477,27 @@ window.Quarto = {
 </header>
 
 
+<!-- GENERATED FILE -- edit config.yaml `reports:` instead, not this file. -->
+<!-- Shared BODY for the QA_BM_Split_Report report family.
+     Rendered only via the generated wrapper .qmd files that `{{< include >}}`
+     this file -- see R/generate_report_wrappers.R and config.yaml's `reports:`
+     section. The leading underscore keeps Quarto from rendering it on its own
+     -- but it also keeps it out of the project entirely, so tar_quarto() never
+     scans this file for dependencies. That is why the tar_read() calls live in
+     the wrapper and arrive here as `report_deps`; `params$...` likewise comes
+     from the wrapper. -->
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># This body had no empty-state at all, unlike its five siblings -- a missing</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># input was an error rather than a rendered explanation.</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">isTRUE</span>(x<span class="sc">$</span>empty)) {</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="fu">sprintf</span>(</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;No BM-split QA data for `%s` at granularity `%s` -- that granularity has not been segmented/scored yet. Run the `nli_ready_evidence_parquet` chain for it and re-render.</span><span class="sc">\n\n</span><span class="st">&quot;</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    params<span class="sc">$</span>assessment_id, params<span class="sc">$</span>granularity</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  ))</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  knitr<span class="sc">::</span><span class="fu">knit_exit</span>()</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <section id="ga1-granularity-atomic_bm" class="level1">
 <h1>GA1 – granularity: atomic_bm</h1>
 <section id="methodology" class="level2">
@@ -2485,23 +2505,23 @@ window.Quarto = {
 <p>Every Background Message (BM) in this assessment is split into claims by <code>nli_ready_evidence_parquet</code> under the currently active <code>granularity</code> setting (<code>input/config.yaml</code>’s <code>nli.active</code> config). This report is a <strong>QA check on that split, not a scoring result</strong> — for every BM field, it shows the original <code>bm_description</code>/<code>bm_label</code> text with each resulting claim’s source span colour-highlighted, followed by the claims themselves as a colour-matched list, so the segmentation can be sanity-checked by eye before any NLI/LLM scoring is run against it. Highlighting is based on the raw span each claim was cut from, before any confidence-qualifier removal or (for <code>atomic_bm</code>) LLM completion – so it covers at least the major part of a claim’s origin, even where the listed claim text itself was reworded. See <code>TD_BM_NLI_approach.qmd</code> for the full design rationale behind each granularity option (<code>naive_bm</code> / <code>complete_bm</code> / <code>atomic_bm</code>).</p>
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;- **%d** distinct BMs, **%d** resulting claims</span><span class="sc">\n</span><span class="st">&quot;</span>, n_bm, n_claims))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;- **%d** distinct BMs, **%d** resulting claims</span><span class="sc">\n</span><span class="st">&quot;</span>, n_bm, n_claims))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <ul>
 <li><strong>30</strong> distinct BMs, <strong>209</strong> resulting claims</li>
 </ul>
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (has_confidence) {</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="fu">sprintf</span>(</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;- **%.1f%%** of claims had an IPBES confidence qualifier (</span><span class="sc">\&quot;</span><span class="st">well established</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">established but incomplete</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">unresolved</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">inconclusive</span><span class="sc">\&quot;</span><span class="st">) extracted out of the claim text into its own column</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    pct_with_confidence</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  ))</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;- This granularity&#39;s claims carry no separate confidence-qualifier column (whole-field claims, `complete_bm` only).</span><span class="sc">\n</span><span class="st">&quot;</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (has_confidence) {</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="fu">sprintf</span>(</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;- **%.1f%%** of claims had an IPBES confidence qualifier (</span><span class="sc">\&quot;</span><span class="st">well established</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">established but incomplete</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">unresolved</span><span class="sc">\&quot;</span><span class="st"> / </span><span class="sc">\&quot;</span><span class="st">inconclusive</span><span class="sc">\&quot;</span><span class="st">) extracted out of the claim text into its own column</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    pct_with_confidence</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  ))</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;- This granularity&#39;s claims carry no separate confidence-qualifier column (whole-field claims, `complete_bm` only).</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <ul>
 <li><strong>72.2%</strong> of claims had an IPBES confidence qualifier (“well established” / “established but incomplete” / “unresolved” / “inconclusive”) extracted out of the claim text into its own column</li>
@@ -2511,7 +2531,7 @@ window.Quarto = {
 <h2 class="anchored" data-anchor-id="original-bm-vs.-resulting-claims">Original BM vs. resulting claims</h2>
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(x<span class="sc">$</span>html)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(x<span class="sc">$</span>html)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <section id="nature-and-its-vital-contributions-to-people-which-together-embody-biodiversity-and-ecosystem-functions-and-services-are-deteriorating-worldwide-a." class="level3">
 <h3 class="anchored" data-anchor-id="nature-and-its-vital-contributions-to-people-which-together-embody-biodiversity-and-ecosystem-functions-and-services-are-deteriorating-worldwide-a.">Nature and its vital contributions to people, which together embody biodiversity and ecosystem functions and services, are deteriorating worldwide (A.)</h3>

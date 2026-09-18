@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-19">
+<meta name="dcterms.date" content="2026-09-18">
 
 <title>Two-Phase Alignment Scoring: NLI → LLM</title>
 <style>
@@ -2218,7 +2218,7 @@ vertical-align: -.125em;
   <li><a href="#phase-2-llm-remainder-only" id="toc-phase-2-llm-remainder-only" class="nav-link" data-scroll-target="#phase-2-llm-remainder-only">Phase 2 — LLM (remainder only)</a>
   <ul>
   <li><a href="#ported-architecture" id="toc-ported-architecture" class="nav-link" data-scroll-target="#ported-architecture">Ported architecture</a></li>
-  <li><a href="#candidate-scoping" id="toc-candidate-scoping" class="nav-link" data-scroll-target="#candidate-scoping">Candidate scoping (<code>subset</code>)</a></li>
+  <li><a href="#candidate-scoping" id="toc-candidate-scoping" class="nav-link" data-scroll-target="#candidate-scoping">Candidate matching (<code>direct_evidence_match</code>)</a></li>
   <li><a href="#prompt-design" id="toc-prompt-design" class="nav-link" data-scroll-target="#prompt-design">Prompt design</a></li>
   <li><a href="#model-choice" id="toc-model-choice" class="nav-link" data-scroll-target="#model-choice">Model choice</a></li>
   <li><a href="#output-schema" id="toc-output-schema" class="nav-link" data-scroll-target="#output-schema">Output schema</a></li>
@@ -2249,7 +2249,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 19, 2026</p>
+      <p class="date">September 18, 2026</p>
     </div>
   </div>
   
@@ -2375,12 +2375,13 @@ vertical-align: -.125em;
 <p>One more difference worth naming: Phase 1 (<code>score_one_claim.R</code>) dispatches across a <strong>fixed pool of RunPod hosts</strong> via file locks, because each host is a dedicated resource to load-balance across. Phase 2 talks to OpenRouter, a shared multi-tenant endpoint — there is nothing to load-balance, so <code>ellmer::parallel_chat_structured()</code>’s own <code>max_active</code> concurrency is sufficient and no crew/file-lock machinery was needed. One target call per assessment loops over its own routed candidates internally.</p>
 </section>
 <section id="candidate-scoping" class="level3">
-<h3 class="anchored" data-anchor-id="candidate-scoping">Candidate scoping (<code>subset</code>)</h3>
-<p><strong>Status: parked.</strong> This section describes a second, independent narrowing lever, orthogonal to the <code>nli_labels</code>/<code>nli_certainty</code> routing above — still implemented and tested, but not the active cost lever right now (the routing fields are doing that job instead, via <code>REFUTES</code> + <code>certain</code>). <code>subset: &quot;sm&quot;</code> remains available on any config whenever it’s worth revisiting.</p>
-<p>The original combined routing rule (<code>REFUTES</code> at any confidence, OR any label if uncertain) alone left 66.5% of all NLI-scored pairs in scope for Phase 2 — far more than practical to run for real. This lever addresses that structurally rather than by tightening thresholds: <strong>IPBES’s own evidence-reference structure</strong>. Each evidence-segmented claim ends with a brace group like <code>{5.4.1, 5.4.2}</code> naming the specific sub-chapter(s) it draws on, and <code>refs_parquet</code>’s <code>sm</code> column already links specific references (dois) to those same sub-chapter identifiers. Chaining <code>sm -&gt; seed doi -&gt; seed OpenAlex work id -&gt; citing work</code> (via the existing snowball edges) gives, per claim, an allow-list of citing works actually tied to <em>that claim’s own</em> evidentiary basis, rather than every citing work found anywhere under the whole BM.</p>
+<h3 class="anchored" data-anchor-id="candidate-scoping">Candidate matching (<code>direct_evidence_match</code>)</h3>
+<p><strong>Status: retired as a filter, now a tag.</strong> This section originally described a second, independent narrowing lever, orthogonal to the <code>nli_labels</code>/<code>nli_certainty</code> routing above: a <code>subset: &quot;default&quot;</code> config setting restricted which citing works under a claim’s BM got reviewed in Phase 2 at all, based on IPBES’s own evidence-reference structure (below). Measured against real GA1 atomic_bm data, that narrowing reduced routed pairs from 193,228 to 165,745 — only ~14% — which wasn’t worth the matching/drift-check machinery, and more importantly wasn’t worth the lost review coverage on the ~14% it excluded. The filter was removed: <strong>every</strong> routed candidate is now reviewed in Phase 2, unconditionally. The underlying matching computation described below is unchanged and still runs — it now tags each reviewed <code>(claim, work)</code> pair with a boolean column, <code>direct_evidence_match</code>, instead of gating which pairs get reviewed at all.</p>
+<p>The original combined routing rule (<code>REFUTES</code> at any confidence, OR any label if uncertain) alone left 66.5% of all NLI-scored pairs in scope for Phase 2 — far more than practical to run for real. The retired lever addressed that structurally rather than by tightening thresholds, via <strong>IPBES’s own evidence-reference structure</strong>. Each evidence-segmented claim ends with a brace group like <code>{5.4.1, 5.4.2}</code> naming the specific sub-chapter(s) it draws on, and <code>refs_parquet</code>’s <code>sm</code> column already links specific references (dois) to those same sub-chapter identifiers. Chaining <code>sm -&gt; seed doi -&gt; seed OpenAlex work id -&gt; citing work</code> (via the existing snowball edges) gives, per claim, the set of citing works actually tied to <em>that claim’s own</em> evidentiary basis, as distinct from every citing work found anywhere under the whole BM — this is what <code>direct_evidence_match</code> now records rather than restricts.</p>
 <p>This is implemented as its own target, <code>llm_candidate_scope_parquet</code> (<code>R/build_llm_candidate_scope_parquet.R</code>), feeding into <code>llm_verification_parquet</code> — not folded into the LLM-stage builder itself, so the scoping logic and its target-level identity stay separately inspectable and independently cacheable. It reads only already-existing, unmodified targets (<code>key_messages_parquet</code>, <code>refs_parquet</code>, <code>works_parquet</code>, the snowball edges dataset, and — for a drift sanity check only — <code>nli_ready_evidence_parquet</code>) and writes to its own output root. Nothing about it edits <code>download_works.R</code>, <code>build_snowball_parquet.R</code>, <code>build_works_citing_parquet.R</code>, <code>build_nli_ready_evidence_parquet.R</code>, or the NLI scoring chain — <code>targets</code> invalidation only flows forward from something that actually changes, and adding a new <em>consumer</em> of an existing target’s output does not retroactively invalidate it.</p>
 <p>One deliberate non-reuse: <code>extract_claim_evidence_tokens()</code> in the new file duplicates the sentence-splitting/terminal-brace/buffer logic from <code>segment_bm_by_evidence()</code> (<code>R/build_nli_ready_evidence_parquet.R</code>) rather than calling it, so that the two stay behaviorally identical (verified directly: run against the real BM text, both functions produce exactly the same segment count and boundaries in every test case, including a segment with multiple inline brace groups). Calling the original instead would work too — until someone edits it: <code>targets</code> hashes function <em>bodies</em> as dependencies, so even a behavior-preserving change there would mark <code>nli_ready_evidence_parquet</code>, and everything downstream of it including the NLI scoring chain, outdated. <code>build_llm_candidate_scope_parquet()</code> also cross-checks its own derived <code>claim_id</code>s against <code>nli_ready_evidence_parquet</code>’s real ones at build time and <code>warning()</code>s (not <code>stop()</code>s) on any mismatch, so a future edit to either segmentation implementation that silently drifts out of sync gets caught rather than silently mis-attributing evidence.</p>
-<p>Exposed per <code>llm_verification</code> config via <code>subset:</code>:</p>
+<p><strong>Granularity coverage.</strong> <code>naive_bm</code> was the only granularity this actually worked for at first. <code>atomic_bm</code> has a sibling extractor, <code>extract_claim_evidence_tokens_atomic()</code>, that duplicates <code>segment_bm_atomic()</code>’s splitting the same way — but atomic_bm’s real <code>claim_id</code>/<code>sentence_number</code> assignment additionally depends on which raw fragments <em>survive</em> <code>complete_bm_fragments()</code> (a fragment can be dropped, never reordered, when the faithfulness check rejects a completion), so this extractor also re-runs completion and re-derives the surviving order via <code>bm_align_surviving_indices()</code> (the same alignment helper <code>build_bm_split_highlighted.R</code> already uses for its own atomic_bm highlighting) — relying on the resumable per-fragment completion cache (<code>output/claim_completion/raw/</code>) to make this a cache-hit-only call in practice, once a real atomic_bm <code>nli_ready_evidence_parquet</code> build has already populated it. <code>complete_bm</code> has <strong>no</strong> counterpart at all: its whole-field claims carry no per-sub-claim evidence tokens to match by, so <code>build_llm_candidate_scope_parquet()</code> returns its “no matches available” sentinel immediately for <code>complete_bm</code> — every one of its rows is tagged <code>direct_evidence_match = FALSE</code>.</p>
+<p>Every reviewed <code>(claim, work)</code> pair carries <code>direct_evidence_match</code>:</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 50%">
@@ -2388,25 +2389,25 @@ vertical-align: -.125em;
 </colgroup>
 <thead>
 <tr class="header">
-<th><code>subset</code></th>
-<th>Behavior</th>
+<th>Value</th>
+<th>Meaning</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td><code>&quot;all&quot;</code></td>
-<td>Every citing work found under the claim’s BM (today’s default; the 66.5%/2.36M figure above)</td>
+<td><code>TRUE</code></td>
+<td><code>naive_bm</code>/<code>atomic_bm</code> only: the citing work traces back to a seed reference whose <code>sm</code> matches the claim’s own evidence sub-chapter(s)</td>
 </tr>
 <tr class="even">
-<td><code>&quot;sm&quot;</code></td>
-<td>Only citing works tracing back to a seed reference whose <code>sm</code> matches the claim’s own evidence sub-chapter(s)</td>
+<td><code>FALSE</code></td>
+<td>No such match — covers every <code>complete_bm</code> row (no per-sub-claim matching exists for whole-field claims), every claim with no evidence braces at all, and every citing work that doesn’t trace back to a matching seed reference</td>
 </tr>
 </tbody>
 </table>
 <p>Two policy decisions, made deliberately rather than defaulted into:</p>
 <ul>
-<li><strong>A claim with no evidence braces at all falls back to unrestricted</strong> (keeps every one of its routed candidates) rather than being excluded — no claim is ever silently dropped from Phase 2 review just because it lacks a brace. The same fallback applies if the whole scope target found nothing to write for an assessment (e.g. an unexpected data gap): absence of scope data is never read as “review nothing.”</li>
-<li><strong>Sub-chapter token matching is prefix-based, not exact</strong>, after normalizing (lowercase; strip <code>box</code>/<code>table</code>/<code>spm table</code> prefixes; strip <code>(...)</code> parenthetical annotations; split on comma/semicolon). The <code>sm</code> field is messy free text (311 distinct values observed: comma- <em>and</em> semicolon-separated lists, inconsistent <code>box</code>/<code>Box</code> casing, trailing letter suffixes like <code>.a</code>, occasional malformed strings with unbalanced parentheses). Prefix matching handles the common cases cleanly — <code>&quot;5.4.2.1&quot;</code> matches <code>&quot;5.4.2.1.a&quot;</code>, a bare <code>&quot;4&quot;</code> matches any <code>&quot;4.x.y&quot;</code> — but is deliberately not exhaustive; the malformed cases are an accepted, disclosed gap. <code>subset: &quot;all&quot;</code> remains available as the exhaustive fallback whenever <code>&quot;sm&quot;</code>’s narrower recall is a concern for a given analysis.</li>
+<li><strong>A claim with no evidence braces at all is simply tagged FALSE throughout</strong> — it is never excluded from review, since there is no filter left to exclude it from. The same applies if the whole scope target found nothing to write for an assessment (e.g. an unexpected data gap, or the active granularity being <code>complete_bm</code>): absence of scope data only ever affects the tag, never whether a pair gets reviewed.</li>
+<li><strong>Sub-chapter token matching is prefix-based, not exact</strong>, after normalizing (lowercase; strip <code>box</code>/<code>table</code>/<code>spm table</code> prefixes; strip <code>(...)</code> parenthetical annotations; split on comma/semicolon). The <code>sm</code> field is messy free text (311 distinct values observed: comma- <em>and</em> semicolon-separated lists, inconsistent <code>box</code>/<code>Box</code> casing, trailing letter suffixes like <code>.a</code>, occasional malformed strings with unbalanced parentheses). Prefix matching handles the common cases cleanly — <code>&quot;5.4.2.1&quot;</code> matches <code>&quot;5.4.2.1.a&quot;</code>, a bare <code>&quot;4&quot;</code> matches any <code>&quot;4.x.y&quot;</code> — but is deliberately not exhaustive; the malformed cases are an accepted, disclosed gap. Now that nothing is filtered, this imprecision only affects the tag’s accuracy on a small number of pairs, never review coverage.</li>
 </ul>
 </section>
 <section id="prompt-design" class="level3">
@@ -2431,46 +2432,37 @@ vertical-align: -.125em;
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_cheap_sm</span><span class="kw">:</span></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;openai/gpt-4o-mini&quot;</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> sm</span></span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
-<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_midtier</span><span class="kw">:</span></span>
-<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;google/gemini-2.5-flash&quot;</span></span>
-<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
-<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
-<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
-<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
-<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
-<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_toptier_gpt5</span><span class="kw">:</span></span>
-<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;openai/gpt-5&quot;</span></span>
-<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
-<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
-<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
-<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">subset</span><span class="kw">:</span><span class="at"> all</span></span>
-<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
-<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>The model tiers are carried over directly from the sibling <code>Categorisation_Literature</code> project’s <code>epistemology:</code> config block (same model choices, same <code>max_active</code>/<code>max_tokens</code> values — see below for why those two specifically were kept rather than re-derived). <code>subset</code> and <code>nli_labels</code>/<code>nli_certainty</code> are new here — see <a href="#candidate-scoping">Candidate scoping</a> above and <a href="#phase-1-nli-all-pairs">Routing after Phase 1</a> for what they do; all four configs currently route both <code>REFUTES</code> + <code>certain</code> (the original first step) and <code>SUPPORTS</code> + <code>certain</code> (added once the REFUTES funnel report was generalized to a SUPPORTS counterpart — see <code>IPBES_Label_Funnel_Report.qmd</code>), and differ only in model/subset.</p>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_midtier</span><span class="kw">:</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;google/gemini-2.5-flash&quot;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openrouter_toptier_gpt5</span><span class="kw">:</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;openai/gpt-5&quot;</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_tokens</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_active</span><span class="kw">:</span><span class="at"> </span><span class="dv">24</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_labels</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">REFUTES</span><span class="kw">,</span><span class="at"> SUPPORTS</span><span class="kw">]</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nli_certainty</span><span class="kw">:</span><span class="at"> certain</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The model tiers are carried over directly from the sibling <code>Categorisation_Literature</code> project’s <code>epistemology:</code> config block (same model choices, same <code>max_active</code>/<code>max_tokens</code> values — see below for why those two specifically were kept rather than re-derived). <code>nli_labels</code>/ <code>nli_certainty</code> are new here — see <a href="#phase-1-nli-all-pairs">Routing after Phase 1</a> for what they do; all three configs currently route both <code>REFUTES</code> + <code>certain</code> (the original first step) and <code>SUPPORTS</code> + <code>certain</code> (added once the REFUTES funnel report was generalized to a SUPPORTS counterpart — see <code>IPBES_Label_Funnel_Report.qmd</code>), and differ only in model. There used to be a fourth config, <code>openrouter_cheap_sm</code>, identical to <code>openrouter_cheap</code> except for its <code>subset: &quot;default&quot;</code> setting — removed once <code>subset</code> itself was retired (see <a href="#candidate-scoping">Candidate matching</a> above), since a config that differs from another only in a setting that no longer exists is redundant.</p>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>Config</th>
 <th>Model</th>
-<th>Subset</th>
 <th>Notes</th>
 </tr>
 </thead>
@@ -2478,25 +2470,16 @@ vertical-align: -.125em;
 <tr class="odd">
 <td><code>openrouter_cheap</code></td>
 <td><code>openai/gpt-4o-mini</code></td>
-<td><code>all</code></td>
 <td>Default; good balance of quality and cost for a first pass</td>
 </tr>
 <tr class="even">
-<td><code>openrouter_cheap_sm</code></td>
-<td><code>openai/gpt-4o-mini</code></td>
-<td><code>sm</code></td>
-<td>Same model, narrowed to the sm-derived candidate scope — parked (see <a href="#candidate-scoping">Candidate scoping</a>)</td>
-</tr>
-<tr class="odd">
 <td><code>openrouter_midtier</code></td>
 <td><code>google/gemini-2.5-flash</code></td>
-<td><code>all</code></td>
 <td>Step up when the cheap tier is topic-matching rather than judging the claim — spot-check <code>quote</code>/<code>explanation</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>openrouter_toptier_gpt5</code></td>
 <td><code>openai/gpt-5</code></td>
-<td><code>all</code></td>
 <td>For a final, citable verification pass; a reasoning model</td>
 </tr>
 </tbody>
@@ -2507,24 +2490,24 @@ vertical-align: -.125em;
 </section>
 <section id="output-schema" class="level3">
 <h3 class="anchored" data-anchor-id="output-schema">Output schema</h3>
-<p>One row per LLM-reviewed pair, written to <code>output/llm_verification/scores/llm_config=&lt;config&gt;/subset=&lt;subset&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</code>. <code>&lt;route&gt;</code> is <code>nli_route_label()</code>’s hive-safe encoding of <strong>that row’s own</strong> NLI outcome, e.g. <code>REFUTES-certain</code> or <code>SUPPORTS-uncertain</code> — not a single value per config call. So one <code>build_llm_verification_parquet()</code> call can write several <code>nli_route=</code> subdirectories under the same <code>llm_config/subset/assessment</code> (one per distinct label/certainty combination actually present among its routed candidates), and any two configs that happen to route the same outcome land on the same <code>nli_route</code> value regardless of their own names. <code>llm_config</code>/<code>subset</code>/<code>assessment</code> are the fixed prefix fully deleted and rewritten on each call; <code>nli_route</code>/<code>km</code>/<code>bm</code> vary within it based on the data:</p>
+<p>One row per LLM-reviewed pair, written to <code>output/llm_verification/scores/llm_config=&lt;config&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</code>. <code>&lt;route&gt;</code> is <code>nli_route_label()</code>’s hive-safe encoding of <strong>that row’s own</strong> NLI outcome, e.g. <code>REFUTES-certain</code> or <code>SUPPORTS-uncertain</code> — not a single value per config call. So one <code>build_llm_verification_parquet()</code> call can write several <code>nli_route=</code> subdirectories under the same <code>llm_config/assessment</code> (one per distinct label/certainty combination actually present among its routed candidates), and any two configs that happen to route the same outcome land on the same <code>nli_route</code> value regardless of their own names. <code>llm_config</code>/<code>assessment</code> are the fixed prefix fully deleted and rewritten on each call; <code>nli_route</code>/<code>km</code>/<code>bm</code> vary within it based on the data:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">tibble</span>(</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_config          =</span> <span class="fu">character</span>(), <span class="co"># selected input/config.yaml llm_verification.configs entry name</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">subset              =</span> <span class="fu">character</span>(), <span class="co"># &quot;all&quot; or &quot;sm&quot; -- which candidate scoping this config used</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_config          =</span> <span class="fu">character</span>(), <span class="co"># NLI profile used in Phase 1</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">assessment          =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_route           =</span> <span class="fu">character</span>(), <span class="co"># this ROW&#39;s own outcome, e.g. &quot;REFUTES-certain&quot; -- see nli_route_label()</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">km                  =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">bm                  =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">claim_id            =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">work_id             =</span> <span class="fu">character</span>(),</span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">claim               =</span> <span class="fu">character</span>(), <span class="co"># the BM claim text, carried through for convenience</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_label           =</span> <span class="fu">character</span>(), <span class="co"># original NLI label</span></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">uncertain           =</span> <span class="fu">logical</span>(),   <span class="co"># NLI&#39;s own confidence &lt; uncertain_threshold flag</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_confidence      =</span> <span class="fu">double</span>(),</span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_supports          =</span> <span class="fu">double</span>(),</span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_refutes           =</span> <span class="fu">double</span>(),</span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_nei               =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_config          =</span> <span class="fu">character</span>(), <span class="co"># NLI profile used in Phase 1</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">assessment          =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_route           =</span> <span class="fu">character</span>(), <span class="co"># this ROW&#39;s own outcome, e.g. &quot;REFUTES-certain&quot; -- see nli_route_label()</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">km                  =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">bm                  =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">claim_id            =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">work_id             =</span> <span class="fu">character</span>(),</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">claim               =</span> <span class="fu">character</span>(), <span class="co"># the BM claim text, carried through for convenience</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_label           =</span> <span class="fu">character</span>(), <span class="co"># original NLI label</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">uncertain           =</span> <span class="fu">logical</span>(),   <span class="co"># NLI&#39;s own confidence &lt; uncertain_threshold flag</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">nli_confidence      =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_supports          =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_refutes           =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">p_nei               =</span> <span class="fu">double</span>(),</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">direct_evidence_match =</span> <span class="fu">logical</span>(), <span class="co"># TRUE if this citing work traces back to a seed reference matching the claim&#39;s own evidence braces -- see Candidate matching above</span></span>
 <span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_model           =</span> <span class="fu">character</span>(),</span>
 <span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_label           =</span> <span class="fu">character</span>(),   <span class="co"># SUPPORTS / REFUTES / NOT_ENOUGH_INFO</span></span>
 <span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">llm_agrees          =</span> <span class="fu">logical</span>(),     <span class="co"># TRUE if llm_label == nli_label</span></span>
@@ -2539,7 +2522,7 @@ vertical-align: -.125em;
 <h3 class="anchored" data-anchor-id="caching">Caching</h3>
 <p>Two layers, doing different jobs:</p>
 <ul>
-<li><strong>Resumable per-pair cache</strong> (the one that matters for cost and crash safety): one JSON file per <code>(claim_id, work_id)</code> pair under <code>output/llm_verification/raw/model=&lt;model&gt;/prompt=&lt;hash&gt;/</code>, where the hash covers the system prompt, the user template, <strong>and</strong> the output schema (adding a field to the schema silently reusing cached responses that cannot contain it was a real bug in the sibling project before the schema was added to the hash — ported here from the start instead of rediscovered).</li>
+<li><strong>Resumable per-pair cache</strong> (the one that matters for cost and crash safety): one JSON file per <code>(km, bm, claim_id, work_id)</code> pair under <code>output/llm_verification/raw/model=&lt;model&gt;/prompt=&lt;hash&gt;/assessment=&lt;id&gt;/</code>, where the hash covers the system prompt, the user template, <strong>and</strong> the output schema (adding a field to the schema silently reusing cached responses that cannot contain it was a real bug in the sibling project before the schema was added to the hash — ported here from the start instead of rediscovered). The cache key is <code>(km, bm, claim_id, work_id)</code>, not <code>(claim_id, work_id)</code> alone — <code>claim_id</code> is only unique <em>within</em> one BM (e.g. every BM’s first <code>bm_description</code> claim is literally <code>&quot;bm_description-01&quot;</code>), so a <code>(claim_id, work_id)</code>-only key let two different BMs’ claims collide and serve each other’s cached verdicts whenever they cited the same work and landed on the same claim ordinal — a real bug, caught and fixed by measuring collisions directly against the real routed corpus (11-40% of rows depending on assessment/granularity) before it was ever run for real. The <code>assessment=&lt;id&gt;/</code> path segment closes the same class of gap across assessments, since the cache directory isn’t otherwise assessment-scoped.</li>
 <li><strong>Provider-side automatic prefix caching</strong> (OpenAI, Google) — a side benefit of prompt ordering (system → fixed instructions → variable per-pair content), not something explicitly engineered here since Phase 2 has no long shared prefix across pairs the way Phase 1’s truth-document design once did (see <a href="TD_LLM_approach.html">TD_LLM_approach.qmd</a> for that now-removed design).</li>
 </ul>
 <hr>
@@ -2619,7 +2602,7 @@ vertical-align: -.125em;
 <td>~$126</td>
 </tr>
 <tr class="odd">
-<td><strong><code>REFUTES</code> + <code>SUPPORTS</code>, <code>certain</code> (current default, all 4 configs)</strong></td>
+<td><strong><code>REFUTES</code> + <code>SUPPORTS</code>, <code>certain</code> (current default, all 3 configs)</strong></td>
 <td><strong>78,922</strong></td>
 <td><strong>~$11.75</strong></td>
 <td><strong>~$191</strong></td>
@@ -2648,20 +2631,15 @@ vertical-align: -.125em;
 <td>~$375</td>
 <td>~$5,900+</td>
 </tr>
-<tr class="even">
-<td><code>sm</code>-narrowed variant of the combined set</td>
-<td>1,792,007 (24% smaller)</td>
-<td>~$269</td>
-<td>~$4,480</td>
-</tr>
 </tbody>
 </table>
-<p><code>openrouter_cheap</code> (<code>gpt-4o-mini</code>) is the configured default, currently routing <code>REFUTES</code> + <code>SUPPORTS</code>, both <code>certain</code>, across all four shipped configs — the smallest, cheapest, highest-signal bucket for each label, and the confirmed first step. The remaining <code>uncertain</code>/<code>NOT_ENOUGH_INFO</code> buckets stay available by defining additional configs or widening <code>nli_labels</code>/<code>nli_certainty</code> on existing ones. The resumable per-pair cache means cost is paid once per <code>(prompt hash, pair)</code>, not once per <code>tar_make()</code> — and a pair’s cached answer is valid under any combination of routing/subset that happens to select it again later.</p>
+<p>The last row of this table used to have a <code>sm</code>-narrowed (later <code>subset: &quot;default&quot;</code>) variant showing a 24% reduction on this particular bucket — removed since that filter no longer exists; every bucket above is now reviewed in full regardless of <code>direct_evidence_match</code> (see <a href="#candidate-scoping">Candidate matching</a> above for the separately-measured ~14% figure that motivated retiring it).</p>
+<p><code>openrouter_cheap</code> (<code>gpt-4o-mini</code>) is the configured default, currently routing <code>REFUTES</code> + <code>SUPPORTS</code>, both <code>certain</code>, across all three shipped configs — the smallest, cheapest, highest-signal bucket for each label, and the confirmed first step. The remaining <code>uncertain</code>/<code>NOT_ENOUGH_INFO</code> buckets stay available by defining additional configs or widening <code>nli_labels</code>/<code>nli_certainty</code> on existing ones. The resumable per-pair cache means cost is paid once per <code>(prompt hash, pair)</code>, not once per <code>tar_make()</code> — and a pair’s cached answer is valid under any combination of routing that happens to select it again later.</p>
 <hr>
 </section>
 <section id="where-this-sits-in-the-pipeline" class="level2">
 <h2 class="anchored" data-anchor-id="where-this-sits-in-the-pipeline">Where this sits in the pipeline</h2>
-<p><code>llm_verification_parquet</code> and <code>llm_candidate_scope_parquet</code> are both live, active targets (not commented out) — <code>tar_make()</code> runs them. <code>llm_candidate_scope_parquet</code> is always computed regardless of which <code>llm_verification</code> config is active — it makes no paid API calls of its own (pure local joins over already-downloaded parquet), so <code>subset: &quot;all&quot;</code> configs simply never read its output rather than the target being conditionally skipped.</p>
+<p><code>llm_verification_parquet</code> and <code>llm_candidate_scope_parquet</code> are both live, active targets (not commented out) — <code>tar_make()</code> runs them. <code>llm_candidate_scope_parquet</code> is always computed regardless of which <code>llm_verification</code> config is active, since every config’s output now carries the <code>direct_evidence_match</code> tag it produces. Under <code>naive_bm</code>/<code>complete_bm</code> it makes no paid API calls of its own (pure local joins over already-downloaded parquet); under <code>atomic_bm</code> it re-runs <code>complete_bm_fragments()</code> to recover claim alignment, which should always hit the resumable completion cache rather than pay for a fresh call — see <a href="#candidate-scoping">Candidate matching</a>.</p>
 <p><strong><code>report_fact_checker</code> is no longer safe to render blind.</strong> Originally neither Phase 2 target was a dependency of it, so rendering the report never forced an OpenRouter call. That changed once the label funnel reports (<code>refutes_funnel_data</code>/<code>supports_funnel_data</code> → <code>report_refutes_funnel_html</code>/<code>report_supports_funnel_html</code>, both folded into <code>report_fact_checker</code>’s dependency list) started reading <code>llm_verification_parquet</code> directly — a plain <code>tar_make()</code> or <code>tar_make(names = &quot;report_fact_checker&quot;)</code> will now rebuild <code>llm_verification_parquet</code> first if it’s outdated, which means real OpenRouter spend can happen as a side effect of “just rendering the report.” This is exactly what happened when <code>SUPPORTS</code> was added to <code>nli_labels</code>: that edit alone makes <code>llm_verification_parquet</code> outdated, so the next non-<code>shortcut</code> <code>tar_make()</code> touching <code>report_fact_checker</code> would try to review the new ~52,061-pair <code>SUPPORTS</code>-certain backlog (~$7.75 at <code>gpt-4o-mini</code> rates) automatically. To render the report (or the funnel reports) against <strong>currently on-disk</strong> Phase 2 data without triggering a fresh Phase 2 run, use <code>targets::tar_make(names = ..., shortcut = TRUE)</code> — it uses stored metadata for upstream targets instead of re-checking them. Run Phase 2 explicitly and deliberately with <code>targets::tar_make(names = &quot;llm_verification_parquet&quot;)</code> when you actually want to spend the money. Phase 2’s output is not yet consumed by the report’s own overview tables/figures or by <code>nli_overview_data</code> — that merge (<code>llm_label</code> overriding <code>nli_label</code> where available) is a deliberate next step, not an oversight; see <a href="#recommended-workflow">Recommended Workflow</a>.</p>
 </section>
 <section id="recommended-workflow" class="level2">
@@ -2685,7 +2663,9 @@ vertical-align: -.125em;
 <li><a href="TD_LLM_approach.html">TD_LLM_approach.qmd</a> — the earlier single-phase −5..+5 LLM alignment design this one replaced; kept as a record of why that scale was dropped in favour of the SUPPORTS/REFUTES/NOT_ENOUGH_INFO labels used here</li>
 <li><a href="R/score_one_claim.R">R/score_one_claim.R</a> — Phase 1 implementation</li>
 <li><a href="R/build_llm_verification_parquet.R">R/build_llm_verification_parquet.R</a> — Phase 2 implementation</li>
-<li><a href="R/build_llm_candidate_scope_parquet.R">R/build_llm_candidate_scope_parquet.R</a> — <code>subset: &quot;sm&quot;</code> candidate scoping</li>
+<li><a href="R/build_llm_verification_keypaper_parquet.R">R/build_llm_verification_keypaper_parquet.R</a> — full-coverage key-paper LLM verification, irrespective of NLI label/confidence</li>
+<li><a href="R/build_llm_candidate_scope_parquet.R">R/build_llm_candidate_scope_parquet.R</a> — the <code>direct_evidence_match</code> matching chain (formerly <code>subset: &quot;default&quot;</code> candidate scoping)</li>
+<li><code>QA_LLM_Verification_Report.qmd</code> — QA report for Phase 2, the equivalent of <code>QA_NLI_Scores_Report.qmd</code> for Phase 1</li>
 <li><code>Categorisation_Literature/R/llm_epistemology.R</code> (sibling project) — the ported architecture’s origin</li>
 </ul>
 </section>

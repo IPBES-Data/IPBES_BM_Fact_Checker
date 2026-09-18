@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-19">
+<meta name="dcterms.date" content="2026-09-18">
 
 <title>Fine-tuning the NLI Model with IPBES-Derived Training Data</title>
 <style>
@@ -2216,8 +2216,8 @@ vertical-align: -.125em;
   <li><a href="#overview" id="toc-overview" class="nav-link" data-scroll-target="#overview">Overview</a></li>
   <li><a href="#training-data-strategy" id="toc-training-data-strategy" class="nav-link" data-scroll-target="#training-data-strategy">Training Data Strategy</a>
   <ul>
-  <li><a href="#positive-examples-supports-essentially-free" id="toc-positive-examples-supports-essentially-free" class="nav-link" data-scroll-target="#positive-examples-supports-essentially-free">Positive examples — SUPPORTS (essentially free)</a></li>
-  <li><a href="#hard-negatives-not_enough_info" id="toc-hard-negatives-not_enough_info" class="nav-link" data-scroll-target="#hard-negatives-not_enough_info">Hard negatives — NOT_ENOUGH_INFO</a></li>
+  <li><a href="#positive-examples-llm-verified-supports-small-high-precision" id="toc-positive-examples-llm-verified-supports-small-high-precision" class="nav-link" data-scroll-target="#positive-examples-llm-verified-supports-small-high-precision">Positive examples — LLM-verified SUPPORTS (small, high-precision)</a></li>
+  <li><a href="#hard-negatives-real-nlillm-disagreements-preferred-over-synthetic" id="toc-hard-negatives-real-nlillm-disagreements-preferred-over-synthetic" class="nav-link" data-scroll-target="#hard-negatives-real-nlillm-disagreements-preferred-over-synthetic">Hard negatives — real NLI/LLM disagreements (preferred over synthetic)</a></li>
   <li><a href="#refutes-examples-the-hard-class" id="toc-refutes-examples-the-hard-class" class="nav-link" data-scroll-target="#refutes-examples-the-hard-class">REFUTES examples — the hard class</a></li>
   </ul></li>
   <li><a href="#how-many-examples-are-needed" id="toc-how-many-examples-are-needed" class="nav-link" data-scroll-target="#how-many-examples-are-needed">How Many Examples Are Needed?</a></li>
@@ -2258,7 +2258,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 19, 2026</p>
+      <p class="date">September 18, 2026</p>
     </div>
   </div>
   
@@ -2274,60 +2274,80 @@ vertical-align: -.125em;
 <h1>Fine-tuning the NLI Model with IPBES-Derived Training Data</h1>
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">Overview</h2>
-<p>The zero-shot NLI model (<code>MoritzLaurer/deberta-v3-large-zeroshot-v2.0</code>) works well out of the box, but its training data does not include biodiversity/IPBES language. A domain-adapted fine-tuned version should produce fewer borderline classifications and better calibrated confidence scores.</p>
-<p>The key insight is that <strong>training data is already embedded in the existing pipeline</strong>: every BM is backed by citations extracted via the LOD, and those citations are already fetched as <code>works_parquet</code>. These known-support pairs can seed the training set almost for free.</p>
+<p><strong>Status note (updated):</strong> written while <code>MoritzLaurer/deberta-v3-large-zeroshot-v2.0</code> was the active zero-shot model; it has since been retired in favour of <code>MoritzLaurer/bge-m3-zeroshot-v2.0-c</code> (see <code>TD_BM_NLI_approach.qmd</code>’s “Status update” and the <code>nli:</code> comment in <code>input/config.yaml</code>). The fine-tuning procedure below has been retargeted to that model name, but the exact HuggingFace fine-tuning API for <code>bge-m3-zeroshot-v2.0-c</code>’s specific base architecture has <strong>not</strong> been verified against its model card — check that before running the script in <a href="#fine-tuning-procedure">Fine-tuning Procedure</a>.</p>
+<p><strong>More importantly, the Training Data Strategy below has been substantially revised</strong> from the original design. The original recipe treated every paper cited under a BM as a free, clean <code>SUPPORTS</code> example (premise = its title+abstract, hypothesis = the BM text). Real data now contradicts that assumption directly: once Phase 2 (LLM verification, <code>TD_NLI_LLM_two_phase.qmd</code>) was extended to review <strong>every</strong> key/seed paper against its own BM’s claim — not just the routed citing-works subset — and required a verbatim quote before confirming <code>SUPPORTS</code>, only <strong>2.6%</strong> of GA1’s 4,783 key-paper pairs actually had explicit textual support in the title+abstract alone; the rest came back <code>NOT_ENOUGH_INFO</code>. A key paper genuinely <em>is</em> the evidence a BM was written from (per IPBES expert consensus and its own full text), but its <strong>abstract</strong> very often doesn’t restate the specific claim explicitly enough to count as textual entailment evidence. Training on “abstract text → SUPPORTS” for the ~97% of pairs where the abstract doesn’t actually say that would teach the model to reproduce topic-adjacency-as-entailment confusion — a real, independently confirmed failure mode of the current zero-shot model (see <code>TD_NLI_LLM_two_phase.qmd</code>’s discussion of the same GA1 corpus: NLI’s own <code>SUPPORTS</code> calls agree with the LLM’s grounded, quote-checked verdict only 7% of the time, across NLI’s <em>entire</em> confidence range, not just at the margins).</p>
+<p><strong>Revised key insight</strong>: training data is still embedded in the existing pipeline almost for free, but the <em>reliable</em> source is Phase 2’s LLM-verified output (<code>llm_verification_keypaper_parquet</code> and <code>llm_verification_parquet</code>), not a blind citation join. Phase 2 already enforces the one property fine-tuning data needs most — a real, verbatim, quotable textual anchor for every positive label — so its output can be used directly with no additional labeling effort, exactly as <code>TD_NLI_LLM_two_phase.qmd</code>’s own “Using LLM Output as Training Data” section already anticipated for the citing-works chain; the key-paper chain now extends that same idea to a cleaner, high-precision source.</p>
 <hr>
 </section>
 <section id="training-data-strategy" class="level2">
 <h2 class="anchored" data-anchor-id="training-data-strategy">Training Data Strategy</h2>
-<section id="positive-examples-supports-essentially-free" class="level3">
-<h3 class="anchored" data-anchor-id="positive-examples-supports-essentially-free">Positive examples — SUPPORTS (essentially free)</h3>
-<p>Each paper cited under a BM is, by IPBES expert consensus, a supporting reference for that BM. This maps directly onto the NLI <code>SUPPORTS</code> label.</p>
-<p>Source in the pipeline:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Join works_parquet (which carries km/bm assignment) with key_messages_parquet</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># (which carries bm_description) to get (abstract, bm_text) pairs labelled SUPPORTS</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(arrow)</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>works <span class="ot">&lt;-</span> <span class="fu">open_dataset</span>(<span class="st">&quot;output/works&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(assessment, km, bm, title, abstract) <span class="sc">|&gt;</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect</span>()</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>bms <span class="ot">&lt;-</span> <span class="fu">open_dataset</span>(<span class="st">&quot;output/key_messages&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(assessment, km, bm, bm_description) <span class="sc">|&gt;</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect</span>()</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>positives <span class="ot">&lt;-</span> works <span class="sc">|&gt;</span></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">inner_join</span>(bms, <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;assessment&quot;</span>, <span class="st">&quot;km&quot;</span>, <span class="st">&quot;bm&quot;</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(abstract), <span class="fu">nchar</span>(abstract) <span class="sc">&gt;</span> <span class="dv">50</span>) <span class="sc">|&gt;</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">transmute</span>(</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">premise    =</span> <span class="fu">paste</span>(title, abstract, <span class="at">sep =</span> <span class="st">&quot;. &quot;</span>),</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">hypothesis =</span> bm_description,</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">label      =</span> <span class="st">&quot;SUPPORTS&quot;</span></span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Expected yield: several hundred to low thousands of pairs depending on how many assessments and BMs are loaded — likely enough for a meaningful fine-tuning run without any additional labeling effort.</p>
+<section id="positive-examples-llm-verified-supports-small-high-precision" class="level3">
+<h3 class="anchored" data-anchor-id="positive-examples-llm-verified-supports-small-high-precision">Positive examples — LLM-verified SUPPORTS (small, high-precision)</h3>
+<p><strong>Not</strong> every paper cited under a BM, unconditionally — see the Status note above for why that’s now known to be unreliable as a training signal. Instead, use only the key papers Phase 2’s full-coverage chain (<code>llm_verification_keypaper_parquet</code>, <code>R/build_llm_verification_keypaper_parquet.R</code>) actually confirmed as <code>SUPPORTS</code> with a real, verbatim quote from the abstract. This is a strict subset of “papers IPBES cites as evidence,” but every example is genuinely grounded in text the premise actually contains, not just citation provenance — exactly the property fine-tuning data needs.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(arrow)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co"># llm_label == &quot;SUPPORTS&quot; here always has sufficient_evidence == TRUE and a</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># verbatim quote (quote_is_verbatim() demotes anything else to</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># NOT_ENOUGH_INFO before this table is ever written) -- see</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"># R/build_llm_verification_parquet.R.</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>positives <span class="ot">&lt;-</span> <span class="fu">open_dataset</span>(<span class="st">&quot;output/llm_verification/scores_keypaper&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(llm_label <span class="sc">==</span> <span class="st">&quot;SUPPORTS&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(assessment, km, bm, claim, work_id, quote) <span class="sc">|&gt;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect</span>()</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co"># premise here is the QUOTE itself, not the full abstract -- it&#39;s the</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="co"># minimal text actually shown to have entailed the claim. Re-join the full</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co"># title+abstract from works_parquet instead if you&#39;d rather fine-tune on</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="co"># the full premise the pipeline actually scores at inference time (closer</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="co"># to the real task, but reintroduces some of the &quot;supporting sentence</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co"># buried in an otherwise off-topic abstract&quot; noise the quote avoids --</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="co"># worth comparing both empirically rather than assuming one is better).</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>positives<span class="sc">$</span>hypothesis <span class="ot">&lt;-</span> positives<span class="sc">$</span>claim</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>positives<span class="sc">$</span>label <span class="ot">&lt;-</span> <span class="st">&quot;SUPPORTS&quot;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Expected yield: <strong>small</strong> — ~124 for GA1 alone (2.6% of 4,783 key-paper pairs), growing as more assessments are loaded (IAS is currently disabled in <code>input/config.yaml</code>; re-enabling it and running its own <code>llm_verification_keypaper_parquet</code> would add its share). See <a href="#how-many-examples-are-needed">How Many Examples Are Needed</a> below for what this means for the fine-tuning target.</p>
 </section>
-<section id="hard-negatives-not_enough_info" class="level3">
-<h3 class="anchored" data-anchor-id="hard-negatives-not_enough_info">Hard negatives — NOT_ENOUGH_INFO</h3>
-<p>Cross-BM pairing: take a paper cited under BM <code>A1</code> and pair it with the description of a topically unrelated BM (e.g. from a different KM). The paper has no particular reason to support <code>A3</code>, so the label is <code>NOT_ENOUGH_INFO</code>.</p>
-<p><strong>Caution:</strong> topically adjacent BMs within the same KM may genuinely overlap. Prefer cross-KM or cross-assessment negatives to avoid mislabelling. A conservative rule: only use cross-assessment negatives (pair a paper from assessment X with a BM from assessment Y on a different topic area).</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Simple cross-assessment negative construction</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>negatives <span class="ot">&lt;-</span> positives <span class="sc">|&gt;</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(hypothesis) <span class="sc">|&gt;</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">slice_sample</span>(<span class="at">n =</span> <span class="dv">5</span>) <span class="sc">|&gt;</span>           <span class="co"># up to 5 papers per BM</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">|&gt;</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="co"># shuffle hypotheses across assessments; ensure no original pairing survives</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">hypothesis =</span> <span class="fu">sample</span>(<span class="fu">unique</span>(positives<span class="sc">$</span>hypothesis), <span class="fu">n</span>(), <span class="at">replace =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">label      =</span> <span class="st">&quot;NOT_ENOUGH_INFO&quot;</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="fu">paste</span>(premise, hypothesis) <span class="sc">%in%</span></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>           <span class="fu">paste</span>(positives<span class="sc">$</span>premise, positives<span class="sc">$</span>hypothesis) <span class="sc">==</span> <span class="cn">FALSE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="hard-negatives-real-nlillm-disagreements-preferred-over-synthetic" class="level3">
+<h3 class="anchored" data-anchor-id="hard-negatives-real-nlillm-disagreements-preferred-over-synthetic">Hard negatives — real NLI/LLM disagreements (preferred over synthetic)</h3>
+<p>The strongest negative source is no longer synthetic — it’s real. Every pair where NLI confidently called <code>SUPPORTS</code> (or <code>REFUTES</code>) but the LLM’s grounded, quote-checked review said <code>NOT_ENOUGH_INFO</code> is a genuine, in-domain example of the exact failure this fine-tuning effort exists to correct: topical or citation-provenance adjacency mistaken for entailment. These come from <em>both</em> Phase 2 chains — the main citing-works corpus (<code>output/llm_verification/scores</code>) and the key-paper chain (<code>output/llm_verification/scores_keypaper</code>) — and, unlike the synthetic cross-BM construction below, need no manual spot-checking of label correctness, since the LLM’s own verbatim-quote requirement already did that verification.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>real_negatives <span class="ot">&lt;-</span> <span class="cf">function</span>(path) {</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">open_dataset</span>(path) <span class="sc">|&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(nli_label <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">&quot;SUPPORTS&quot;</span>, <span class="st">&quot;REFUTES&quot;</span>), <span class="sc">!</span>uncertain, llm_label <span class="sc">==</span> <span class="st">&quot;NOT_ENOUGH_INFO&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(assessment, km, bm, claim, work_id, nli_label, nli_confidence) <span class="sc">|&gt;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">collect</span>()</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>negatives <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">real_negatives</span>(<span class="st">&quot;output/llm_verification/scores&quot;</span>),</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">real_negatives</span>(<span class="st">&quot;output/llm_verification/scores_keypaper&quot;</span>)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>negatives<span class="sc">$</span>hypothesis <span class="ot">&lt;-</span> negatives<span class="sc">$</span>claim</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>negatives<span class="sc">$</span>label <span class="ot">&lt;-</span> <span class="st">&quot;NOT_ENOUGH_INFO&quot;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Expected yield: large relative to the positives above — for GA1’s citing-works chain alone this is ~177,000 rows (the same 93% of NLI’s confident calls the LLM downgraded; see <code>TD_NLI_LLM_two_phase.qmd</code>’s discussion of this corpus). Downsample to roughly match the positive count for class balance (see below) rather than using all of it — a 93%-negative training set would just teach the model to always predict <code>NOT_ENOUGH_INFO</code>.</p>
+<p><strong>Fallback, if more negative volume is needed than the real-disagreement source provides</strong> (unlikely, given the yield above, but kept as a documented option): the original synthetic cross-BM pairing still works as a supplementary source. Same caution as before — prefer cross-KM or cross-assessment pairs, and spot-check ~20 manually, since topically adjacent BMs within the same KM may genuinely overlap.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Supplementary only -- see caution above</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>works <span class="ot">&lt;-</span> <span class="fu">open_dataset</span>(<span class="st">&quot;output/works&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(assessment, km, bm, title, abstract) <span class="sc">|&gt;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect</span>()</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>bms <span class="ot">&lt;-</span> <span class="fu">open_dataset</span>(<span class="st">&quot;output/key_messages&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(assessment, km, bm, bm_description) <span class="sc">|&gt;</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect</span>()</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>cited <span class="ot">&lt;-</span> works <span class="sc">|&gt;</span> <span class="fu">inner_join</span>(bms, <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;assessment&quot;</span>, <span class="st">&quot;km&quot;</span>, <span class="st">&quot;bm&quot;</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(abstract), <span class="fu">nchar</span>(abstract) <span class="sc">&gt;</span> <span class="dv">50</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">transmute</span>(<span class="at">premise =</span> <span class="fu">paste</span>(title, abstract, <span class="at">sep =</span> <span class="st">&quot;. &quot;</span>), <span class="at">hypothesis =</span> bm_description)</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>synthetic_negatives <span class="ot">&lt;-</span> cited <span class="sc">|&gt;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(hypothesis) <span class="sc">|&gt;</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">slice_sample</span>(<span class="at">n =</span> <span class="dv">5</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">|&gt;</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="at">hypothesis =</span> <span class="fu">sample</span>(<span class="fu">unique</span>(cited<span class="sc">$</span>hypothesis), <span class="fu">n</span>(), <span class="at">replace =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">label      =</span> <span class="st">&quot;NOT_ENOUGH_INFO&quot;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="fu">paste</span>(premise, hypothesis) <span class="sc">%in%</span> <span class="fu">paste</span>(cited<span class="sc">$</span>premise, cited<span class="sc">$</span>hypothesis) <span class="sc">==</span> <span class="cn">FALSE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="refutes-examples-the-hard-class" class="level3">
 <h3 class="anchored" data-anchor-id="refutes-examples-the-hard-class">REFUTES examples — the hard class</h3>
-<p><code>REFUTES</code> is genuinely rare in this domain: papers do not typically directly contradict IPBES consensus statements. Three options in increasing effort:</p>
+<p><code>REFUTES</code> is genuinely rare in this domain: papers do not typically directly contradict IPBES consensus statements. A small real, LLM-quote-verified source now exists too — <code>nli_label == &quot;REFUTES&quot; &amp; llm_label == &quot;REFUTES&quot;</code> in the same <code>output/llm_verification/scores*</code> tables the positives/negatives above come from (105 rows for GA1’s citing-works chain; smaller still for key papers, since key papers should essentially never genuinely contradict their own BM) — but it’s too small on its own for a full class. Options, in increasing effort, to supplement it:</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 50%">
@@ -2341,20 +2361,24 @@ vertical-align: -.125em;
 </thead>
 <tbody>
 <tr class="odd">
+<td>Use the real <code>REFUTES</code>/<code>REFUTES</code> rows only</td>
+<td>Cleanest signal available, but likely too few (~100s) for a full class on its own</td>
+</tr>
+<tr class="even">
 <td>Omit <code>REFUTES</code> entirely</td>
 <td>Collapse into <code>NOT_ENOUGH_INFO</code>; simplest, acceptable if downstream use only cares about SUPPORTS vs. not</td>
 </tr>
-<tr class="even">
-<td>Synthetic negation</td>
-<td>Negate the BM hypothesis text (“Biodiversity is <em>not</em> declining…”) and use known-support abstracts as premises — artificial but gives the model the class signal</td>
-</tr>
 <tr class="odd">
+<td>Synthetic negation</td>
+<td>Negate the BM hypothesis text (“Biodiversity is <em>not</em> declining…”) and use known-support premises — artificial but gives the model the class signal; combine with the real rows above rather than replacing them</td>
+</tr>
+<tr class="even">
 <td>Manual labeling</td>
 <td>Ask a domain expert to identify a small set (~20–30) of papers that genuinely contradict a BM; gold standard but expensive</td>
 </tr>
 </tbody>
 </table>
-<p>For a first fine-tuning pass, the recommended approach is <strong>omit or use synthetic negation</strong>, then revisit once you have validated model performance on SUPPORTS vs. NOT_ENOUGH_INFO.</p>
+<p>For a first fine-tuning pass, the recommended approach is to <strong>use the real <code>REFUTES</code>/<code>REFUTES</code> rows as-is and otherwise omit or use synthetic negation</strong> to round out the class, then revisit once you have validated model performance on SUPPORTS vs. NOT_ENOUGH_INFO.</p>
 <hr>
 </section>
 </section>
@@ -2391,88 +2415,100 @@ vertical-align: -.125em;
 </tr>
 </tbody>
 </table>
-<p><strong>Practical target:</strong> aim for <strong>300–500 SUPPORTS</strong> and an equal number of NOT_ENOUGH_INFO negatives (balanced classes). If you have fewer positives, use all of them and oversample negatives.</p>
+<p><strong>Practical target:</strong> aim for <strong>300–500 SUPPORTS</strong> and an equal number of NOT_ENOUGH_INFO negatives (balanced classes). With the revised LLM-verified positive source, GA1 alone (~124) falls short of even the 100-300 band — this is the real tradeoff of switching from “free but noisy” to “small but correct.” Options, not mutually exclusive:</p>
+<ul>
+<li><strong>Combine assessments</strong> before fine-tuning (re-enable IAS in <code>input/config.yaml</code>, run its own <code>llm_verification_keypaper_parquet</code>, and pool both) — the doc’s own recommendation elsewhere (<a href="#single-combined-model-vs-assessment-specific-models">Single Combined Model vs. Assessment-Specific Models</a>) to train on all assessments together applies here too.</li>
+<li><strong>Accept a smaller fine-tuning run</strong> (&lt; 100 examples per class) and expect a marginal, high-variance result per the table above — still worth trying as a first pass, since the alternative (the original recipe’s few-thousand noisy positives) risks teaching the model the wrong thing rather than nothing.</li>
+<li><strong>Augment cautiously</strong> with the raw key-paper join (the original recipe), but as a clearly lower-confidence, separately-weighted tier rather than mixed in as equally-trustworthy <code>SUPPORTS</code> labels — e.g. a <code>source</code> column (<code>llm_verified</code> vs. <code>citation_only</code>) carried through to fine-tuning so the two tiers can be compared or weighted differently rather than silently blended.</li>
+</ul>
 <p>Hold out 15–20% as a validation set before training.</p>
 <hr>
 </section>
 <section id="do-you-need-negatives" class="level2">
 <h2 class="anchored" data-anchor-id="do-you-need-negatives">Do You Need Negatives?</h2>
-<p>Yes, but not necessarily hand-labeled ones. The model needs to see both classes during fine-tuning or it will over-predict <code>SUPPORTS</code>. The cross-BM construction above produces plausible negatives at no cost. Validate a sample manually (spot-check ~20 cross-BM pairs) to confirm they are genuinely <code>NOT_ENOUGH_INFO</code> before using them.</p>
+<p>Yes. The model needs to see both classes during fine-tuning or it will over-predict <code>SUPPORTS</code>. The real NLI/LLM disagreement source above already gives far more negatives than positives — downsample it to roughly match the positive count for class balance (see above) rather than needing the synthetic cross-BM construction to manufacture negatives from nothing, as the original design assumed. Spot-check a sample of whichever source you end up using (~20 pairs) before training regardless, same as the original recommendation.</p>
 <hr>
 </section>
 <section id="fine-tuning-procedure" class="level2">
 <h2 class="anchored" data-anchor-id="fine-tuning-procedure">Fine-tuning Procedure</h2>
 <section id="environment" class="level3">
 <h3 class="anchored" data-anchor-id="environment">Environment</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install transformers datasets torch accelerate scikit-learn</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install transformers datasets torch accelerate scikit-learn</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="script-outline-python" class="level3">
 <h3 class="anchored" data-anchor-id="script-outline-python">Script outline (Python)</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> Dataset</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> (</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    AutoTokenizer,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    AutoModelForSequenceClassification,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    TrainingArguments,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    Trainer,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>MODEL_ID <span class="op">=</span> <span class="st">&quot;MoritzLaurer/deberta-v3-large-zeroshot-v2.0&quot;</span></span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>LABEL2ID  <span class="op">=</span> {<span class="st">&quot;SUPPORTS&quot;</span>: <span class="dv">0</span>, <span class="st">&quot;REFUTES&quot;</span>: <span class="dv">1</span>, <span class="st">&quot;NOT_ENOUGH_INFO&quot;</span>: <span class="dv">2</span>}</span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>ID2LABEL  <span class="op">=</span> {v: k <span class="cf">for</span> k, v <span class="kw">in</span> LABEL2ID.items()}</span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Load data (export positives/negatives from R as CSV first) ---</span></span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> pd.read_csv(<span class="st">&quot;training_pairs.csv&quot;</span>)   <span class="co"># columns: premise, hypothesis, label</span></span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>df[<span class="st">&quot;label_id&quot;</span>] <span class="op">=</span> df[<span class="st">&quot;label&quot;</span>].<span class="bu">map</span>(LABEL2ID)</span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>tokenizer <span class="op">=</span> AutoTokenizer.from_pretrained(MODEL_ID)</span>
-<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> tokenize(batch):</span>
-<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tokenizer(</span>
-<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>        batch[<span class="st">&quot;premise&quot;</span>],</span>
-<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>        batch[<span class="st">&quot;hypothesis&quot;</span>],</span>
-<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>        truncation<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>        max_length<span class="op">=</span><span class="dv">512</span>,</span>
-<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>        padding<span class="op">=</span><span class="st">&quot;max_length&quot;</span>,</span>
-<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> Dataset.from_pandas(df[[<span class="st">&quot;premise&quot;</span>, <span class="st">&quot;hypothesis&quot;</span>, <span class="st">&quot;label_id&quot;</span>]])</span>
-<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> dataset.rename_column(<span class="st">&quot;label_id&quot;</span>, <span class="st">&quot;labels&quot;</span>)</span>
-<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> dataset.<span class="bu">map</span>(tokenize, batched<span class="op">=</span><span class="va">True</span>)</span>
-<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> dataset.train_test_split(test_size<span class="op">=</span><span class="fl">0.15</span>, seed<span class="op">=</span><span class="dv">42</span>)</span>
-<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> AutoModelForSequenceClassification.from_pretrained(</span>
-<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>    MODEL_ID,</span>
-<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>    num_labels<span class="op">=</span><span class="dv">3</span>,</span>
-<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>    id2label<span class="op">=</span>ID2LABEL,</span>
-<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>    label2id<span class="op">=</span>LABEL2ID,</span>
-<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>    ignore_mismatched_sizes<span class="op">=</span><span class="va">True</span>,   <span class="co"># classifier head is re-initialised</span></span>
-<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>args <span class="op">=</span> TrainingArguments(</span>
-<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>    output_dir        <span class="op">=</span> <span class="st">&quot;nli-ipbes-finetuned&quot;</span>,</span>
-<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>    num_train_epochs  <span class="op">=</span> <span class="dv">3</span>,</span>
-<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>    per_device_train_batch_size <span class="op">=</span> <span class="dv">16</span>,</span>
-<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>    per_device_eval_batch_size  <span class="op">=</span> <span class="dv">32</span>,</span>
-<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>    evaluation_strategy <span class="op">=</span> <span class="st">&quot;epoch&quot;</span>,</span>
-<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>    save_strategy       <span class="op">=</span> <span class="st">&quot;epoch&quot;</span>,</span>
-<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>    load_best_model_at_end <span class="op">=</span> <span class="va">True</span>,</span>
-<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>    metric_for_best_model  <span class="op">=</span> <span class="st">&quot;eval_loss&quot;</span>,</span>
-<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>    fp16 <span class="op">=</span> torch.cuda.is_available(),</span>
-<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>    logging_steps <span class="op">=</span> <span class="dv">20</span>,</span>
-<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>trainer <span class="op">=</span> Trainer(</span>
-<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>    model         <span class="op">=</span> model,</span>
-<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>    args          <span class="op">=</span> args,</span>
-<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>    train_dataset <span class="op">=</span> dataset[<span class="st">&quot;train&quot;</span>],</span>
-<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>    eval_dataset  <span class="op">=</span> dataset[<span class="st">&quot;test&quot;</span>],</span>
-<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a>trainer.train()</span>
-<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a>trainer.save_model(<span class="st">&quot;nli-ipbes-finetuned/best&quot;</span>)</span>
-<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>tokenizer.save_pretrained(<span class="st">&quot;nli-ipbes-finetuned/best&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> Dataset</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> (</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    AutoTokenizer,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    AutoModelForSequenceClassification,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    TrainingArguments,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    Trainer,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Retargeted to the currently active model (see Status note above) --</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="co"># NOT verified against bge-m3-zeroshot-v2.0-c&#39;s own model card yet. This</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="co"># base model may not load cleanly via a generic</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="co"># AutoModelForSequenceClassification(ignore_mismatched_sizes=True) the way</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="co"># deberta-v3-large-zeroshot-v2.0 did -- check the model card&#39;s own</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="co"># fine-tuning guidance (or its base architecture, bge-m3) before assuming</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="co"># this script runs unmodified.</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>MODEL_ID <span class="op">=</span> <span class="st">&quot;MoritzLaurer/bge-m3-zeroshot-v2.0-c&quot;</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>LABEL2ID  <span class="op">=</span> {<span class="st">&quot;SUPPORTS&quot;</span>: <span class="dv">0</span>, <span class="st">&quot;REFUTES&quot;</span>: <span class="dv">1</span>, <span class="st">&quot;NOT_ENOUGH_INFO&quot;</span>: <span class="dv">2</span>}</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>ID2LABEL  <span class="op">=</span> {v: k <span class="cf">for</span> k, v <span class="kw">in</span> LABEL2ID.items()}</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Load data (export positives/negatives from R as CSV first) ---</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> pd.read_csv(<span class="st">&quot;training_pairs.csv&quot;</span>)   <span class="co"># columns: premise, hypothesis, label</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>df[<span class="st">&quot;label_id&quot;</span>] <span class="op">=</span> df[<span class="st">&quot;label&quot;</span>].<span class="bu">map</span>(LABEL2ID)</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>tokenizer <span class="op">=</span> AutoTokenizer.from_pretrained(MODEL_ID)</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> tokenize(batch):</span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tokenizer(</span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>        batch[<span class="st">&quot;premise&quot;</span>],</span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>        batch[<span class="st">&quot;hypothesis&quot;</span>],</span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>        truncation<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>        max_length<span class="op">=</span><span class="dv">512</span>,</span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>        padding<span class="op">=</span><span class="st">&quot;max_length&quot;</span>,</span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> Dataset.from_pandas(df[[<span class="st">&quot;premise&quot;</span>, <span class="st">&quot;hypothesis&quot;</span>, <span class="st">&quot;label_id&quot;</span>]])</span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> dataset.rename_column(<span class="st">&quot;label_id&quot;</span>, <span class="st">&quot;labels&quot;</span>)</span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> dataset.<span class="bu">map</span>(tokenize, batched<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> dataset.train_test_split(test_size<span class="op">=</span><span class="fl">0.15</span>, seed<span class="op">=</span><span class="dv">42</span>)</span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> AutoModelForSequenceClassification.from_pretrained(</span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>    MODEL_ID,</span>
+<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>    num_labels<span class="op">=</span><span class="dv">3</span>,</span>
+<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a>    id2label<span class="op">=</span>ID2LABEL,</span>
+<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a>    label2id<span class="op">=</span>LABEL2ID,</span>
+<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a>    ignore_mismatched_sizes<span class="op">=</span><span class="va">True</span>,   <span class="co"># classifier head is re-initialised</span></span>
+<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a>args <span class="op">=</span> TrainingArguments(</span>
+<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a>    output_dir        <span class="op">=</span> <span class="st">&quot;nli-ipbes-finetuned&quot;</span>,</span>
+<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a>    num_train_epochs  <span class="op">=</span> <span class="dv">3</span>,</span>
+<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a>    per_device_train_batch_size <span class="op">=</span> <span class="dv">16</span>,</span>
+<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a>    per_device_eval_batch_size  <span class="op">=</span> <span class="dv">32</span>,</span>
+<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a>    evaluation_strategy <span class="op">=</span> <span class="st">&quot;epoch&quot;</span>,</span>
+<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a>    save_strategy       <span class="op">=</span> <span class="st">&quot;epoch&quot;</span>,</span>
+<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a>    load_best_model_at_end <span class="op">=</span> <span class="va">True</span>,</span>
+<span id="cb5-58"><a href="#cb5-58" aria-hidden="true" tabindex="-1"></a>    metric_for_best_model  <span class="op">=</span> <span class="st">&quot;eval_loss&quot;</span>,</span>
+<span id="cb5-59"><a href="#cb5-59" aria-hidden="true" tabindex="-1"></a>    fp16 <span class="op">=</span> torch.cuda.is_available(),</span>
+<span id="cb5-60"><a href="#cb5-60" aria-hidden="true" tabindex="-1"></a>    logging_steps <span class="op">=</span> <span class="dv">20</span>,</span>
+<span id="cb5-61"><a href="#cb5-61" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-62"><a href="#cb5-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-63"><a href="#cb5-63" aria-hidden="true" tabindex="-1"></a>trainer <span class="op">=</span> Trainer(</span>
+<span id="cb5-64"><a href="#cb5-64" aria-hidden="true" tabindex="-1"></a>    model         <span class="op">=</span> model,</span>
+<span id="cb5-65"><a href="#cb5-65" aria-hidden="true" tabindex="-1"></a>    args          <span class="op">=</span> args,</span>
+<span id="cb5-66"><a href="#cb5-66" aria-hidden="true" tabindex="-1"></a>    train_dataset <span class="op">=</span> dataset[<span class="st">&quot;train&quot;</span>],</span>
+<span id="cb5-67"><a href="#cb5-67" aria-hidden="true" tabindex="-1"></a>    eval_dataset  <span class="op">=</span> dataset[<span class="st">&quot;test&quot;</span>],</span>
+<span id="cb5-68"><a href="#cb5-68" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-69"><a href="#cb5-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-70"><a href="#cb5-70" aria-hidden="true" tabindex="-1"></a>trainer.train()</span>
+<span id="cb5-71"><a href="#cb5-71" aria-hidden="true" tabindex="-1"></a>trainer.save_model(<span class="st">&quot;nli-ipbes-finetuned/best&quot;</span>)</span>
+<span id="cb5-72"><a href="#cb5-72" aria-hidden="true" tabindex="-1"></a>tokenizer.save_pretrained(<span class="st">&quot;nli-ipbes-finetuned/best&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="compute" class="level3">
 <h3 class="anchored" data-anchor-id="compute">Compute</h3>
@@ -2483,27 +2519,27 @@ vertical-align: -.125em;
 <section id="evaluation" class="level2">
 <h2 class="anchored" data-anchor-id="evaluation">Evaluation</h2>
 <p>Before deploying, check performance on the held-out validation set:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.metrics <span class="im">import</span> classification_report</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>preds <span class="op">=</span> trainer.predict(dataset[<span class="st">&quot;test&quot;</span>])</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>pred_labels <span class="op">=</span> preds.predictions.argmax(axis<span class="op">=</span><span class="dv">1</span>)</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>true_labels <span class="op">=</span> dataset[<span class="st">&quot;test&quot;</span>][<span class="st">&quot;labels&quot;</span>]</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(classification_report(</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    true_labels, pred_labels,</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    target_names<span class="op">=</span><span class="bu">list</span>(LABEL2ID.keys())</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.metrics <span class="im">import</span> classification_report</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>preds <span class="op">=</span> trainer.predict(dataset[<span class="st">&quot;test&quot;</span>])</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>pred_labels <span class="op">=</span> preds.predictions.argmax(axis<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>true_labels <span class="op">=</span> dataset[<span class="st">&quot;test&quot;</span>][<span class="st">&quot;labels&quot;</span>]</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(classification_report(</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    true_labels, pred_labels,</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    target_names<span class="op">=</span><span class="bu">list</span>(LABEL2ID.keys())</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Also <strong>manually inspect</strong> 20–30 predictions on citing papers from <code>works_citing_parquet</code> (papers the model has never seen) to confirm the domain adaptation feels right before running a full pipeline rebuild.</p>
 <hr>
 </section>
 <section id="deployment" class="level2">
 <h2 class="anchored" data-anchor-id="deployment">Deployment</h2>
 <p>The fine-tuned model is a drop-in replacement for the original. Update the model path in the Docker container (<a href="external/runpod/docker/nli-runpod/">external/runpod/docker/nli-runpod/</a>) and redeploy:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode dockerfile code-with-copy"><code class="sourceCode dockerfile"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># In external/runpod/docker/nli-runpod/Dockerfile (or equivalent entrypoint)</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Replace:</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>MODEL_ID = <span class="st">&quot;MoritzLaurer/deberta-v3-large-zeroshot-v2.0&quot;</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co"># With:</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>MODEL_ID = <span class="st">&quot;/app/nli-ipbes-finetuned/best&quot;</span>   <span class="co"># local path inside container</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode dockerfile code-with-copy"><code class="sourceCode dockerfile"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># In external/runpod/docker/nli-runpod/Dockerfile (or equivalent entrypoint)</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Replace:</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>MODEL_ID = <span class="st">&quot;MoritzLaurer/bge-m3-zeroshot-v2.0-c&quot;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># With:</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>MODEL_ID = <span class="st">&quot;/app/nli-ipbes-finetuned/best&quot;</span>   <span class="co"># local path inside container</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Upload the fine-tuned model directory to the RunPod volume or push to a private HuggingFace Hub repo, then update the path accordingly.</p>
 <hr>
 </section>
@@ -2566,14 +2602,14 @@ vertical-align: -.125em;
 <section id="recommended-steps" class="level2">
 <h2 class="anchored" data-anchor-id="recommended-steps">Recommended Steps</h2>
 <ol type="1">
-<li><strong>Extract positives</strong> from <code>works_parquet</code> × <code>key_messages_parquet</code> join (R script above); export as <code>training_pairs.csv</code></li>
-<li><strong>Construct negatives</strong> using cross-assessment BM pairing; spot-check 20 pairs manually</li>
-<li><strong>Check class balance</strong> — target roughly 50/50 SUPPORTS / NOT_ENOUGH_INFO; add synthetic <code>REFUTES</code> negations if that class is wanted</li>
-<li><strong>Fine-tune</strong> on RunPod L4 using the script above (~15 min)</li>
+<li><strong>Extract positives</strong> from <code>output/llm_verification/scores_keypaper</code> filtered to <code>llm_label == &quot;SUPPORTS&quot;</code> (R script above); export as <code>training_pairs.csv</code></li>
+<li><strong>Extract negatives</strong> from the real NLI/LLM disagreement rows in <code>output/llm_verification/scores</code> and <code>output/llm_verification/scores_keypaper</code> (both chains); downsample to roughly match the positive count. Fall back to the synthetic cross-assessment BM pairing only if more volume is needed; spot-check 20 pairs manually either way</li>
+<li><strong>Check class balance</strong> — target roughly 50/50 SUPPORTS / NOT_ENOUGH_INFO; add the real <code>REFUTES</code>/<code>REFUTES</code> rows (plus synthetic negations if still short) for that class</li>
+<li><strong>Fine-tune</strong> on RunPod L4 using the script above (~15 min) — confirm <code>bge-m3-zeroshot-v2.0-c</code>’s fine-tuning API first (see the script’s own caveat)</li>
 <li><strong>Evaluate</strong> on held-out set; compare F1 on SUPPORTS against zero-shot baseline</li>
 <li><strong>Spot-check</strong> on a sample from <code>works_citing_parquet</code></li>
 <li><strong>Redeploy</strong> Docker container with updated model path</li>
-<li><strong>Invalidate</strong> <code>nli_scores_parquet</code> target and re-run pipeline</li>
+<li><strong>Invalidate</strong> <code>nli_scores_by_claim_evidence</code> (and/or <code>nli_scores_keypaper_evidence</code>) and re-run the pipeline</li>
 </ol>
 <hr>
 </section>
@@ -2581,7 +2617,9 @@ vertical-align: -.125em;
 <h2 class="anchored" data-anchor-id="see-also">See Also</h2>
 <ul>
 <li><a href="TD_BM_NLI_approach.html">TD_BM_NLI_approach.qmd</a> — zero-shot pipeline design and compute estimates</li>
-<li><a href="R/build_nli_scores_parquet.R">R/build_nli_scores_parquet.R</a> — current inference implementation</li>
+<li><a href="TD_NLI_LLM_two_phase.html">TD_NLI_LLM_two_phase.qmd</a> — Phase 2 (LLM verification) design; its “Using LLM Output as Training Data” section is what this document’s revised strategy builds on, and its GA1 corpus is the source of the 7%-agreement finding motivating the revision above</li>
+<li><a href="R/score_one_claim.R">R/score_one_claim.R</a> — current NLI inference implementation</li>
+<li><a href="R/build_llm_verification_parquet.R">R/build_llm_verification_parquet.R</a>, <a href="R/build_llm_verification_keypaper_parquet.R">R/build_llm_verification_keypaper_parquet.R</a> — Phase 2 implementations that produce this document’s training-data sources</li>
 <li><a href="external/runpod/docker/nli-runpod/">external/runpod/docker/nli-runpod/</a> — inference server Docker setup</li>
 <li>SciFact dataset: https://github.com/allenai/scifact</li>
 <li>HuggingFace fine-tuning docs: https://huggingface.co/docs/transformers/training</li>
