@@ -2,6 +2,61 @@
 
 ## Active
 
+### After the training run completes — not before
+
+Deferred 2026-09-18. The four-project split is finished and committed; these are
+the first-run consequences of it, all on the fact-checking side. **Nothing here
+should be started while a training run is in flight**, and none of it is urgent.
+
+- [ ] **Run `factcheck`'s first pass — but establish the scoring delta first.**
+  The project has a fresh store, so `nli_ready_evidence_parquet` is outdated by
+  definition and `0bb6bb0` removed its early return. Scoped to `[GA1]` by
+  `fact_checking.assessments`, that is a **~12 GB** local cross-join rebuild
+  (not the 163 GB the whole `atomic_bm` tree would be: VA 61G, IAS 46G, BBA 39G,
+  GA1 12G, TCA 5.6G).
+
+  Do it in two steps, because unlike the key-paper chain this one may genuinely
+  need to score:
+
+  ```r
+  Sys.setenv(TAR_PROJECT = "factcheck")
+  targets::tar_make(names = "nli_ready_evidence_parquet")   # local only, no NLI
+  ```
+
+  Then compare its distinct `(claim, work)` count against the **2,429,848** rows
+  already scored for GA1. `score_one_claim()` delta-dispatches on the work set,
+  and the snowball was re-run for all five assessments in `855dab2`, so the
+  citing-works corpus may well have grown since those rows were scored — exactly
+  the condition the `ddf55b3` fix exists to catch. A non-zero delta is real GPU
+  work on however many pods are up; decide the scope deliberately rather than
+  letting `tar_make()` fan out.
+
+  Note the cross-join rebuild calls `complete_bm_fragments()` (an OpenRouter
+  path) under `atomic_bm`. It is backed by the per-fragment cache in
+  `output/claim_completion/raw/` (1,655 fragments) and operates on BM text
+  identical to what the key-paper chain already replayed, so it should make zero
+  calls — but it is not structurally incapable of one.
+
+- [ ] **Then Phase 2 for GA1**, separately and deliberately —
+  `llm_verification_parquet` spends real OpenRouter money and is *not* reached by
+  the `nli_scores_evidence_consolidated` stop point used above.
+
+- [ ] **Decide what happens to ~151 GB of now-unmaintained `nli_ready_evidence`.**
+  `fact_checking.assessments: [GA1]` means VA, IAS, BBA and TCA's `atomic_bm`
+  cross-joins (61 + 46 + 39 + 5.6 GB) are no longer rebuilt by any project, and
+  nothing deletes them. Their *scored* output is small and unaffected
+  (`output/nli_scores_evidence/`), and reporting still renders it. Keep them if
+  those assessments are coming back into `fact_checking.assessments`; otherwise
+  this is the single largest reclaim in `output/`.
+
+- [ ] **Consider parallelising `nli_bm_explorer_html`.** Measured 96.4 s across 15
+  branches (43.8 / 22.0 / 21.0 / 9.4 s for the four with data). Unlike
+  `nli_scores_qa_figures` — which is pinned `deployment = "main"` and so would not
+  benefit — the explorer runs on workers, so a controller in the reporting project
+  would actually help. Low value; noted because it was asked.
+
+### Standing
+
 - [ ] **Re-enable (or retire) the two "Overlap of Papers after 2018" tables.** Disabled
   2026-09-18 in `_targets_reporting.R` and `input/reports/IPBES_Fact_Checker.qmd` after
   `build_overlap_after_2018_background_messages_table()` crashed the machine: it collects
