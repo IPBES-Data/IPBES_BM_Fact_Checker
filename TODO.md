@@ -106,7 +106,7 @@ downstream consumption:
 - [ ] Merge phase: use `llm_label` where available, fall back to `nli_label` — not yet wired into `nli_overview_data`/the report
 - [ ] Human expert review of all `REFUTES` calls
 - [ ] Use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
-- [ ] `input/mmd/workflow_nli.mmd` (hand-authored conceptual diagram) needs updating for the `nli_labels`/`nli_certainty`/`nli_route`/per-row-partitioning changes to the LLM verification stage — the diagram's Phase 2 subgraph still reflects the earlier, simpler `REFUTES | uncertain` routing shown when it was first added, not the configurable per-row routing implemented since. Deliberately deferred, not forgotten.
+- [x] **DONE** — the hand-authored conceptual diagram's Phase 2 routing is current. `workflow_nli.mmd` no longer exists: it was re-cut into one file per targets project (`workflow_{main,factcheck,training,reporting}.mmd`), and `workflow_factcheck.mmd`'s Phase 2 node now states the real behaviour — routing by `nli_labels`/`nli_certainty` (REFUTES or SUPPORTS, certain only), every routed pair reviewed and tagged `direct_evidence_match` rather than filtered, verdicts demoted to NEI when the cited quote is not verbatim in the premise, and `nli_route=` per-row output partitioning.
 
 ## Done
 

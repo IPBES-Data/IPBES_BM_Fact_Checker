@@ -72,8 +72,8 @@ if (isTRUE(x$empty)) {
 ## Methodology
 
 Every Background Message (BM) in this assessment is split into claims by
-`nli_ready_evidence_parquet` under the currently active `granularity`
-setting (`input/config.yaml`'s `nli.active` config). This report is a
+`nli_ready_evidence_parquet` under the `granularity` of the NLI config
+selected by `input/config.yaml`'s `fact_checking.nli`. This report is a
 **QA check on that split, not a scoring result** — for every BM field, it
 shows the original `bm_description`/`bm_label` text with each resulting
 claim's source span colour-highlighted, followed by the claims themselves

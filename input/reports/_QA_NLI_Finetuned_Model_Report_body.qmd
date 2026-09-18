@@ -47,8 +47,7 @@ performance be spot-checked before deciding whether the resulting model is
 worth deploying. See `TD_NLI_training.qmd` for the full training-data
 strategy and fine-tuning design this implements.
 
-Only produced when the active nli config has `train: true` set in
-`input/config.yaml` — otherwise `nli_finetuned_model` writes an empty
+Only produced when `input/config.yaml` sets `training.finetune.enabled: true` — otherwise `nli_finetuned_model` writes an empty
 marker and this report shows the empty state below rather than a real
 result.
 
@@ -57,7 +56,7 @@ result.
 #| results: asis
 if (isTRUE(x$empty)) {
   cat(sprintf(
-    "No fine-tuned model for `nli_config: %s` — either `train: false` in input/config.yaml (the default), or a run that failed before completing. Set `train: true` for this config and re-run `tar_make(names = \"nli_finetuned_model\")` to produce one.\n\n",
+    "No fine-tuned model for `nli_config: %s` — either `training.finetune.enabled: false` in input/config.yaml (the default), or a run that failed before completing. Set it to true, point `training.nli` at this config, and re-run `tar_make(names = \"nli_finetuned_model\")` in the training project to produce one.\n\n",
     params$nli_config
   ))
   knitr::knit_exit()

@@ -123,7 +123,7 @@ already *implies* sufficient evidence — a separate level here would always
 contain exactly the same works as level 3.
 
 **NLI model: `r params$nli_active`.** Level 2/3 counts below reflect
-whichever model was active in `input/config.yaml`'s `nli.active` when this
+whichever model `input/config.yaml`'s `fact_checking.nli` selected when this
 report was rendered — different models are not directly comparable
 work-for-work either, since each has its own score distribution and
 `uncertain_threshold` calibration (see `TD_BM_NLI_approach.qmd`).
