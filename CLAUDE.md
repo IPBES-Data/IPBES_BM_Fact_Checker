@@ -36,15 +36,25 @@ remaining steps.
 
 | Project | Script / store | Holds | Credentials |
 |---|---|---|---|
-| `main` | `_targets.R` / `_targets/` | collection (LOD → refs → zotero → works → snowball → works_citing) **plus the citing-works scoring chain, not yet extracted** | `API_openalex` + `API_openrouter` |
-| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → fine-tune | `API_openrouter` only |
+| `main` | `_targets.R` / `_targets/` | collection only: LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
+| `factcheck` | `_targets_factcheck.R` / `_targets_factcheck/` | citing works → NLI (Phase 1) → LLM verification (Phase 2) | `API_openrouter` |
+| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → fine-tune | `API_openrouter` |
 | `reporting` | `_targets_reporting.R` / `_targets_reporting/` | everything that renders | **none** |
 
 ```r
 targets::tar_make()                                   # main (the default)
-Sys.setenv(TAR_PROJECT = "training"); targets::tar_make()
+Sys.setenv(TAR_PROJECT = "factcheck"); targets::tar_make()
 targets::tar_make(script = "_targets_reporting.R", store = "_targets_reporting")
 ```
+
+Each consumer declares the upstream outputs it reads as `format = "file"`
+targets **keeping the producing project's target names**, so the moved targets
+work verbatim and a genuine upstream change still invalidates downstream
+through content hashing. Two exceptions, both in `reporting` and both
+deliberate: `output/nli_ready_evidence` (163 GB) and
+`output/nli_training_finetuned` (42 GB) are passed as plain untracked path
+strings, because hashing them on every check would make the one project whose
+appeal is being fast and free slower than the scoring it reports on.
 
 **`main` keeps the original store deliberately.** A fresh store makes every
 target outdated by definition, and `download_works()` `unlink()`s its output
@@ -58,8 +68,14 @@ pipeline) and keeps a rollback available.
 
 **A fresh consumer store makes even a no-op pass do work.** Both scoring chains
 depend on `nli_pool_health`, which fails hard if any host in the active config
-is unreachable — so a training run that will delta-skip every claim still needs
-a live pool first. One pod in the active config's `host:` list satisfies it.
+is unreachable — so a run that will delta-skip every claim still needs a live
+pool first. One pod in the active config's `host:` list satisfies it.
+
+**`factcheck`'s first run pays a one-time 163 GB rebuild.** A fresh store makes
+`nli_ready_evidence_parquet` outdated by definition, and `0bb6bb0` removed its
+early return, so the `atomic_bm` cross-join is rebuilt from its real inputs —
+hours of local compute, no money. The output already on disk is not endangered;
+the rebuild reproduces it. Start it from a quiet point.
 
 **Cross-project state that no DAG describes** (named in
 `TODO_PIPELINE_SPLIT.md`): the per-host lock directory
@@ -107,7 +123,7 @@ triggering any of them. Note the fine-tuning gate is **currently open**: `bge_m3
 
 **Not wired into `_targets.R` (source files exist but no active target):** `R/build_fulltext.R`, `R/resolve_citations.R`, `R/write_sections_parquet.R`. Their corresponding outputs (`output/fulltext/`, `output/resolved_sections/`, `output/sections/`) are no longer produced by the live pipeline. `sections_parquet`/`sections_sparql` were **disabled 2026-09-15** (commented out in `_targets.R`, `output/sections/` deleted): nothing consumed them — no target took `sections_parquet` as an argument and no qmd read the dataset; its only ever consumer was `resolve_citations.R`, itself long orphaned — so it was paying a SPARQL extraction plus Fuseki round trip per assessment on every rebuild for output nothing read. `R/write_sections_parquet.R` and `queries/sections.sparql` both remain, so re-enabling is uncommenting the block in `_targets.R`.
 
-**Half-live: the original per-sentence scoring chain.** `nli_ready_parquet`, `nli_claim_units` and `nli_claim_units_flat` are still *active* targets, but the target that would consume them — `nli_scores_by_claim` — is commented out in `_targets.R` (just above `nli_claim_units_evidence`). So a bare `tar_make()` still builds the per-sentence cross-join and enumerates its claim units, and then nothing scores them; `output/nli_scores/` is empty (0 B). Everything downstream reads the evidence chain (`nli_scores_by_claim_evidence` → `output/nli_scores_evidence/`). `R/build_nli_ready_parquet.R`, `R/build_nli_claim_units.R` and the three targets are kept because NEXT_STEPS.md documents the evidence segmentation as a parallel *second* approach “not a replacement”, so the two can be scored and compared side by side — not because anything consumes them today. (Note `TD_BM_NLI_approach.qmd` does **not** cover the per-sentence arm at all; NEXT_STEPS.md is its only design record.) Uncommenting `nli_scores_by_claim` dispatches the whole per-sentence corpus at real GPU cost — see `R/build_nli_overview_data.R`'s row below for why that target is deliberately pointed at the evidence chain.
+**Parked: the original per-sentence scoring chain.** `nli_ready_parquet`, `nli_claim_units` and `nli_claim_units_flat` are now **commented out** in `_targets.R`, alongside their already-commented consumer `nli_scores_by_claim`. They were parked rather than carried into `_targets_factcheck.R` during the split: nothing consumes them, `output/nli_scores/` is 0 B and `output/nli_ready/` does not exist at all, so a fresh factcheck store would have built a second large cross-join for output no active target reads. Everything downstream reads the evidence chain (`nli_scores_by_claim_evidence` → `output/nli_scores_evidence/`). `R/build_nli_ready_parquet.R`, `R/build_nli_claim_units.R` and the three targets are kept because NEXT_STEPS.md documents the evidence segmentation as a parallel *second* approach “not a replacement”, so the two can be scored and compared side by side — not because anything consumes them today. (Note `TD_BM_NLI_approach.qmd` does **not** cover the per-sentence arm at all; NEXT_STEPS.md is its only design record.) Reviving the arm means moving the parked block into `_targets_factcheck.R` (which already has every target it needs) and uncommenting `nli_scores_by_claim`, which dispatches the whole per-sentence corpus at real GPU cost — see `R/build_nli_overview_data.R`'s row below for why that target is deliberately pointed at the evidence chain.
 
 ### Quarto Report
 

@@ -13,6 +13,9 @@
 main:
   script: _targets.R
   store: _targets
+factcheck:
+  script: _targets_factcheck.R
+  store: _targets_factcheck
 reporting:
   script: _targets_reporting.R
   store: _targets_reporting
