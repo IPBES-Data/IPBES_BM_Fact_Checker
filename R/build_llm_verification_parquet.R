@@ -344,6 +344,11 @@ build_llm_verification_parquet <- function(
   llm_candidate_scope_path,
   granularity,
   nli_scores_by_claim_evidence = NULL, # unused -- establishes the DAG dependency on Phase 1 scoring
+  # Relevance screen (R/build_llm_relevance_screen.R). BOTH default to NULL,
+  # i.e. no filtering: the threshold stays unset until validated against human
+  # labels, because a wrongly dropped pair is never reviewed and leaves no trace.
+  relevance_path = NULL,
+  relevance_threshold = NULL,
   cache_dir = "output/llm_verification/raw",
   output_root = "output/llm_verification/scores"
 ) {
@@ -385,6 +390,7 @@ build_llm_verification_parquet <- function(
     nli_scores_path, nli_ready_path,
     nli_labels = cfg$nli_labels, nli_certainty = cfg$nli_certainty
   )
+  candidates <- apply_relevance_screen(candidates, relevance_path, relevance_threshold)
   if (nrow(candidates)) {
     candidates <- tag_direct_evidence_match(candidates, llm_candidate_scope_path)
     message(sprintf(

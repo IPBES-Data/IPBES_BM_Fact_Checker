@@ -127,6 +127,32 @@ training:
 # boundary. `salt` is the version tag: changing it re-cuts every fold, which is
 # the only way the benchmark should ever change.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Relevance screen (R/build_llm_relevance_screen.R, input/mmd/overview.mmd).
+#
+# Sits between Phase 1 and Phase 2: a cheap model answers one narrow question
+# per pair -- does this paper bear on this claim at all? -- so the expensive
+# quoting LLM is not spent on pairs that cannot settle the claim either way.
+# $0.0000172/pair batched against gpt-4o-mini's $0.000149.
+#
+# It exists because quote_is_verbatim() checks a quote EXISTS, never that it
+# BEARS on the claim. Real REFUTES verdicts were found citing verbatim but
+# topically adjacent sentences -- a paper on flow regulation cited against a
+# claim about climate change extending invasive range. Every one passed.
+#
+# threshold: ~ means SCORE BUT DO NOT FILTER, and that is deliberate.
+# Measured on 300 stratified pairs, a 0.3 cutoff keeps 76% of true SUPPORTS --
+# so it discards ~24%, and whether those are marginal or real is unknown until
+# a human has read them. A wrongly dropped pair is never reviewed and leaves no
+# trace: no verdict, no failed check, nothing to audit. Set a number only after
+# validating it against human labels.
+# ---------------------------------------------------------------------------
+relevance_screen:
+  model: typesafe/jev-1.13
+  threshold: ~
+  batch_size: 20
+
 benchmark:
   holdout_fraction: 0.2
   salt: bench-v1

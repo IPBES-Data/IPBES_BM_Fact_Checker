@@ -133,6 +133,7 @@ list(
     llm_verification_config,
     yaml::read_yaml(config_file)[["llm_verification"]][["configs"]][[llm_verification_active]]
   ),
+  tar_target(relevance_config, yaml::read_yaml(config_file)[["relevance_screen"]]),
   tar_target(
     llm_verification_system_prompt_file,
     "input/prompts/llm_verification_system.md",
@@ -367,6 +368,34 @@ list(
   # crew/file-lock dispatch needed, since OpenRouter is a shared endpoint,
   # not a fixed host pool to load-balance across like the NLI RunPod pool).
   # nli_scores_by_claim_evidence is passed only to establish the DAG
+  # ---- relevance screen ----------------------------------------------------
+  # Screens only the ROUTED subset -- what cfg$nli_labels/nli_certainty select,
+  # currently 190,759 of GA1's 2.43M pairs. That is the cheap placement (~$3),
+  # and it does NOT touch the 2.24M pairs Phase 2 has never seen: 1.23M
+  # NOT_ENOUGH_INFO plus ~1.01M SUPPORTS/REFUTES-uncertain. Closing that recall
+  # blind spot means screening more than the routed set (~$39 for everything
+  # unreviewed), which is a separate, larger decision.
+  #
+  # Duplicated from _targets_training.R deliberately -- see the note there.
+  tar_target(
+    relevance_screen,
+    build_llm_relevance_screen(
+      assessment,
+      pairs = select_llm_verification_candidates(
+        file.path("output/nli_scores_evidence", paste0("granularity=", granularity),
+                  paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)),
+        nli_ready_evidence_parquet,
+        nli_labels = llm_verification_config$nli_labels,
+        nli_certainty = llm_verification_config$nli_certainty
+      ),
+      keypaper = FALSE,
+      model = relevance_config$model,
+      batch_size = relevance_config$batch_size
+    ),
+    pattern = map(assessment, nli_ready_evidence_parquet),
+    format = "file", deployment = "main"
+  ),
+
   # dependency on Phase 1 scoring, same convention as nli_overview_data.
   tar_target(
     llm_verification_parquet,
@@ -380,9 +409,11 @@ list(
       llm_verification_user_prompt_file,
       llm_candidate_scope_parquet,
       granularity,
-      nli_scores_evidence_consolidated
+      nli_scores_evidence_consolidated,
+      relevance_path = relevance_screen,
+      relevance_threshold = relevance_config$threshold
     ),
-    pattern = map(assessment, nli_ready_evidence_parquet, llm_candidate_scope_parquet),
+    pattern = map(assessment, nli_ready_evidence_parquet, llm_candidate_scope_parquet, relevance_screen),
     format = "file",
     # select_llm_verification_candidates() collect()s both the routed NLI
     # scores AND the full nli_ready_evidence premise table (title+abstract

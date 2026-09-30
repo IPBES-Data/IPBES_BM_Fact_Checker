@@ -43,6 +43,11 @@ build_llm_verification_keypaper_parquet <- function(
   system_prompt_file,
   user_prompt_file,
   nli_scores_keypaper_evidence = NULL, # unused -- establishes the DAG dependency on the key-paper NLI scoring chain
+  # Relevance screen (R/build_llm_relevance_screen.R). BOTH default to NULL,
+  # i.e. no filtering: the threshold stays unset until validated against human
+  # labels, because a wrongly dropped pair is never reviewed and leaves no trace.
+  relevance_path = NULL,
+  relevance_threshold = NULL,
   cache_dir = "output/llm_verification/raw_keypaper",
   output_root = "output/llm_verification/scores_keypaper"
 ) {
@@ -65,6 +70,7 @@ build_llm_verification_keypaper_parquet <- function(
     nli_scores_keypaper_path, nli_ready_keypaper_path,
     nli_labels = NULL, nli_certainty = NULL
   )
+  candidates <- apply_relevance_screen(candidates, relevance_path, relevance_threshold)
   if (!nrow(candidates)) {
     message(sprintf("[LLM verify keypaper %s] no key-paper pairs to review", assessment_id))
     # format = "file" targets require the returned path to actually exist --

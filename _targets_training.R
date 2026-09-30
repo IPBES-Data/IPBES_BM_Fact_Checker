@@ -145,6 +145,7 @@ list(
   # NOT a purpose block -- it selects no nli/llm config of its own; scope comes
   # from `training:`, because what is benchmarked is what `training:` produced.
   tar_target(benchmark_config, yaml::read_yaml(config_file)[["benchmark"]]),
+  tar_target(relevance_config, yaml::read_yaml(config_file)[["relevance_screen"]]),
   tar_target(
     assessment,
     {
@@ -279,6 +280,38 @@ list(
     deployment = "main"
   ),
 
+  # ---- relevance screen ----------------------------------------------------
+  # Screens EVERY key-paper pair, because this chain has no routing: Phase 2
+  # here reviews every pair unconditionally. That was right while key papers
+  # were "a small, bounded, high-importance set"; at 968,534 pairs (945k still
+  # unreviewed, ~$140 at gpt-4o-mini rates) it is no longer small, which is
+  # what a screen is for.
+  #
+  # Duplicated rather than shared with the fact-checking project, deliberately:
+  # the two chains score DIFFERENT pairs (claims x key papers vs claims x
+  # citing works, 1.35% overlap), their claim sets depend on each purpose
+  # block's own granularity, and after deployment they run different NLI models
+  # -- fact checking on the fine-tune, this chain left on zero-shot to avoid
+  # training on labels the model itself shaped. Only the ~8-line declaration is
+  # duplicated; the function lives once in R/.
+  tar_target(
+    relevance_screen_keypaper,
+    build_llm_relevance_screen(
+      assessment,
+      pairs = select_llm_verification_candidates(
+        file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity),
+                  paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)),
+        nli_ready_evidence_keypaper_parquet,
+        nli_labels = NULL, nli_certainty = NULL
+      ),
+      keypaper = TRUE,
+      model = relevance_config$model,
+      batch_size = relevance_config$batch_size
+    ),
+    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
+    format = "file", deployment = "main"
+  ),
+
   # ---- key-paper Phase 2 LLM verification ----------------------------------
   # Reviews EVERY key paper's NLI-scored pair, irrespective of
   # nli_labels/nli_certainty -- unlike the citing-works chain, which routes by
@@ -298,7 +331,9 @@ list(
       llm_verification_config,
       llm_verification_system_prompt_file,
       llm_verification_user_prompt_file,
-      nli_scores_keypaper_evidence_consolidated
+      nli_scores_keypaper_evidence_consolidated,
+      relevance_path = relevance_screen_keypaper,
+      relevance_threshold = relevance_config$threshold
     ),
     pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
     format = "file",
