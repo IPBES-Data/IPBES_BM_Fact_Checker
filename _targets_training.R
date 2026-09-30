@@ -1,6 +1,6 @@
 # Training pipeline -- key papers -> NLI -> LLM -> training set -> fine-tune.
 #
-# One of four projects (see TODO_PIPELINE_SPLIT.md and _targets.yaml):
+# One of four projects (see TD_targets.qmd and _targets.yaml):
 #
 #   _targets.R             collection: LOD -> refs -> zotero -> works ->
 #                          snowball -> works_citing. Keeps the ORIGINAL
@@ -56,7 +56,7 @@ tar_option_set(
   # projects run at once they contend for the same hosts, which is exactly the
   # behaviour wanted -- one pool, one queue. It is, however, the one piece of
   # cross-project state that no DAG describes, alongside the two LLM caches
-  # named in TODO_PIPELINE_SPLIT.md's "Cross-project contracts".
+  # named in TD_targets.qmd's "Cross-project contracts".
   controller = crew::crew_controller_local(
     workers = tryCatch({
       cfg <- yaml::read_yaml("input/config.yaml")
@@ -141,6 +141,10 @@ list(
     assessments_list,
     purpose_assessments_list(yaml::read_yaml(config_file), "training")
   ),
+  # Benchmark holdout + the models to evaluate (TD_NLI_training.qmd). Deliberately
+  # NOT a purpose block -- it selects no nli/llm config of its own; scope comes
+  # from `training:`, because what is benchmarked is what `training:` produced.
+  tar_target(benchmark_config, yaml::read_yaml(config_file)[["benchmark"]]),
   tar_target(
     assessment,
     {
@@ -331,7 +335,9 @@ list(
       nli_active,
       llm_verification_active,
       granularity,
-      "output/nli_training"
+      "output/nli_training",
+      benchmark_salt = benchmark_config$salt,
+      holdout_fraction = benchmark_config$holdout_fraction
     ),
     pattern = map(
       assessment, llm_verification_keypaper_parquet,
@@ -358,6 +364,59 @@ list(
       nli_train_enabled, nli_active,
       downsample_seed = nli_downsample_seed,
       nli_training_data_dep = nli_training_data
+    ),
+    format = "file",
+    deployment = "main"
+  ),
+
+  # ---- benchmark: held-out evaluation of every model ------------------------
+  # TD_NLI_training.qmd. Four targets here rather than a fifth targets project:
+  # benchmarking is the evaluation half of training, not a separate process
+  # (nobody runs it without caring about a training run), and folding it in is
+  # what makes the nli_finetuned_model edge below possible at all -- across a
+  # project boundary the benchmark would have to re-declare the 42 GB
+  # output/nli_training_finetuned/ tree as a tracked input, which _targets_reporting.R
+  # already refuses to do for exactly that reason.
+  #
+  # The holdout itself is a `split` column on nli_training_data, not a target:
+  # it is one derived column on 2,436 rows, grouped by (assessment, bm) and
+  # assigned by hash so growing the corpus never moves a BM across the
+  # boundary. See R/build_nli_training_data.R.
+  tar_target(
+    benchmark_models,
+    nli_benchmark_models(benchmark_config$baseline_model),
+    iteration = "list"
+  ),
+  # TWO mechanisms, two jobs -- worth keeping straight:
+  #   * ENUMERATION is the disk scan inside nli_benchmark_models(): runs
+  #     accumulate and no config key tracks them.
+  #   * INVALIDATION is nli_finetuned_model below, passed as a bare,
+  #     never-read argument purely for the DAG edge (it branches differently,
+  #     so a real pattern= dependency isn't possible) -- the same convention
+  #     nli_scores_qa_data and nli_finetuned_model itself already use. It is
+  #     already format = "file", so this costs no extra hashing, and it means
+  #     a new checkpoint marks the benchmark stale without anyone remembering.
+  #
+  # CONSEQUENCE: benchmark_scores is now downstream of a ~25 min local training
+  # run. Naming it while nli_finetuned_model is outdated STARTS one. Use
+  # shortcut = TRUE to benchmark the checkpoints already on disk.
+  tar_target(
+    benchmark_scores,
+    build_nli_benchmark_scores(
+      benchmark_models,
+      nli_active,
+      nli_finetuned_model_dep = nli_finetuned_model
+    ),
+    pattern = map(benchmark_models),
+    format = "file",
+    deployment = "main"
+  ),
+  tar_target(
+    nli_benchmark_qa_data,
+    build_nli_benchmark_metrics(
+      benchmark_scores,
+      nli_active = nli_active,
+      benchmark_config = benchmark_config
     ),
     format = "file",
     deployment = "main"

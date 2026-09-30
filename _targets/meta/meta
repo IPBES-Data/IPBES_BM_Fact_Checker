@@ -5845,12 +5845,14 @@ report_fact_checker|stem|c880aed6da9dd88e|16ba0334490455e9|f88ba983d4818ecd|-190
 report_output_dir|stem|121bd7a56445e8de|ef4b6411ac1f8e0b|09ce24ee842c01c0|1514037686|output/reports/.nojekyll*output/reports/CLAUDE.md*output/reports/index.html*output/reports/IPBES_Fact_Checker_files/libs/bootstrap/bootstrap-917079515d91bccb85b543faf8aa8bb6.min.css*output/reports/IPBES_Fact_Checker_files/libs/bootstrap/bootstrap-icons.css*output/reports/IPBES_Fact_Checker_files/libs/bootstrap/bootstrap-icons.woff*output/reports/IPBES_Fact_Checker_files/libs/bootstrap/bootstrap.min.js*output/reports/IPBES_Fact_Checker_files/libs/clipboard/clipboard.min.js*output/reports/IPBES_Fact_Checker_files/libs/crosstalk-1.2.2/css/crosstalk.min.css*output/reports/IPBES_Fact_Checker_files/libs/crosstalk-1.2.2/js/crosstalk.js*output/reports/IPBES_Fact_Checker_files/libs/crosstalk-1.2.2/js/crosstalk.js.map*output/reports/IPBES_Fact_Checker_files/libs/crosstalk-1.2.2/js/crosstalk.min.js*output/reports/IPBES_Fact_Checker_files/libs/crosstalk-1.2.2/js/crosstalk.min.js.map*output/reports/IPBES_Fact_Checker_files/libs/crosstalk-1.2.2/scss/crosstalk.scss*output/reports/IPBES_Fact_Checker_files/libs/datatables-binding-0.34.0/datatables.js*output/reports/IPBES_Fact_Checker_files/libs/datatables-css-0.0.0/datatables-crosstalk.css*output/reports/IPBES_Fact_Checker_files/libs/dt-core-1.13.6/css/jquery.dataTables.extra.css*output/reports/IPBES_Fact_Checker_files/libs/dt-core-1.13.6/css/jquery.dataTables.min.css*output/reports/IPBES_Fact_Checker_files/libs/dt-core-1.13.6/js/jquery.dataTables.min.js*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-buttons-1.13.6/css/buttons.dataTables.min.css*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-buttons-1.13.6/js/buttons.colVis.min.js*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-buttons-1.13.6/js/buttons.html5.min.js*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-buttons-1.13.6/js/buttons.print.min.js*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-buttons-1.13.6/js/dataTables.buttons.min.js*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-fixedcolumns-1.13.6/css/fixedColumns.dataTables.min.css*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-fixedcolumns-1.13.6/js/dataTables.fixedColumns.min.js*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-scroller-1.13.6/css/scroller.dataTables.min.css*output/reports/IPBES_Fact_Checker_files/libs/dt-ext-scroller-1.13.6/js/dataTables.scroller.min.js*output/reports/IPBES_Fact_Checker_files/libs/htmltools-fill-0.5.9/fill.css*output/reports/IPBES_Fact_Checker_files/libs/htmlwidgets-1.6.4/htmlwidgets.js*output/reports/IPBES_Fact_Checker_files/libs/jquery-3.6.0/jquery-3.6.0.js*output/reports/IPBES_Fact_Checker_files/libs/jquery-3.6.0/jquery-3.6.0.min.js*output/reports/IPBES_Fact_Checker_files/libs/jquery-3.6.0/jquery-3.6.0.min.map*output/reports/IPBES_Fact_Checker_files/libs/jszip-1.13.6/jszip.min.js*output/reports/IPBES_Fact_Checker_files/libs/pdfmake-1.13.6/pdfmake.js*output/reports/IPBES_Fact_Checker_files/libs/pdfmake-1.13.6/vfs_fonts.js*output/reports/IPBES_Fact_Checker_files/libs/quarto-html/anchor.min.js*output/reports/IPBES_Fact_Checker_files/libs/quarto-html/popper.min.js*output/reports/IPBES_Fact_Checker_files/libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css*output/reports/IPBES_Fact_Checker_files/libs/quarto-html/quarto.js*output/reports/IPBES_Fact_Checker_files/libs/quarto-html/tabsets/tabsets.js*output/reports/IPBES_Fact_Checker_files/libs/quarto-html/tippy.css*output/reports/IPBES_Fact_Checker_files/libs/quarto-html/tippy.umd.min.js*output/reports/IPBES_Fact_Checker.html*output/reports/IPBES_REFUTES_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.html*output/reports/IPBES_REFUTES_Report_GA1_bge_m3_zeroshot_complete_bm_complete_bm.html*output/reports/IPBES_REFUTES_Report_GA1_bge_m3_zeroshot_naive_bm_naive_bm.html*output/reports/IPBES_REFUTES_Report_IAS_bge_m3_zeroshot_atomic_bm_atomic_bm.html*output/reports/IPBES_REFUTES_Report_IAS_bge_m3_zeroshot_complete_bm_complete_bm.html*output/reports/IPBES_REFUTES_Report_IAS_bge_m3_zeroshot_naive_bm_naive_bm.html*output/reports/IPBES_SUPPORTS_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.html*output/reports/IPBES_SUPPORTS_Report_GA1_bge_m3_zeroshot_complete_bm_complete_bm.html*output/reports/IPBES_SUPPORTS_Report_GA1_bge_m3_zeroshot_naive_bm_naive_bm.html*output/reports/IPBES_SUPPORTS_Report_IAS_bge_m3_zeroshot_atomic_bm_atomic_bm.html*output/reports/IPBES_SUPPORTS_Report_IAS_bge_m3_zeroshot_complete_bm_complete_bm.html*output/reports/IPBES_SUPPORTS_Report_IAS_bge_m3_zeroshot_naive_bm_naive_bm.html*output/reports/QA_BM_Split_Report_GA1_atomic_bm.html*output/reports/QA_BM_Split_Report_GA1_complete_bm.html*output/reports/QA_BM_Split_Report_GA1_naive_bm.html*output/reports/QA_BM_Split_Report_IAS_atomic_bm.html*output/reports/QA_BM_Split_Report_IAS_complete_bm.html*output/reports/QA_BM_Split_Report_IAS_naive_bm.html*output/reports/QA_LLM_Verification_Report_GA1_openrouter_cheap.html*output/reports/QA_NLI_Finetuned_Model_Report_bge_m3_zeroshot_atomic_bm.html*output/reports/QA_NLI_Scores_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.html*output/reports/QA_NLI_Scores_Report_GA1_bge_m3_zeroshot_complete_bm_complete_bm.html*output/reports/QA_NLI_Scores_Report_GA1_bge_m3_zeroshot_naive_bm_naive_bm.html*output/reports/QA_NLI_Scores_Report_IAS_bge_m3_zeroshot_atomic_bm_atomic_bm.html*output/reports/QA_NLI_Scores_Report_IAS_bge_m3_zeroshot_complete_bm_complete_bm.html*output/reports/QA_NLI_Scores_Report_IAS_bge_m3_zeroshot_naive_bm_naive_bm.html*output/reports/QA_NLI_Training_Data_Report_GA1_bge_m3_zeroshot_atomic_bm_atomic_bm.html*output/reports/TD_BM_NLI_approach.html*output/reports/TD_formatting.html*output/reports/TD_LLM_approach.html*output/reports/TD_NLI_LLM_two_phase.html*output/reports/TD_NLI_training.html*output/reports/TD_targets.html|t20714.6955848758s|s97492378b|97492378|file|local|vector|||0.032||
 report|stem|f5f4cca7db61f13a|c480da5936ba5ada|460ca7711bc49472|787668912||t20714.6964376537s|s168b|168|rds|local|vector|||0||
 diagram_pipeline_nli|stem|a62ee462ba0eeb16|2f85f188e02adcb6|12320b3c33ae8763|425344336|output/figures/pipeline_main.svg*output/figures/pipeline_main.png|t20714.7414963652s|s1482178b|1482178|file|local|vector|||3.668||
-mmd_workflow_main|stem|006335ea0f406495|3efa87f758dc916e|2c530c1562a7fbd1|-605594242|input/mmd/workflow_main.mmd|t20714.7431500196s|s16101b|16101|file|local|vector|||1.702||
-diagram_workflow_main|stem|c8b3679ee5766b32|0d847ef48396b3be|ebd5a80cbb6a55a4|-967997454|output/figures/workflow_main.svg*output/figures/workflow_main.png|t20714.7446526811s|s451071b|451071|file|local|vector|||3.391||
 nli_cfg|object|0a3ab84ac4570b00
-config_file|stem|c86780a956de40a4|8a509d56b3459c7e|2c530c1562a7fbd1|-615108176|input/config.yaml|t20714.7690039035s|s20989b|20989|file|local|vector|||1.706||
-assessments_list|stem|8bdae096624f4c20|b872f4fd4b4abdf0|d822795cc6fe169e|-2022784872||t20714.7781704477s|s328b|328|rds|local|vector|||0.001||
-sparql_url|stem|1d600099f49684d7|443fe57c0fb6e0d7|d822795cc6fe169e|265476876||t20714.7799185877s|s59b|59|rds|local|vector|||0.001||
+config_file|stem|b0610b7fd25e27d9|8a509d56b3459c7e|2c530c1562a7fbd1|-615108176|input/config.yaml|t20714.7916845797s|s22883b|22883|file|local|vector|||1.739||
+sparql_url|stem|1d600099f49684d7|443fe57c0fb6e0d7|f31a97f2232e7e79|265476876||t20724.5231713352s|s59b|59|rds|local|vector|||0.001||
+assessments_list|stem|8bdae096624f4c20|b872f4fd4b4abdf0|f31a97f2232e7e79|-2022784872||t20724.5231713907s|s328b|328|rds|local|vector|||0||
+r_files|stem|4a735d7f49984b88|5346fc6fd5a62417|2c530c1562a7fbd1|969205733|_targets.R*R/branch_helpers.R*R/build_bm_split_highlighted.R*R/build_claim_completion.R*R/build_fig_pub_per_year.R*R/build_fulltext.R*R/build_label_funnel_data.R*R/build_label_funnel_figures.R*R/build_label_funnel_tables.R*R/build_llm_candidate_scope_parquet.R*R/build_llm_verification_keypaper_parquet.R*R/build_llm_verification_parquet.R*R/build_llm_verification_qa_data.R*R/build_llm_verification_qa_figures.R*R/build_nli_bm_explorer.R*R/build_nli_claim_units.R*R/build_nli_finetuned_model_qa_data.R*R/build_nli_finetuned_model.R*R/build_nli_overview_data.R*R/build_nli_overview_figures.R*R/build_nli_ready_evidence_keypaper_parquet.R*R/build_nli_ready_evidence_parquet.R*R/build_nli_ready_parquet.R*R/build_nli_scores_qa_data.R*R/build_nli_scores_qa_figures.R*R/build_nli_training_data.R*R/build_nli_training_qa_data.R*R/build_overlap_after_2018_background_messages_table.R*R/build_overlap_after_2018_sub_messages_table.R*R/build_overlap_key_paper_table.R*R/build_report_output_dir.R*R/build_snowball_parquet.R*R/build_works_citing_parquet.R*R/check_nli_pool_health.R*R/clean_text.R*R/consolidate_nli_scores.R*R/download_ttls.R*R/download_works.R*R/download_zotero.R*R/extract_lod.R*R/find_orphaned_nli_scores.R*R/generate_report_wrappers.R*R/manage_fuseki.R*R/migrate_nli_scores_consolidate.R*R/nli_http_helpers.R*R/render_diagrams.R*R/report_nli_backlog.R*R/resolve_citations.R*R/score_one_claim.R*R/write_key_messages_parquet.R*R/write_refs_parquet.R*R/write_sections_parquet.R|t20714.7865724838s|s434446b|434446|file|local|vector|||1.586||
+pipeline_mmd|stem|c2ea24470ba1aa73|d55605e575be934e|d4cd03d30dd3ab0f|-164121517|input/mmd/pipeline_main.mmd|t20724.5238998531s|s1817b|1817|file|local|vector|||1.868||
+diagram_pipeline_main|stem|8b4b2ecc72f30fcb|2f85f188e02adcb6|77fa18d7c1592bd7|1394293319|output/figures/pipeline_main.svg*output/figures/pipeline_main.png|t20724.5241197078s|s514994b|514994|file|local|vector|||18.986||
+mmd_workflow_main|stem|a7816858c50e15a8|3efa87f758dc916e|2c530c1562a7fbd1|-605594242|input/mmd/workflow_main.mmd|t20714.802801008s|s7676b|7676|file|local|vector|||1.619||
 nli_scores_path_cols|object|d760333d84122e98
 read_consolidated_group|function|99a3d49de162b3b9
 write_if_changed|function|b6f53541b340d717
@@ -5881,6 +5883,7 @@ render_template|function|48a8db5605bb43f0
 nli_route_label|function|8bb48a754845ddc3
 build_nli_training_qa_data|function|9fa253545b49f415
 nli_config_for_granularity|function|623e07d65a3951a5
+purpose_config|function|3b17d32aa9d79713
 branch_output_dir|function|6f401328a4b9575a
 resolve_lod_endpoint|function|6d7679ec1f7f22d4
 write_refs_parquet|function|d4675cddc66fc8f6
@@ -5896,7 +5899,7 @@ works_citing_meta_root|function|fadaa2c902db1424
 claim_completion_connective_stopwords|object|4e47382da489b0c1
 nli_health|function|3785a2c2aa7991fd
 nli_scores_qa_datatable|function|54248e0c817af46e
-rl|object|8236cea22f079119
+rl|object|58400b5f112ce0b6
 bm_highlight_regex_escape|function|7c4020ec73b4ecde
 report_wrapper_labels|function|0745451395298a40
 report_wrapper_default_granularities|function|3d6902450e5739ca
@@ -5944,7 +5947,8 @@ build_nli_bm_explorer|function|f82ed7dd75b4d1a1
 llm_verification_qa_alluvial_plot|function|fc0ec2b13f9fa03b
 report_wrapper_lines|function|a49557451e212b84
 select_llm_verification_candidates|function|790344b34327c052
-nli_backlog_report|function|cc9fc5e1b90c0e0d
+nli_backlog_report|function|3e7f59f764994b4d
+purpose_assessments_list|function|ba0f22eefd32a45c
 download_works|function|ffde34ddb58488af
 download_ttl|function|a1341e281ccb212b
 stop_fuseki_session|function|3144aa9096c58d1e
@@ -5954,11 +5958,11 @@ build_works_citing_parquet|function|b64580d61827265f
 claim_completion_is_faithful|function|212e22e885615b97
 build_nli_scores_qa_data|function|cb86deb5863ac725
 bm_highlight_flexible_pattern|function|4eb8bbb6be1fefe9
-report_wrapper_combinations|function|35da2e771fc36ae6
+report_wrapper_combinations|function|a034546ecf2577b4
 alignement_branch_dir|function|269b2cd6e90f8dc4
 download_zotero|function|08305864b6527b19
 tokenize_evidence_field|function|e7c6190258483cff
-find_orphaned_nli_scores_all|function|6759e92b466cdfa8
+find_orphaned_nli_scores_all|function|ac24fcbafe599c43
 clean_abstract|function|7c2067e3c6bf977d
 clean_title|function|df5b63bd17954c54
 read_sparql_query|function|586233eed73b594c
@@ -5966,7 +5970,7 @@ start_fuseki|function|8d2c8ff443dca7f5
 nli_classify_url|function|bb254ec83c615e50
 nli_hosts|function|5a48bd6ada2e25aa
 build_llm_verification_qa_data|function|d4ab9da6dcadbd46
-migrate_nli_scores_consolidate_all|function|963ea107f9656764
+migrate_nli_scores_consolidate_all|function|5382c20e6d184e60
 build_nli_scores_qa_figures|function|cd077d9f2f8f8fd5
 segment_bm_atomic_raw|function|d875387a0fffab10
 segment_bm_atomic|function|f619fb5e3712acc4
@@ -5984,7 +5988,7 @@ build_llm_verification_keypaper_parquet|function|7da4735028108f37
 download_ttls|function|19a6118975a30c39
 complete_bm_fragments|function|656d687132198eb8
 bm_highlight_locate_segments|function|3ea409d5806b4d86
-generate_report_wrappers|function|6c5dc42a502c0ac9
+generate_report_wrappers|function|8ba1b838bd9e603b
 build_nli_ready_parquet|function|bfacaec5dc2b8472
 extract_refs_from_endpoint|function|28f95c1df922070c
 extract_sections_from_endpoint|function|d5f610ef88c07ce6
@@ -6002,5 +6006,4 @@ build_sections_parquet|function|9a500a604754b06c
 build_key_messages_parquet|function|1a02b0e88d088f28
 build_llm_candidate_scope_parquet|function|b486a771b2b0c718
 build_bm_split_highlighted|function|8b02a8897a8075a8
-r_files|stem|5898724ca4da46b4|5346fc6fd5a62417|2c530c1562a7fbd1|969205733|_targets.R*R/branch_helpers.R*R/build_bm_split_highlighted.R*R/build_claim_completion.R*R/build_fig_pub_per_year.R*R/build_fulltext.R*R/build_label_funnel_data.R*R/build_label_funnel_figures.R*R/build_label_funnel_tables.R*R/build_llm_candidate_scope_parquet.R*R/build_llm_verification_keypaper_parquet.R*R/build_llm_verification_parquet.R*R/build_llm_verification_qa_data.R*R/build_llm_verification_qa_figures.R*R/build_nli_bm_explorer.R*R/build_nli_claim_units.R*R/build_nli_finetuned_model_qa_data.R*R/build_nli_finetuned_model.R*R/build_nli_overview_data.R*R/build_nli_overview_figures.R*R/build_nli_ready_evidence_keypaper_parquet.R*R/build_nli_ready_evidence_parquet.R*R/build_nli_ready_parquet.R*R/build_nli_scores_qa_data.R*R/build_nli_scores_qa_figures.R*R/build_nli_training_data.R*R/build_nli_training_qa_data.R*R/build_overlap_after_2018_background_messages_table.R*R/build_overlap_after_2018_sub_messages_table.R*R/build_overlap_key_paper_table.R*R/build_report_output_dir.R*R/build_snowball_parquet.R*R/build_works_citing_parquet.R*R/check_nli_pool_health.R*R/clean_text.R*R/consolidate_nli_scores.R*R/download_ttls.R*R/download_works.R*R/download_zotero.R*R/extract_lod.R*R/find_orphaned_nli_scores.R*R/generate_report_wrappers.R*R/manage_fuseki.R*R/migrate_nli_scores_consolidate.R*R/nli_http_helpers.R*R/render_diagrams.R*R/report_nli_backlog.R*R/resolve_citations.R*R/score_one_claim.R*R/write_key_messages_parquet.R*R/write_refs_parquet.R*R/write_sections_parquet.R|t20714.7769304187s|s430237b|430237|file|local|vector|||1.741||
-pipeline_mmd|stem|c2ea24470ba1aa73|d55605e575be934e|27972e90ee94ddde|-164121517|input/mmd/pipeline_main.mmd|t20714.7817689318s|s1817b|1817|file|local|vector|||2.216||
+diagram_workflow_main|stem|4655ec9d61d82523|0d847ef48396b3be|c75854885bf35231|-967997454|output/figures/workflow_main.svg*output/figures/workflow_main.png|t20724.5247231681s|s441174b|441174|file|local|vector|||1.911||

@@ -1,0 +1,226 @@
+---
+title: "QA: NLI Model Benchmark"
+subtitle: Held-out evaluation across the zero-shot baseline and every fine-tuned checkpoint
+date: today
+format:
+    html:
+        toc-depth: 5
+        toc_expand: true
+---
+
+```{r}
+#| label: targets-dependencies
+#| include: false
+
+# Named literally so tar_quarto() turns this into a real dependency edge.
+# Hand-written rather than generated from config.yaml's `reports:` block:
+# there is no dimension to expand over -- one report covers every model.
+qa <- readRDS(targets::tar_read(nli_benchmark_qa_data))
+
+library(dplyr)
+library(ggplot2)
+library(knitr)
+
+pct <- function(x) ifelse(is.na(x), "--", sprintf("%.1f%%", 100 * x))
+```
+
+## What this measures, and what it does not
+
+**It measures agreement with `gpt-4o-mini`.** Every label in the holdout comes
+from Phase 2's grounded, quote-checked LLM verdict. Fine-tuning distils that
+judgment into the NLI model and this report scores how well the distillation
+worked. It does not measure truth: the LLM's verdicts have never been checked
+against human labels. That is a ceiling, not a flaw — distilling an expensive
+accurate judge into a cheap one is the point — but every number below inherits
+it.
+
+Design and reasoning: [TD_NLI_training](TD_NLI_training.html).
+
+```{r}
+#| label: fold
+#| echo: false
+f <- qa$fold
+kable(data.frame(
+  Property = c("benchmark salt", "holdout fraction", "grouping key",
+               "train rows", "test rows", "train groups", "test groups",
+               "claims in BOTH folds", "works in both folds",
+               "test rows involving a shared work"),
+  Value = c(f$salt, f$holdout_fraction, f$group_key,
+            f$n_train, f$n_test, f$n_groups_train, f$n_groups_test,
+            f$claims_in_both_folds,
+            sprintf("%d of %d (%s)", f$works_in_both_folds, f$works_total,
+                    pct(f$works_in_both_folds / f$works_total)),
+            sprintf("%d (%s)", f$test_rows_with_shared_work,
+                    pct(f$test_rows_with_shared_work / f$n_test)))
+), caption = "Holdout composition and leakage diagnostics")
+```
+
+**`claims in BOTH folds` must be 0.** The holdout is grouped by
+`(assessment, bm)` — deliberately *without* `km`, because one Background
+Message belongs to several Key Messages and carries byte-identical claim text
+under each. Grouping on `(assessment, km, bm)` looked tighter and was measurably
+leakier: 141 groups, 126 claim strings present in both folds. If this number is
+ever non-zero, the grouping key has drifted.
+
+**Work overlap is reported, not eliminated.** A work cited under several BMs can
+appear on both sides paired with *different* claims. That is much weaker than
+claim-text leakage — the model sees the premise, never the pair or its label —
+and closing it needs a connected-component split that at this size yields a few
+huge unbalanced components, trading a small measurable bias for a large
+unmeasurable one. Judge the headline numbers with the percentage above in mind.
+
+## Models under test
+
+```{r}
+#| label: models
+#| echo: false
+kable(qa$models |> select(model_id, mode, split_aware, max_length, n_rows, n_truncated),
+      caption = "Scored models. `zeroshot` = 3 forward passes per row with the deployed hypothesis template, entailment logits cross-normalised. `direct` = the fine-tuned head's own 3-way softmax. `split_aware` is NA for the untrained baseline.")
+```
+
+::: {.callout-important}
+## `split_aware = FALSE` means the scores below are contaminated
+
+A checkpoint trained **before** the holdout existed was trained on rows drawn
+from the whole pool — including what is now the test fold. Its score here is
+recall on memorised rows, not generalisation.
+
+This is not hypothetical. The larger pre-split run trained on 558 of the
+corpus's 562 REFUTES rows, so roughly **169 of the test fold's 170 REFUTES were
+in its training data**, and it duly posts the best numbers in every table below.
+
+Those runs are shown rather than hidden, because they are the clearest available
+evidence for *how badly a leaking split flatters a model* — which is the finding
+that motivated this benchmark. But **no table below is a ranking**. Compare only
+rows where `split_aware` is `TRUE` against the baseline.
+:::
+
+One asymmetry that runs the other way, and makes the honest result
+conservative: the fine-tuned models are scored at the 512 tokens they were
+trained on, and 141 of 467 premises (30%) hit that limit, against 3 for the
+baseline at its deployed 2048. The fine-tuned models are working from truncated
+abstracts where the baseline is not.
+
+The baseline is scored the way it is actually **deployed** — a binary
+entailment head cannot emit SUPPORTS/REFUTES/NEI directly, so each candidate
+label is folded into its own reformulated hypothesis and the three entailment
+logits are cross-normalised. A baseline scored differently from how it runs in
+production is not a baseline.
+
+One caveat on exactness: the deployed pipeline cleans the premise
+(`clean_title()`/`clean_abstract()` strip HTML/JATS/LaTeX) while this benchmark
+uses raw `title`/`abstract`, matching what `train_nli.py` trains on. Spot-checked
+against real deployed scores, local and production probabilities agree to ~4
+decimal places on clean abstracts and diverge on marked-up ones.
+
+## The headline: SUPPORTS → REFUTES recovery
+
+60% of every confirmed refutation in this corpus is a pair the zero-shot model
+called **SUPPORTS** and the LLM overturned. It did not merely miss them — it got
+them backwards. So the question that decides whether fine-tuning did this
+project's job is: of the holdout rows where NLI said SUPPORTS and the truth is
+REFUTES, how many does each model now call REFUTES?
+
+```{r}
+#| label: flip
+#| echo: false
+qa$flip |>
+  left_join(qa$models |> select(model, model_id, split_aware), by = "model") |>
+  transmute(model_id, split_aware, n_subset, n_recovered, recovery_rate = pct(recovery_rate)) |>
+  arrange(desc(n_recovered)) |>
+  kable(caption = "Rows where NLI said SUPPORTS and the truth is REFUTES. Read only the split_aware = TRUE rows against the baseline (NA).")
+```
+
+A checkpoint that does not move this number has not earned deployment, whatever
+its macro-F1 says.
+
+## Per-class performance
+
+Accuracy is deliberately absent. The holdout is near-balanced while deployment
+is 0.2–3% REFUTES, so a balanced-set accuracy flatters every model equally and
+predicts nothing about the real stream. REFUTES precision and recall are given
+separately and never folded into F1 for the headline: a missed refutation is a
+finding that never surfaces, a false one is a claim a human discards in seconds,
+and F1 assumes those cost the same.
+
+```{r}
+#| label: per-class
+#| echo: false
+qa$per_class |>
+  left_join(qa$models |> select(model, model_id, split_aware), by = "model") |>
+  transmute(model_id, split_aware, label, precision = pct(precision), recall = pct(recall),
+            f1 = pct(f1), support) |>
+  arrange(label, model_id) |>
+  kable()
+```
+
+```{r}
+#| label: confusion
+#| echo: false
+qa$confusion |>
+  left_join(qa$models |> select(model, model_id), by = "model") |>
+  tidyr::pivot_wider(id_cols = c(model_id, label), names_from = pred_label,
+                     values_from = n, values_fill = 0) |>
+  arrange(model_id, label) |>
+  kable(caption = "Confusion matrix: rows = LLM verdict (truth), columns = model prediction")
+```
+
+## Threshold sweep
+
+Phase 1 stores the full probability distribution and every threshold decision is
+made downstream in `dplyr`, so a single argmax operating point would describe
+neither the model nor the deployment. Framed as a REFUTES detector — predict
+REFUTES iff `p_refutes >= t` — which is what these scores are actually used for.
+This is also where the re-calibrated deployment threshold comes from: the
+base-rate shift between a balanced training fold and a 0.2% deployment stream
+guarantees an argmax classifier over-predicts REFUTES in production.
+
+```{r}
+#| label: sweep
+#| echo: false
+#| fig-width: 9
+#| fig-height: 5
+qa$threshold_sweep |>
+  left_join(qa$models |> select(model, model_id), by = "model") |>
+  tidyr::pivot_longer(c(precision, recall), names_to = "metric", values_to = "value") |>
+  ggplot(aes(threshold, value, colour = model_id, linetype = metric)) +
+  geom_line(linewidth = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(x = "p_refutes threshold", y = NULL, colour = "model", linetype = NULL,
+       title = "REFUTES detection: precision and recall across thresholds") +
+  theme_minimal() +
+  theme(legend.position = "bottom", legend.box = "vertical")
+```
+
+## Per assessment
+
+558 of 562 REFUTES in the pool come from GA1 and IAS, so a pooled number mostly
+measures those two. TCA and VA are shown separately even though their counts are
+tiny — "we cannot tell" is a legitimate and useful result, and whether anything
+learned here generalises beyond GA1/IAS is an open question.
+
+```{r}
+#| label: by-assessment
+#| echo: false
+qa$by_assessment |>
+  left_join(qa$models |> select(model, model_id), by = "model") |>
+  transmute(model_id, assessment, n, n_refutes,
+            refutes_recall = pct(refutes_recall),
+            refutes_precision = pct(refutes_precision)) |>
+  arrange(assessment, model_id) |>
+  kable()
+```
+
+## What this cannot tell you
+
+**Recall against the real corpus.** The holdout inherits Phase 2's routing bias:
+for citing works only `REFUTES-certain` and `SUPPORTS-certain` pairs were ever
+sent for LLM review, so refutations hiding among the 1.23M `NOT_ENOUGH_INFO`
+pairs in GA1 alone are in no fold of any split. The full-coverage key-paper chain
+estimates 0.37% of NEI pairs are genuine refutations against 3.09% of REFUTES
+pairs — an 8x enrichment across a 4.8x larger pile, meaning **37% of the
+refutations found there were sitting in the NEI bucket**. Every number above is
+conditional on a pair having been routed for review in the first place.
+
+Closing that needs a recall probe: a random sample across the full NLI output
+including NEI, labelled by Phase 2. See [TD_NLI_training](TD_NLI_training.html).

@@ -1,6 +1,6 @@
 # Reporting pipeline -- renders everything, computes nothing that costs money.
 #
-# One of four projects (see TODO_PIPELINE_SPLIT.md and _targets.yaml):
+# One of four projects (see TD_targets.qmd and _targets.yaml):
 #
 #   _targets.R             collection: LOD -> refs -> zotero -> works ->
 #                          snowball -> works_citing. Keeps the ORIGINAL
@@ -181,6 +181,15 @@ list(
     nli_scores_evidence_consolidated,
     "output/nli_scores_evidence", format = "file"
   ),
+  # Benchmark results (TD_NLI_training.qmd), written by the TRAINING project's
+  # nli_benchmark_qa_data target. Keeps the producer's name, same as every
+  # other cross-project input here. Tracked rather than untracked -- it is one
+  # small rds that always exists once the benchmark has run, unlike the Phase 2
+  # score trees below that legitimately do not exist for every assessment.
+  tar_target(
+    nli_benchmark_qa_data,
+    "output/tables/nli_benchmark_qa.rds", format = "file"
+  ),
   # UNTRACKED on purpose, and NOT format = "file".
   #
   # A file target errors when its path does not exist, and these legitimately
@@ -194,7 +203,7 @@ list(
   # The cost is that a Phase 2 re-run does not automatically invalidate the
   # reports: re-run this project after scoring. That is the same
   # operator-ordering trade-off the split accepts generally (see
-  # TODO_PIPELINE_SPLIT.md, "What gets worse").
+  # TD_targets.qmd, "What gets worse").
   tar_target(
     llm_verification_parquet,
     file.path(
@@ -237,7 +246,7 @@ list(
   # The cost is that a Phase 2 re-run does not automatically invalidate the
   # reports: re-run this project after scoring. That is the same
   # operator-ordering trade-off the split accepts generally (see
-  # TODO_PIPELINE_SPLIT.md, "What gets worse").
+  # TD_targets.qmd, "What gets worse").
   tar_target(
     llm_verification_keypaper_parquet,
     file.path(
@@ -260,7 +269,7 @@ list(
   # The cost is that a Phase 2 re-run does not automatically invalidate the
   # reports: re-run this project after scoring. That is the same
   # operator-ordering trade-off the split accepts generally (see
-  # TODO_PIPELINE_SPLIT.md, "What gets worse").
+  # TD_targets.qmd, "What gets worse").
   tar_target(
     nli_training_data,
     file.path(
