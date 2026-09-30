@@ -38,6 +38,7 @@ difference is visible rather than assumed harmless.
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -49,7 +50,28 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 # Mirrors train_nli.py's own mapping; the output column order is fixed to
 # SUPPORTS/REFUTES/NOT_ENOUGH_INFO regardless of any model's internal order.
 LABELS = ["SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO"]
-TRAIN_MAX_LENGTH = 512  # what train_nli.py tokenises at
+TRAIN_MAX_LENGTH_FALLBACK = 512  # what train_nli.py used before --max-length existed
+
+
+def trained_max_length(model_path):
+    """The max_length this checkpoint was TRAINED at, read from its own run.
+
+    Scoring a fine-tuned model at a different length than it saw in training is
+    a silent error -- no exception, just sequences longer than any it was fitted
+    on -- so this is read from the run rather than assumed. train_nli.py records
+    it in run_results.json; runs predating --max-length have no such key and
+    used 512.
+    """
+    rr = os.path.join(os.path.dirname(model_path.rstrip("/")), "run_results.json")
+    if os.path.exists(rr):
+        try:
+            with open(rr) as fh:
+                v = json.load(fh).get("max_length")
+            if v:
+                return int(v)
+        except Exception:
+            pass
+    return TRAIN_MAX_LENGTH_FALLBACK
 
 
 def norm_label(label: str) -> str:
@@ -111,7 +133,7 @@ def main():
     # entailment model and needs the per-label reformulation.
     direct_order = [native.get(norm_label(lbl)) for lbl in LABELS]
     if all(i is not None for i in direct_order):
-        mode, max_length = "direct", TRAIN_MAX_LENGTH
+        mode, max_length = "direct", trained_max_length(args.model)
     else:
         mode, max_length = "zeroshot", zeroshot_max_length
         ent_id = next((i for lbl, i in native.items() if lbl.startswith("ENTAIL")), None)

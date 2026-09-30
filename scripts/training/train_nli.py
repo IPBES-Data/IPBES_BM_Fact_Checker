@@ -73,6 +73,7 @@ import torch
 from datasets import Dataset
 from sklearn.metrics import classification_report
 from transformers import (
+    DataCollatorWithPadding,
     AutoModelForSequenceClassification,
     AutoTokenizer,
     Trainer,
@@ -136,7 +137,7 @@ def _json_default(obj):
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
-def build_run_id(df, downsample_seed):
+def build_run_id(df, downsample_seed, max_length):
     """A real, nested hive-style path describing what actually went into this
     run -- e.g. "KP=GA1_IAS/citing=GA1/downsample_seed=none/date=2026.09.01_14_23"
     -- rather than one flat directory name. Computed from `df` AFTER filters
@@ -146,6 +147,13 @@ def build_run_id(df, downsample_seed):
     citing=) since it's an orthogonal choice about how those same rows get
     used, not about which rows exist -- "none" (not the Python None/empty
     string) keeps it a valid, greppable hive segment either way.
+
+    `max_length` is a segment for the same reason, and because it is not
+    recoverable from the weights: two runs over identical rows at 512 and 1024
+    produce different models, and without this they would differ only by
+    timestamp. It is also what the model must be SERVED at, so it belongs
+    somewhere a person reading the path will see it. Runs predating this
+    segment were all 512.
     """
     kp_assessments = sorted(df.loc[df["keypaper"], "assessment"].unique())
     citing_assessments = sorted(df.loc[~df["keypaper"], "assessment"].unique())
@@ -155,7 +163,7 @@ def build_run_id(df, downsample_seed):
     date_tag = datetime.now().strftime("%Y.%m.%d_%H_%M")
     return os.path.join(
         f"KP={kp_tag}", f"citing={citing_tag}",
-        f"downsample_seed={seed_tag}", f"date={date_tag}",
+        f"downsample_seed={seed_tag}", f"max_length={max_length}", f"date={date_tag}",
     )
 
 
@@ -180,6 +188,19 @@ def parse_args():
             "class's count (seeded, reproducible) before training, for "
             "class balance. Omit for no downsampling (train on the full "
             "filtered set as-is)."
+        ),
+    )
+    p.add_argument(
+        "--max-length", type=int, default=512,
+        help=(
+            "Tokenizer truncation length for training. MUST match the "
+            "max_length the model is later SERVED with (input/config.yaml's "
+            "nli.configs.<name>.max_length) -- a model fine-tuned at 512 and "
+            "served at 2048 sees sequences longer than any it was trained on. "
+            "Measured on real GA1 atomic_bm pairs: 512 truncates 13.2%% of "
+            "pairs, 1024 truncates 0.9%%, 2048 truncates 0.3%%. CPU training "
+            "cost rises faster than linearly with this. Recorded in "
+            "run_results.json so the benchmark scorer can read it back."
         ),
     )
     p.add_argument(
@@ -246,7 +267,7 @@ def main():
     # the pre-downsampling df so the KP=/citing= segments still show
     # everything that was actually available, not just what training ends
     # up seeing after balancing.
-    output_dir = os.path.join(OUTPUT_ROOT, build_run_id(df, args.downsample_seed))
+    output_dir = os.path.join(OUTPUT_ROOT, build_run_id(df, args.downsample_seed, args.max_length))
     # Explicit, even though Trainer's own checkpointing would create this
     # nested path on demand -- run_results.json (written at the very end)
     # needs it to exist regardless of whether training reaches a checkpoint.
@@ -298,13 +319,22 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
+    # Dynamic padding: tokenize WITHOUT padding here, and let
+    # DataCollatorWithPadding pad each batch to its own longest member.
+    #
+    # This was padding="max_length", which pads every example to the cap. That
+    # makes cost a function of the CAP rather than of the data: measured on
+    # this pool, raising --max-length from 512 to 1024 took a step from 24.6 s
+    # to 134 s (5.4x) even though the median pair is 314 tokens and only ~13%
+    # exceed 512. You paid the worst case on all 1,467 rows to admit a long
+    # tail. With per-batch padding most batches sit near the median and the cap
+    # only costs what the long examples actually need.
     def tokenize(batch):
         return tokenizer(
             batch["premise"],
             batch["hypothesis"],
             truncation=True,
-            max_length=512,
-            padding="max_length",
+            max_length=args.max_length,
         )
 
     # The train/test boundary comes from the `split` column, NOT from
@@ -368,6 +398,7 @@ def main():
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["test"],
+        data_collator=DataCollatorWithPadding(tokenizer),
     )
 
     trainer.train()
@@ -399,6 +430,7 @@ def main():
         "timestamp": datetime.now().isoformat(),
         "model_id": MODEL_ID,
         "premise_mode": PREMISE_MODE,
+        "max_length": args.max_length,
         "filters": filters,
         "assessments_arg": args.assessments,
         "downsample_seed": args.downsample_seed,
