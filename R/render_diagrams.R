@@ -4,13 +4,14 @@ build_pipeline_mmd <- function(r_files, path = "input/mmd/pipeline_main.mmd") {
   # targets that draw it. Derived by PATTERN from the live manifest rather than
   # listed by name: each project names these differently
   # (diagram_pipeline_main / _reporting / _training, mmd_workflow_main /
-  # _reporting), and a hardcoded list silently stops excluding anything the
+  # _reporting, mmd_overview), and a hardcoded list silently stops excluding
+  # anything the
   # moment one is renamed -- which is exactly what happened when the pipeline
   # was split and this list still said "..._nli", leaving
   # diagram_pipeline_reporting, diagram_workflow_reporting and
   # mmd_workflow_reporting drawn into pipeline_reporting.mmd.
   self <- grep(
-    "^(r_files|pipeline_mmd|mmd_workflow_.*|diagram_.*)$",
+    "^(r_files|pipeline_mmd|mmd_.*|diagram_.*)$",
     targets::tar_manifest(fields = "name")$name,
     value = TRUE
   )

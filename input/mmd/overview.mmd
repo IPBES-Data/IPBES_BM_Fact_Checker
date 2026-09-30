@@ -1,0 +1,86 @@
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementStrategy: BRANDES_KOEPF
+---
+flowchart TD
+
+  %% OVERVIEW -- which MODEL runs at which step, across all four projects.
+  %% --
+  %% The per-project diagrams (workflow_main / _factcheck / _training /
+  %% _reporting) show what each pipeline DOES. This one shows what each step
+  %% COSTS and which model does it, because that is the question that keeps
+  %% coming up and no single per-project diagram can answer it: the feedback
+  %% loop (training produces the model fact checking runs on) crosses two of
+  %% them, and the price ladder that decides where a screening step belongs
+  %% only makes sense side by side.
+  %% --
+  %%   zero-shot NLI   $0.0000036 /pair   labels everything
+  %%   Jev (proposed)  $0.0000172 /pair   screens, does not judge
+  %%   gpt-4o-mini     $0.000149  /pair   judges, quotes, gets quote-checked
+  %% --
+  %% Jev only pays off BETWEEN the other two: screening ahead of the NLI would
+  %% cost more than simply running the NLI (~$42 vs ~$9 for GA1's cross-join).
+
+  collect@{ shape: lin-cyl, label: "COLLECTION (main)<br/>LOD → refs → works → snowball → works_citing<br/>no models" }
+
+  subgraph fc["FACT CHECKING — the deliverable (GA1)"]
+    direction TB
+    fc_pairs@{ shape: lin-cyl, label: "claims × CITING WORKS<br/>2.43M pairs (GA1, atomic_bm)" }
+    fc_nli@{ shape: rect, label: "PHASE 1 — NLI<br/>bge-m3-zeroshot-v2.0-c<br/>$0.0000036/pair on an L4<br/>labels every pair SUPPORTS/REFUTES/NEI" }
+    fc_route@{ shape: hex, label: "route: REFUTES or SUPPORTS, certain only<br/>190,759 of 2.43M" }
+    fc_jev@{ shape: rect, label: "PROPOSED — Jev relevance screen<br/>typesafe/jev-1.13 · $0.0000172/pair<br/>“does this paper bear on the claim?”<br/>keeps ~76% of SUPPORTS, drops ~81% of NEI" }
+    fc_llm@{ shape: rect, label: "PHASE 2 — LLM verification<br/>openai/gpt-4o-mini · $0.000149/pair<br/>verdict + verbatim quote + quote_is_verbatim()" }
+    fc_out@{ shape: lin-cyl, label: "llm_verification/scores → funnel reports" }
+    fc_pairs --> fc_nli --> fc_route --> fc_jev --> fc_llm --> fc_out
+  end
+
+  subgraph nei["NEVER REVIEWED — the recall blind spot"]
+    direction TB
+    fc_nei@{ shape: rect, label: "the other 1,232,027 pairs<br/>NLI said NOT_ENOUGH_INFO<br/>no model has ever looked at them<br/>Jev screen makes this affordable (~$55 total)" }
+  end
+  fc_nli --> fc_nei
+  fc_nei -.->|"screen, then verify the survivors"| fc_jev
+
+  subgraph tr["TRAINING — produces the model, does not ship findings"]
+    direction TB
+    tr_pairs@{ shape: lin-cyl, label: "claims × KEY PAPERS<br/>968,534 pairs · the evidence IPBES itself cited" }
+    tr_nli@{ shape: rect, label: "PHASE 1 — NLI<br/>same zero-shot model, same pool" }
+    tr_jev@{ shape: rect, label: "PROPOSED — Jev relevance screen<br/>saves MORE here than in fact checking:<br/>this chain reviews every pair, no routing<br/>945k still unreviewed (~$140 at gpt-4o-mini rates)" }
+    tr_llm@{ shape: rect, label: "PHASE 2 — LLM, FULL COVERAGE<br/>gpt-4o-mini, every pair, no routing<br/>GA1 done (29,496 · $2.25); 945k still unreviewed" }
+    tr_set@{ shape: lin-cyl, label: "TRAINING SET · 2,436 rows<br/>SUPPORTS 937 · NEI 937 · REFUTES 562" }
+    tr_ft@{ shape: rect, label: "FINE-TUNE · local CPU<br/>train_nli.py, 1,467 rows balanced" }
+    tr_model@{ shape: stadium, label: "FINE-TUNED NLI<br/>rakrug/ipbes-bm-nli-atomic-v1<br/>NOT YET DEPLOYED" }
+    tr_bench@{ shape: rect, label: "BENCHMARK · fixed 1,205-row holdout<br/>scores every model incl. the zero-shot baseline" }
+    tr_pairs --> tr_nli --> tr_jev --> tr_llm --> tr_set --> tr_ft --> tr_model --> tr_bench
+  end
+
+  collect --> fc_pairs
+  collect --> tr_pairs
+
+  %% --
+  %% The loop. Training exists to replace the model fact checking runs on.
+  tr_model -.->|"REPLACES the zero-shot model in Phase 1<br/>needs passes:1, uppercase labels, image v0.4.0+,<br/>and a full rescore (~$9 GPU)"| fc_nli
+
+  warn@{ shape: doc, label: "CIRCULARITY TO AVOID: if the fine-tuned model also replaces<br/>zero-shot in the TRAINING chain, the next training set is built<br/>from labels the model itself shaped. Keep that chain on<br/>zero-shot, or accept self-training knowingly." }
+  tr_model -.-> warn
+  warn -.-> tr_nli
+
+  classDef zeroshot fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
+  classDef llm      fill:#fed7aa,stroke:#ea580c,color:#7c2d12,stroke-width:1.5px;
+  classDef jev      fill:#e9d5ff,stroke:#7c3aed,color:#3b0764,stroke-width:2px;
+  classDef ft       fill:#bfdbfe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px;
+  classDef data     fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
+  classDef gate     fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
+  classDef blind    fill:#fecaca,stroke:#dc2626,color:#7f1d1d,stroke-width:1.5px;
+  classDef note     fill:#f5f3ff,stroke:#7c3aed,color:#3b0764,stroke-dasharray:4 3;
+
+  class fc_nli,tr_nli zeroshot;
+  class fc_llm,tr_llm llm;
+  class fc_jev,tr_jev jev;
+  class tr_model,tr_ft,tr_bench ft;
+  class collect,fc_pairs,fc_out,tr_pairs,tr_set data;
+  class fc_route gate;
+  class fc_nei blind;
+  class warn note;

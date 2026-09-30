@@ -85,6 +85,15 @@ list(
   # surviving only as the input stub this project declares. The per-project .mmd
   # files can be combined into one overview here later; for now each is honest
   # about what it shows.
+  # Cross-project overview: which MODEL runs at which step, and what each step
+  # costs. Owned by reporting rather than by any one project because the thing
+  # it depicts spans them -- the feedback loop where training produces the model
+  # fact checking runs on crosses two projects, and the price ladder that
+  # decides where a screening step belongs only makes sense side by side.
+  # Deliberately has no click directives: it is an orientation diagram, not a
+  # navigable one, so it needs no workflow_node_metadata.R rows.
+  tar_target(mmd_overview, "input/mmd/overview.mmd", format = "file"),
+  tar_target(diagram_overview, render_mmd(mmd_overview), format = "file"),
   tar_target(r_files, list.files("R", full.names = TRUE), format = "file"),
   tar_target(
     pipeline_mmd,
