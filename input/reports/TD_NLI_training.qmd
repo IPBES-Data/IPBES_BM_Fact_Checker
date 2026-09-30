@@ -340,24 +340,574 @@ needed.
 
 ## Evaluation
 
-Before deploying, check performance on the held-out validation set:
+`train_nli.py` prints a `classification_report` on the held-out fold and writes
+it to `run_results.json`, but **that is a monitoring aid, not the evaluation**:
+it covers one model, on a fold that exists only inside that run. The real
+evaluation — every model including the untuned baseline, on one fixed fold — is
+the benchmark described in the next section.
+
+Also **manually inspect** 20-30 predictions on citing papers from
+`works_citing_parquet` (papers the model has never seen) before running a full
+pipeline rebuild. No aggregate number substitutes for reading a few.
+
+## Benchmarking: held-out evaluation across every model
+
+**Status: implemented 2026-09-28.** The `split` column, `train_nli.py`'s use of
+it, the local scorer and the four benchmark targets are all live. Every figure quoted below was
+measured on that date against the live `output/nli_training/`,
+`output/llm_verification/scores*` and `output/nli_scores_evidence*` trees; the
+corpus grows continuously, so treat them as a snapshot that establishes *orders
+of magnitude and ratios*, not as values to be re-quoted later without
+re-measuring.
+
+What follows is the design and, more importantly, the reasoning — particularly about what this
+benchmark can and cannot establish, which turned out to be the most important
+part.
+
+### Why the numbers we have cannot answer the question
+
+Two fine-tuned checkpoints exist
+(`output/nli_training_finetuned/KP=GA1_IAS/citing=GA1/downsample_seed=13/date=2026.09.01_11_30/`
+and `.../date=2026.09.01_13_20/`), each with a `run_results.json` carrying a
+classification report. Those reports cannot be used to decide whether
+fine-tuning helped, for three independent reasons.
+
+#### The evaluation split leaks
+
+`scripts/training/train_nli.py` currently calls
 
 ```python
-from sklearn.metrics import classification_report
-
-preds = trainer.predict(dataset["test"])
-pred_labels = preds.predictions.argmax(axis=1)
-true_labels = dataset["test"]["labels"]
-
-print(classification_report(
-    true_labels, pred_labels,
-    target_names=list(LABEL2ID.keys())
-))
+dataset = dataset.train_test_split(test_size=0.15, seed=42)
 ```
 
-Also **manually inspect** 20–30 predictions on citing papers from `works_citing_parquet`
-(papers the model has never seen) to confirm the domain adaptation feels right before
-running a full pipeline rebuild.
+which splits **by row**. The training set is 2,436 rows over only **465
+distinct claims** — a mean of 5.2 citing works per claim, up to 72 for the
+largest. A random row split therefore places some of nearly every claim's works
+in the training fold and the rest in the evaluation fold, with the *identical
+hypothesis string* on both sides.
+
+This matters more than the usual hand-wringing about leakage, because the
+label is not uniformly distributed over claims: the 562 REFUTES rows are
+concentrated in 191 claims. "Recognise this particular claim, predict REFUTES"
+is an available shortcut that scores well on the evaluation fold and transfers
+to nothing. We do not know how much of the reported performance it accounts
+for, and that is precisely the problem.
+
+#### The runs are not comparable to each other
+
+The split is computed inside the training run, from whatever data that run
+loaded, after downsampling. Two runs over different data — or the same data
+with a different `--downsample-seed` — evaluate on different rows. There is no
+fixed yardstick, so run-to-run differences confound "better model" with
+"easier evaluation fold".
+
+#### The baseline was never measured
+
+Nothing has ever scored the zero-shot model
+(`MoritzLaurer/bge-m3-zeroshot-v2.0-c`) on the evaluation fold. A fine-tuned
+model's F1 in isolation says nothing about whether fine-tuning was worth doing;
+the comparison that matters was never run.
+
+### The shape of the labelled pool
+
+Anything built here has to respect the structure of the data, which is
+lumpier than a row count suggests.
+
+| | |
+|---|---:|
+| rows | 2,436 |
+| distinct claims (`hypothesis`) | 465 |
+| distinct Background Messages (`assessment`, `km`, `bm`) | 141 |
+| distinct citing/seed works (`work_id`) | 690 |
+
+| class | rows |
+|---|---:|
+| SUPPORTS | 937 |
+| NOT_ENOUGH_INFO | 937 |
+| REFUTES | 562 |
+
+Works per claim: median 3, mean 5.2, max 72. Claims per work: median 1, mean
+3.5, max 99. **Both axes repeat**, which is why neither a row split nor a
+naive split on one key is sufficient.
+
+REFUTES — the class the whole project exists to find — is spread over 191
+claims in 56 Background Messages, and is heavily concentrated by assessment:
+
+| assessment | SUPPORTS | NOT_ENOUGH_INFO | REFUTES |
+|---|---:|---:|---:|
+| GA1 | 123 | 123 | 421 |
+| IAS | 749 | 749 | 137 |
+| TCA | 24 | 24 | 2 |
+| VA | 41 | 41 | 2 |
+
+558 of 562 REFUTES come from GA1 and IAS. Whether anything learned here
+generalises to an assessment outside that pair is an open question the
+benchmark should *report on* rather than quietly average away.
+
+### What the benchmark measures, and against what
+
+**It measures agreement with `gpt-4o-mini`.** Every label in
+`output/nli_training/` originates in Phase 2's grounded, quote-checked LLM
+verdict. Fine-tuning distils that judgment into the NLI model; benchmarking
+scores how well the distillation worked. It does not measure truth, and no
+amount of held-out discipline turns it into a measurement of truth. The LLM's
+verdicts have never been checked against human labels.
+
+This is a ceiling, not a flaw — distilling an expensive accurate judge into a
+cheap one is the point of the exercise. But it must be stated wherever the
+numbers are, because "94% accurate" invites a reading the data does not
+support. See *Two gaps this design does not close* below.
+
+### The split
+
+#### Grouped by Background Message
+
+The grouping key is `(assessment, bm)` — 99 groups — and it deliberately
+**omits `km`**. That omission is the least obvious decision here, and it was
+found by the verification rather than by reasoning.
+
+A Background Message belongs to several Key Messages. The same `bm` therefore
+appears under several `km` values carrying byte-identical claim text: VA's `C9`
+sits under `KM7`, `KM8` and `KM9`. Keying on `(assessment, km, bm)` splits one
+Background Message into several groups, which the hash then scatters across
+both folds. Measured directly:
+
+| grouping key | groups | claim strings in **both** folds |
+|---|---:|---:|
+| `assessment` + `km` + `bm` | 141 | **126** |
+| `assessment` + `bm` | 99 | **0** |
+
+The finer-looking key was the leakier one. The first implementation used it, on
+exactly the assumption stated above — that claims never span BMs — and the leak
+check caught it immediately. This is what that check is for, and it is why the
+benchmark reports `claims_in_both_folds` on every run rather than trusting the
+grouping once.
+
+BM-level was chosen over claim-level (465 groups) deliberately. Claims within a
+BM are segmented from the same source text and share topic, vocabulary and
+often most of their citing works; splitting between them would leak nearly as
+much as splitting by row, just less visibly. The cost is fewer groups and
+therefore a noisier estimate, which is the right trade: an honest noisy number
+beats a precise misleading one.
+
+#### Hash-assigned, not shuffled
+
+```r
+hash_bucket <- function(key, salt) {
+  vapply(
+    paste(key, salt, sep = "|"),
+    \(k) strtoi(substr(digest::digest(k, algo = "md5", serialize = FALSE), 1, 6), 16L) %% 100L,
+    integer(1), USE.NAMES = FALSE
+  )
+}
+```
+
+`serialize = FALSE` hashes the string bytes directly rather than an R
+serialisation of them, so the assignment is stable across R and `digest`
+versions — which a benchmark meant to outlive several of both actually needs.
+
+A BM's fold is a pure function of its own identity. Adding an assessment,
+re-running Phase 2, or growing the citing-works corpus never moves an existing
+BM across the boundary. A shuffled split would silently invalidate every
+previously recorded result the moment the corpus grew — and this corpus grows
+continuously, which is exactly the condition under which shuffling is worst.
+
+**What is guaranteed, and what is not.** The *fold definition* is stable: which
+BMs are test BMs never changes. The *fold contents* are not frozen — reviewing
+more pairs under an existing test BM adds rows to the test fold. Observed
+directly: clearing GA1's key-paper backlog took the holdout from 467 to 1,205
+rows without a single BM changing sides.
+
+The consequence is operational. Because every model is re-scored on the current
+fold each time the benchmark runs, a single benchmark run is always internally
+comparable — that is the comparison that matters. But numbers from *different*
+benchmark runs are not comparable to each other, and a result table should carry
+the fold size it was computed against. What hash assignment buys is that a model
+trained a year ago can still be scored fairly today; it does not mean a number
+printed a year ago is still the right number.
+
+#### Salted, so re-cutting is deliberate
+
+`salt = "bench-v1"` is the version tag. Changing it re-cuts the benchmark; that
+is the only way the benchmark should ever change, and the string makes the
+change visible in a diff and quotable in a result table.
+
+#### Residual leakage, quantified rather than engineered away
+
+A work can be cited under several Background Messages (up to 99 claims, mean
+3.5), so a minority of abstracts will appear in both folds, paired with
+different claims. This is a genuine but much weaker leak than claim-text
+leakage: the model sees the premise before, never the premise-hypothesis pair
+or its label.
+
+Closing it properly means a connected-component split on the (claim, work)
+bipartite graph, which at 2,436 rows produces few, huge, unbalanced components
+— trading a small measurable bias for a large unmeasurable one. The design
+instead **reports the cross-fold work overlap as a diagnostic** alongside every
+result, so a reader can judge it.
+
+As realised, that overlap is **62 of 683 distinct works (9.1%)** — but those 62
+are the heavily-cited ones, so they account for **55.2% of the test fold's
+rows**. That is higher than "a minority of abstracts" suggests and should be
+read alongside every number in the report. It is not claim-text leakage and it
+is not a reason to distrust the comparison *between* models, all of which face
+it identically; it is a reason to treat the absolute level of any single
+model's performance as optimistic.
+
+#### The resulting folds
+
+| | train | test |
+|---|---:|---:|
+| rows | 1,969 | 467 |
+| groups (assessment + bm) | 82 | 17 |
+| SUPPORTS | 802 | 135 |
+| NOT_ENOUGH_INFO | 775 | 162 |
+| REFUTES | 392 | 170 |
+
+19.2% of rows held out against a 0.2 target — hash assignment balances group
+*count*, not row count, and 17 of 99 groups is 17.2%. All four assessments with
+data appear in both folds. The headline subset (NLI said SUPPORTS, truth is
+REFUTES) has **111 rows** in the test fold, which is what makes the primary
+metric measurable at all.
+
+#### Held out before downsampling, never after
+
+`train_nli.py` now takes the holdout out **first** and balances only the train
+fold. The order is not cosmetic: `--downsample-seed` caps every class to the
+smallest, so downsampling a combined pool and splitting afterwards would make
+the evaluation set itself a function of the seed. Two runs with different seeds
+would then be scored on different rows — reintroducing, by a different route,
+exactly the run-to-run incomparability the fixed holdout exists to remove.
+
+On the current pool that means 1,969 train rows balanced down to 392 per class
+(1,176 total), against a 467-row test fold left at its natural, mildly
+imbalanced composition. The evaluation fold is deliberately *not* balanced: it
+is meant to resemble the data, not the training regime.
+
+### What to report
+
+The default `classification_report` headline is actively misleading here, and
+should not be the number anyone quotes.
+
+#### Not accuracy
+
+After `--downsample-seed` caps every class to the smallest, training and
+evaluation are near-balanced three-way. Deployment is not: REFUTES is 0.2–3% of
+pairs depending on the route. A balanced-set accuracy flatters every model
+equally and predicts nothing about behaviour on the real stream.
+
+#### REFUTES precision and recall, separately
+
+Stated as two numbers, never combined into F1 for the headline. The project's
+tolerance for the two errors is not symmetric — a missed refutation is a
+finding that never surfaces, a false one is a claim a human discards in
+seconds — and F1 assumes it is.
+
+#### The SUPPORTS→REFUTES flip rate
+
+This is the number that decides whether fine-tuning worked.
+
+Tracing every confirmed refutation back to what the zero-shot NLI had said
+about that same pair:
+
+| NLI said | citing works | key papers | total |
+|---|---:|---:|---:|
+| SUPPORTS | 303 | 34 | **337 (60%)** |
+| REFUTES | 105 | 76 | 181 (32%) |
+| NOT_ENOUGH_INFO | 0 | 44 | 44 (8%) |
+
+Only 32% of confirmed refutations were pairs the zero-shot model flagged
+REFUTES. The **largest single source, 60%, is pairs it confidently called
+SUPPORTS** and the LLM overturned. The zero-shot model did not merely miss
+those — it got them backwards.
+
+So the benchmark's primary metric is: *of the evaluation-fold rows where NLI
+said SUPPORTS and the LLM said REFUTES, what fraction does each model now call
+REFUTES?* If a fine-tuned checkpoint does not move that number, it has not done
+the job this project needs, whatever its macro-F1 says.
+
+(The zero in the citing-works `NOT_ENOUGH_INFO` row is an artefact of routing,
+not a finding — see below.)
+
+#### A threshold sweep, not one operating point
+
+Phase 1 stores the full probability distribution and every threshold decision
+is made downstream in `dplyr`. The benchmark should match that: emit
+precision/recall across the confidence range per model, not a single argmax
+operating point. This also yields the re-calibrated deployment threshold, which
+a balanced evaluation set's argmax cannot — the base-rate shift between a 1:1:1
+training distribution and a 0.2% deployment stream guarantees an argmax
+classifier over-predicts REFUTES in production.
+
+#### Per-assessment breakdown
+
+Given 558 of 562 REFUTES come from GA1+IAS, a pooled number mostly measures
+those two. Report TCA and VA separately even though their counts are tiny; "we
+cannot tell" is a legitimate and useful result.
+
+### Two gaps this design does not close
+
+Both should be visible in the rendered report rather than buried here, because
+each bounds what the headline number means.
+
+#### The holdout cannot measure recall
+
+It inherits Phase 2's routing bias. For citing works, only `REFUTES-certain`
+(9,054 pairs) and `SUPPORTS-certain` (181,705 pairs) were ever sent for LLM
+review. Pairs the zero-shot model called `NOT_ENOUGH_INFO` — 1,232,027 in GA1
+alone — have never been reviewed, so no genuine refutation hiding among them is
+in the labelled pool, in the training set, or in any split of it.
+
+The key-paper chain is full-coverage and gives the only direct estimate:
+
+| what NLI said | pairs reviewed | LLM confirmed REFUTES | rate |
+|---|---:|---:|---:|
+| REFUTES | 2,457 | 76 | 3.09% |
+| NOT_ENOUGH_INFO | 11,905 | 44 | 0.37% |
+
+The REFUTES flag is ~8x enriched — real signal — but the NEI pile is 4.8x
+larger, so **37% of every refutation found in the full-coverage chain was
+sitting in pairs NLI had called NEI**. For citing works in GA1 the NEI pile is
+3.8x the REFUTES pile, so the same effect applies at greater scale.
+
+A held-out split of a biased pool measures performance on the bias. Closing
+this needs a **recall probe**: a random sample drawn across the *full* NLI
+output including NEI, sent through Phase 2 for labelling. A few thousand pairs
+is a rounding error against Phase 2's existing spend, and it is the only thing
+that can convert "we found 408 refutations" into "we found 408 of an estimated
+N".
+
+#### The labels are one model's opinion
+
+562 REFUTES rows, none human-checked. That is a single afternoon's reading, and
+it is the highest value-per-unit-effort check available anywhere in this
+pipeline: it bounds the ceiling every other number here is measured against.
+
+The design therefore treats the label source as a **column, not an
+assumption** — the benchmark reads `(premise, hypothesis, label, label_source)`
+and a human-labelled set with `label_source = "human"` drops into the same
+targets with no restructuring. Retrofitting a second label source into a report
+built for one is the expensive way to do this; leaving the slot open costs
+nothing today.
+
+### Where it lives: the training project, not a fifth one
+
+The benchmark is **four targets inside `_targets_training.R`**, not a project of
+its own. A fifth project was designed first and rejected; the reasoning is
+worth recording, because "add a project" was the obvious move and it is wrong.
+
+#### The existing split criterion does not extend
+
+The four projects in [TD_targets](TD_targets.html) are divided on cost,
+credentials and blast radius — collection has OpenAlex and a destructive
+rebuild, fact checking has GPU hours and OpenRouter, training has OpenRouter
+and a 25-minute local fine-tune, reporting has none. Benchmarking has none
+either, but `reporting` earns its separation by serving **all four** projects,
+whereas a benchmark only ever looks at what training produced.
+
+`TD_targets.qmd`'s own test is whether something is a separate process
+sharing an input, or a stage of one process. Benchmarking is the evaluation
+half of training: nobody runs it without caring about a training run. That is
+the second case, and it belongs in the same DAG.
+
+#### The cost ratio
+
+As its own project the benchmark is roughly twelve targets — of which five are
+pure diagram overhead (`mmd_workflow_*`, `diagram_*`, `r_files`,
+`pipeline_mmd`) and three are re-declared configuration — plus a documentation
+tax of nine touchpoints: two CLAUDE.md tables, the README table, the four
+`workflow_*.mmd` headers that each enumerate the project set, the Shiny node
+metadata, the diagram selector, and TD_targets' Running section. Every one of
+those is a place the set can drift out of sync, and several already have.
+
+Inside the training project it is four targets reusing `config_file`,
+`nli_active`, `granularity`, `r_files` and the existing diagram chain.
+
+#### The decisive reason: a better dependency edge becomes available
+
+`nli_finetuned_model` is already a `format = "file"` target, so the training
+project already hashes its output. Taking it as a **bare, never-read argument**
+— the convention this codebase already uses three times (`nli_scores_qa_data` ←
+`nli_scores_keypaper_evidence`, `nli_finetuned_model` ← `nli_training_data`,
+`llm_verification_parquet` ← `nli_scores_by_claim_evidence`) — makes a new
+checkpoint invalidate the benchmark automatically, at no additional cost.
+
+Across a project boundary that edge is not available: the benchmark would have
+to re-declare the 42 GB `output/nli_training_finetuned/` tree as its own
+tracked input, which `reporting` already refuses to do for exactly this reason.
+The separate-project design was therefore forced into scanning the directory
+untracked and *documenting a manual re-run step* — a wart that disappears
+entirely by folding in.
+
+So the design uses **both** mechanisms, for two different jobs:
+
+- **Enumeration** — scan disk for every checkpoint to benchmark, since runs
+  accumulate and no config key tracks them (the same instinct
+  `shiny_app/R/discover_artifacts.R` applies to rendered artifacts).
+- **Invalidation** — the bare `nli_finetuned_model` argument, so producing a new
+  checkpoint marks the benchmark stale without anyone remembering to.
+
+One consequence to know: because `benchmark_scores` now depends on
+`nli_finetuned_model`, naming it in a `tar_make()` while that target is
+outdated will start a real fine-tuning run. Use `shortcut = TRUE` to benchmark
+the checkpoints already on disk — the same discipline every paid target in this
+repository already requires.
+
+#### When to split it out after all
+
+Cheaply, and exactly as steps 2 and 3 of the pipeline split did — the targets
+move verbatim. Two things would justify it: a second input the training project
+does not have (the recall probe over the full NLI output, or a human gold set
+with its own labelling workflow), or wanting to benchmark models training never
+produced, such as a different base model or an external checkpoint. Either
+makes it a genuinely separate process. Until one exists, a fifth project is
+structure built for a future that may not arrive.
+
+### Models under test
+
+Discovered from disk, never from configuration:
+
+```r
+c(
+  benchmark_config$baseline_model,  # MoritzLaurer/bge-m3-zeroshot-v2.0-c
+  grep("/best$", list.dirs("output/nli_training_finetuned", recursive = TRUE), value = TRUE)
+)
+```
+
+Three entries today. Each checkpoint's path is already its identity
+(`KP=GA1_IAS/citing=GA1/downsample_seed=13/date=2026.09.01_11_30`), so it
+doubles as the output partition key and the result-table row label with no
+naming scheme to invent. The `.disabled/<nli_config>/` marker directory written
+when `training.finetune.enabled` is false contains no `best/` and is skipped by
+the same pattern.
+
+### Serving the models
+
+**Local CPU, not RunPod.** The NLI pool serves one model per deployment, so
+comparing three models through it means three deployments — real money, real
+setup, and a confound if their hardware differs. The evaluation fold is a few
+hundred rows; three models over it is minutes of local CPU using the same
+`transformers` stack and the same venv `train_nli.py` already requires.
+
+`scripts/benchmark/score_nli_local.py --model <path|hf-id>` mirrors
+`train_nli.py`'s model/tokenizer loading and writes per-row probabilities;
+`R/build_nli_benchmark_scores.R` bridges to it exactly as
+`R/build_nli_finetuned_model.R` already bridges to `train_nli.py` — a thin
+`system2()` wrapper whose output directory is a real `format = "file"` target.
+
+`score_nli_local.py` reproduces `server.py` rather than inventing a scheme,
+because a baseline scored differently from how it is deployed is not a
+baseline. The mode is derived from the model itself — does its `id2label` carry
+all three real label names? — not from a flag, so a model cannot be scored in
+the wrong mode by misconfiguration. Verified against real deployed scores: on
+clean abstracts the local probabilities reproduce the production server's
+`nli_confidence` to about four decimal places.
+
+**One inexactness, recorded because it is real.** The deployed pipeline cleans
+the premise (`clean_title()`/`clean_abstract()` strip HTML/JATS/LaTeX) while
+`train_nli.py` — and therefore this benchmark — uses the raw `title`/`abstract`
+stored in the training set. The comparison *between* models is unaffected, since
+all of them see the same premises; but the baseline row is a close rather than
+exact reproduction of deployed behaviour, and divergence concentrates in
+marked-up abstracts.
+
+`max_length` also differs by mode and is recorded per model in the output: the
+zero-shot model is scored at the config's deployed 2048, a fine-tuned
+checkpoint at the 512 it was trained on, because running it longer at inference
+would be out of distribution. Truncation counts are reported so this is visible
+rather than assumed harmless.
+
+Note `train_nli.py` forces `use_cpu=True` because MPS was measured to produce
+`grad_norm == 0.0` at this sequence length *and* to be slower. Inference is a
+different workload and MPS may well be fine here, but the benchmark's job is
+comparability, not speed: pin CPU so results are reproducible, and revisit only
+if runtime becomes a real constraint.
+
+### Rendering stays in `reporting`
+
+The benchmark writes `output/tables/nli_benchmark_qa.rds` — the same
+cached-rds-holding-a-prebuilt-widget convention every other QA data builder
+here uses, because the qmd renders in a fresh session that never sources
+`R/*.R`. The reporting project declares that path as a `format = "file"` target
+keeping the producer's name, and
+`input/reports/QA_NLI_Benchmark_Report.qmd` reads it.
+
+That is the one genuine cross-project edge this design adds, and it runs the
+same direction as every other one: everything renders in `reporting`, nothing
+else renders anything.
+
+### What this changes upstream
+
+Adding the `split` column to `build_nli_training_data()` invalidates
+`nli_training_data` and therefore `nli_finetuned_model`. **Both existing
+checkpoints need retraining before their numbers mean anything** — they were
+trained on a leaking split, so they have seen evaluation-fold claims. That is
+not a cost of the benchmark; it is the benchmark's first finding. Keep the old
+run directories rather than overwriting them: "trained with a leaking split" is
+a useful comparison row, and the cheapest evidence available for how much the
+leak was worth.
+
+### An incidental finding: 90% of the checkpoint tree is dead weight
+
+Measured while checking what the bare `nli_finetuned_model` edge would cost to
+hash. One run directory:
+
+| | |
+|---|---:|
+| `checkpoint-89` | 6.3 GB |
+| `checkpoint-178` | 6.3 GB |
+| `checkpoint-267` | 6.3 GB |
+| `best/` | 2.1 GB |
+| `run_results.json` | 8 KB |
+
+19 of every 21 GB is HuggingFace `Trainer`'s intermediate saves, and nothing
+reads them: `build_nli_finetuned_model_qa_data.R` reads `run_results.json`, the
+benchmark reads `best/`. A checkpoint is 6.3 GB because it carries AdamW
+optimiser state (roughly twice the parameters) on top of the 2.1 GB of weights;
+`best/` is `save_model()`, weights only.
+
+`save_total_limit=1` is now set in `TrainingArguments`, which keeps one
+checkpoint instead of one per epoch — 8.4 GB per run rather than 21 GB.
+`load_best_model_at_end` still works: Trainer always retains the best
+checkpoint under the limit. Dropping checkpoints entirely after `best/` is
+written would reach 2.1 GB, but leaves no resumption point for a run that dies,
+and at 25 minutes a run that is not worth much.
+
+The two pre-existing 21 GB runs are untouched; they predate this and are kept
+deliberately as the "trained with a leaking split" comparison.
+
+Unrelated to benchmarking, and worth doing regardless.
+
+### Operating notes
+
+Three things a future reader will otherwise rediscover the hard way.
+
+**`benchmark_scores` is downstream of a ~25 minute training run.** The bare
+`nli_finetuned_model` argument that keeps the benchmark honest also means naming
+`benchmark_scores` while that target is outdated *starts* a fine-tune. Use
+`shortcut = TRUE` to benchmark the checkpoints already on disk. This is a new
+path to an accidental local run that did not exist before the benchmark.
+
+**The training store churns more.** The benchmark iterates fast — every metric
+tweak — while the fine-tune is slow, so `tar_outdated()` on the training project
+shows benchmark noise more often than it used to. Noise, not incorrectness.
+
+**The training store has no metadata for three targets.**
+`llm_verification_keypaper_parquet`, `nli_training_data` and
+`nli_finetuned_model` were last built in the pre-split `_targets/` store; the
+training store has only ever run the NLI chain. So
+`tar_make(names = "nli_training_data", shortcut = TRUE)` cannot bootstrap — it
+refuses to load a dependency it has never recorded — and building it for real
+would route ~945,000 uncached pairs through OpenRouter (~$140, see the backlog
+note in `TODO.md`).
+
+The first training set carrying the `split` column, and the first fine-tune
+trained on it, were therefore produced by calling `build_nli_training_data()`
+and `train_nli.py` **directly**, outside `targets`. What is on disk is exactly
+what those targets would have written; what is missing is store bookkeeping,
+which fills itself the first time the key-paper Phase 2 spend is authorised.
+Worth knowing before reading `tar_outdated()` and concluding the work was not
+done.
 
 ---
 

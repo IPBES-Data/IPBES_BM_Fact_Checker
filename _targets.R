@@ -76,7 +76,7 @@ list.files(
   )
 
 # Report wrapper generation and every render/deploy target now live in
-# _targets_reporting.R (see _targets.yaml and TODO_PIPELINE_SPLIT.md).
+# _targets_reporting.R (see _targets.yaml and TD_targets.qmd).
 # They were moved out so that rendering a report cannot reach a paid
 # target: this script still holds the scoring chains, which spend RunPod
 # GPU time and OpenRouter money, and the reporting project holds nothing
@@ -114,7 +114,7 @@ list(
   # Splitting the pipeline means there is no longer ONE dag for a
   # "pipeline diagram" to describe, so wherever this target lives it depicts
   # only its own project. It sits here because this is the graph with the
-  # substantive computation in it. See TODO_PIPELINE_SPLIT.md -- this needs a
+  # substantive computation in it. See TD_targets.qmd -- this needs a
   # real decision (rename per project, combine the stores, or drop it in
   # favour of the hand-authored workflow_nli.mmd) before the remaining
   # extractions make this graph partial too.
@@ -291,7 +291,7 @@ list(
   # ---------------------------------------------------------------------------
   # This project is now COLLECTION ONLY: LOD -> refs -> zotero -> works ->
   # snowball -> works_citing. Everything downstream lives in its own project
-  # (see _targets.yaml and TODO_PIPELINE_SPLIT.md):
+  # (see _targets.yaml and TD_targets.qmd):
   #
   #   _targets_factcheck.R   citing works -> NLI -> LLM verification
   #   _targets_training.R    key papers -> NLI -> LLM -> training set -> fine-tune

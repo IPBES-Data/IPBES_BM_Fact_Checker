@@ -1,6 +1,6 @@
 # Fact-checking pipeline -- citing works -> NLI -> LLM verification.
 #
-# One of four projects (see TODO_PIPELINE_SPLIT.md and _targets.yaml):
+# One of four projects (see TD_targets.qmd and _targets.yaml):
 #
 #   _targets.R             collection: LOD -> refs -> zotero -> works ->
 #                          snowball -> works_citing. Keeps the ORIGINAL
@@ -46,7 +46,7 @@ tar_option_set(
   # project. Deliberate, and not a collision: if both run at once they contend
   # for the same hosts, which is the behaviour wanted -- one pool, one queue.
   # It is, with the two append-only LLM caches, the cross-project state that no
-  # DAG describes; see TODO_PIPELINE_SPLIT.md's "Cross-project contracts".
+  # DAG describes; see TD_targets.qmd's "Cross-project contracts".
   controller = crew::crew_controller_local(
     workers = tryCatch({
       cfg <- yaml::read_yaml("input/config.yaml")

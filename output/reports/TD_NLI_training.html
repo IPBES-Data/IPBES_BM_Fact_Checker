@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-09-18">
+<meta name="dcterms.date" content="2026-09-28">
 
 <title>Fine-tuning the NLI Model with IPBES-Derived Training Data</title>
 <style>
@@ -2229,6 +2229,52 @@ vertical-align: -.125em;
   <li><a href="#compute" id="toc-compute" class="nav-link" data-scroll-target="#compute">Compute</a></li>
   </ul></li>
   <li><a href="#evaluation" id="toc-evaluation" class="nav-link" data-scroll-target="#evaluation">Evaluation</a></li>
+  <li><a href="#benchmarking-held-out-evaluation-across-every-model" id="toc-benchmarking-held-out-evaluation-across-every-model" class="nav-link" data-scroll-target="#benchmarking-held-out-evaluation-across-every-model">Benchmarking: held-out evaluation across every model</a>
+  <ul>
+  <li><a href="#why-the-numbers-we-have-cannot-answer-the-question" id="toc-why-the-numbers-we-have-cannot-answer-the-question" class="nav-link" data-scroll-target="#why-the-numbers-we-have-cannot-answer-the-question">Why the numbers we have cannot answer the question</a>
+  <ul>
+  <li><a href="#the-evaluation-split-leaks" id="toc-the-evaluation-split-leaks" class="nav-link" data-scroll-target="#the-evaluation-split-leaks">The evaluation split leaks</a></li>
+  <li><a href="#the-runs-are-not-comparable-to-each-other" id="toc-the-runs-are-not-comparable-to-each-other" class="nav-link" data-scroll-target="#the-runs-are-not-comparable-to-each-other">The runs are not comparable to each other</a></li>
+  <li><a href="#the-baseline-was-never-measured" id="toc-the-baseline-was-never-measured" class="nav-link" data-scroll-target="#the-baseline-was-never-measured">The baseline was never measured</a></li>
+  </ul></li>
+  <li><a href="#the-shape-of-the-labelled-pool" id="toc-the-shape-of-the-labelled-pool" class="nav-link" data-scroll-target="#the-shape-of-the-labelled-pool">The shape of the labelled pool</a></li>
+  <li><a href="#what-the-benchmark-measures-and-against-what" id="toc-what-the-benchmark-measures-and-against-what" class="nav-link" data-scroll-target="#what-the-benchmark-measures-and-against-what">What the benchmark measures, and against what</a></li>
+  <li><a href="#the-split" id="toc-the-split" class="nav-link" data-scroll-target="#the-split">The split</a>
+  <ul>
+  <li><a href="#grouped-by-background-message" id="toc-grouped-by-background-message" class="nav-link" data-scroll-target="#grouped-by-background-message">Grouped by Background Message</a></li>
+  <li><a href="#hash-assigned-not-shuffled" id="toc-hash-assigned-not-shuffled" class="nav-link" data-scroll-target="#hash-assigned-not-shuffled">Hash-assigned, not shuffled</a></li>
+  <li><a href="#salted-so-re-cutting-is-deliberate" id="toc-salted-so-re-cutting-is-deliberate" class="nav-link" data-scroll-target="#salted-so-re-cutting-is-deliberate">Salted, so re-cutting is deliberate</a></li>
+  <li><a href="#residual-leakage-quantified-rather-than-engineered-away" id="toc-residual-leakage-quantified-rather-than-engineered-away" class="nav-link" data-scroll-target="#residual-leakage-quantified-rather-than-engineered-away">Residual leakage, quantified rather than engineered away</a></li>
+  <li><a href="#the-resulting-folds" id="toc-the-resulting-folds" class="nav-link" data-scroll-target="#the-resulting-folds">The resulting folds</a></li>
+  <li><a href="#held-out-before-downsampling-never-after" id="toc-held-out-before-downsampling-never-after" class="nav-link" data-scroll-target="#held-out-before-downsampling-never-after">Held out before downsampling, never after</a></li>
+  </ul></li>
+  <li><a href="#what-to-report" id="toc-what-to-report" class="nav-link" data-scroll-target="#what-to-report">What to report</a>
+  <ul>
+  <li><a href="#not-accuracy" id="toc-not-accuracy" class="nav-link" data-scroll-target="#not-accuracy">Not accuracy</a></li>
+  <li><a href="#refutes-precision-and-recall-separately" id="toc-refutes-precision-and-recall-separately" class="nav-link" data-scroll-target="#refutes-precision-and-recall-separately">REFUTES precision and recall, separately</a></li>
+  <li><a href="#the-supportsrefutes-flip-rate" id="toc-the-supportsrefutes-flip-rate" class="nav-link" data-scroll-target="#the-supportsrefutes-flip-rate">The SUPPORTS→REFUTES flip rate</a></li>
+  <li><a href="#a-threshold-sweep-not-one-operating-point" id="toc-a-threshold-sweep-not-one-operating-point" class="nav-link" data-scroll-target="#a-threshold-sweep-not-one-operating-point">A threshold sweep, not one operating point</a></li>
+  <li><a href="#per-assessment-breakdown" id="toc-per-assessment-breakdown" class="nav-link" data-scroll-target="#per-assessment-breakdown">Per-assessment breakdown</a></li>
+  </ul></li>
+  <li><a href="#two-gaps-this-design-does-not-close" id="toc-two-gaps-this-design-does-not-close" class="nav-link" data-scroll-target="#two-gaps-this-design-does-not-close">Two gaps this design does not close</a>
+  <ul>
+  <li><a href="#the-holdout-cannot-measure-recall" id="toc-the-holdout-cannot-measure-recall" class="nav-link" data-scroll-target="#the-holdout-cannot-measure-recall">The holdout cannot measure recall</a></li>
+  <li><a href="#the-labels-are-one-models-opinion" id="toc-the-labels-are-one-models-opinion" class="nav-link" data-scroll-target="#the-labels-are-one-models-opinion">The labels are one model’s opinion</a></li>
+  </ul></li>
+  <li><a href="#where-it-lives-the-training-project-not-a-fifth-one" id="toc-where-it-lives-the-training-project-not-a-fifth-one" class="nav-link" data-scroll-target="#where-it-lives-the-training-project-not-a-fifth-one">Where it lives: the training project, not a fifth one</a>
+  <ul>
+  <li><a href="#the-existing-split-criterion-does-not-extend" id="toc-the-existing-split-criterion-does-not-extend" class="nav-link" data-scroll-target="#the-existing-split-criterion-does-not-extend">The existing split criterion does not extend</a></li>
+  <li><a href="#the-cost-ratio" id="toc-the-cost-ratio" class="nav-link" data-scroll-target="#the-cost-ratio">The cost ratio</a></li>
+  <li><a href="#the-decisive-reason-a-better-dependency-edge-becomes-available" id="toc-the-decisive-reason-a-better-dependency-edge-becomes-available" class="nav-link" data-scroll-target="#the-decisive-reason-a-better-dependency-edge-becomes-available">The decisive reason: a better dependency edge becomes available</a></li>
+  <li><a href="#when-to-split-it-out-after-all" id="toc-when-to-split-it-out-after-all" class="nav-link" data-scroll-target="#when-to-split-it-out-after-all">When to split it out after all</a></li>
+  </ul></li>
+  <li><a href="#models-under-test" id="toc-models-under-test" class="nav-link" data-scroll-target="#models-under-test">Models under test</a></li>
+  <li><a href="#serving-the-models" id="toc-serving-the-models" class="nav-link" data-scroll-target="#serving-the-models">Serving the models</a></li>
+  <li><a href="#rendering-stays-in-reporting" id="toc-rendering-stays-in-reporting" class="nav-link" data-scroll-target="#rendering-stays-in-reporting">Rendering stays in <code>reporting</code></a></li>
+  <li><a href="#what-this-changes-upstream" id="toc-what-this-changes-upstream" class="nav-link" data-scroll-target="#what-this-changes-upstream">What this changes upstream</a></li>
+  <li><a href="#an-incidental-finding-90-of-the-checkpoint-tree-is-dead-weight" id="toc-an-incidental-finding-90-of-the-checkpoint-tree-is-dead-weight" class="nav-link" data-scroll-target="#an-incidental-finding-90-of-the-checkpoint-tree-is-dead-weight">An incidental finding: 90% of the checkpoint tree is dead weight</a></li>
+  <li><a href="#operating-notes" id="toc-operating-notes" class="nav-link" data-scroll-target="#operating-notes">Operating notes</a></li>
+  </ul></li>
   <li><a href="#deployment" id="toc-deployment" class="nav-link" data-scroll-target="#deployment">Deployment</a></li>
   <li><a href="#single-combined-model-vs.-assessment-specific-models" id="toc-single-combined-model-vs.-assessment-specific-models" class="nav-link" data-scroll-target="#single-combined-model-vs.-assessment-specific-models">Single Combined Model vs. Assessment-Specific Models</a>
   <ul>
@@ -2258,7 +2304,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 18, 2026</p>
+      <p class="date">September 28, 2026</p>
     </div>
   </div>
   
@@ -2518,28 +2564,424 @@ vertical-align: -.125em;
 </section>
 <section id="evaluation" class="level2">
 <h2 class="anchored" data-anchor-id="evaluation">Evaluation</h2>
-<p>Before deploying, check performance on the held-out validation set:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.metrics <span class="im">import</span> classification_report</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>preds <span class="op">=</span> trainer.predict(dataset[<span class="st">&quot;test&quot;</span>])</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>pred_labels <span class="op">=</span> preds.predictions.argmax(axis<span class="op">=</span><span class="dv">1</span>)</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>true_labels <span class="op">=</span> dataset[<span class="st">&quot;test&quot;</span>][<span class="st">&quot;labels&quot;</span>]</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(classification_report(</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    true_labels, pred_labels,</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    target_names<span class="op">=</span><span class="bu">list</span>(LABEL2ID.keys())</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Also <strong>manually inspect</strong> 20–30 predictions on citing papers from <code>works_citing_parquet</code> (papers the model has never seen) to confirm the domain adaptation feels right before running a full pipeline rebuild.</p>
+<p><code>train_nli.py</code> prints a <code>classification_report</code> on the held-out fold and writes it to <code>run_results.json</code>, but <strong>that is a monitoring aid, not the evaluation</strong>: it covers one model, on a fold that exists only inside that run. The real evaluation — every model including the untuned baseline, on one fixed fold — is the benchmark described in the next section.</p>
+<p>Also <strong>manually inspect</strong> 20-30 predictions on citing papers from <code>works_citing_parquet</code> (papers the model has never seen) before running a full pipeline rebuild. No aggregate number substitutes for reading a few.</p>
+</section>
+<section id="benchmarking-held-out-evaluation-across-every-model" class="level2">
+<h2 class="anchored" data-anchor-id="benchmarking-held-out-evaluation-across-every-model">Benchmarking: held-out evaluation across every model</h2>
+<p><strong>Status: implemented 2026-09-28.</strong> The <code>split</code> column, <code>train_nli.py</code>’s use of it, the local scorer and the four benchmark targets are all live. Every figure quoted below was measured on that date against the live <code>output/nli_training/</code>, <code>output/llm_verification/scores*</code> and <code>output/nli_scores_evidence*</code> trees; the corpus grows continuously, so treat them as a snapshot that establishes <em>orders of magnitude and ratios</em>, not as values to be re-quoted later without re-measuring.</p>
+<p>What follows is the design and, more importantly, the reasoning — particularly about what this benchmark can and cannot establish, which turned out to be the most important part.</p>
+<section id="why-the-numbers-we-have-cannot-answer-the-question" class="level3">
+<h3 class="anchored" data-anchor-id="why-the-numbers-we-have-cannot-answer-the-question">Why the numbers we have cannot answer the question</h3>
+<p>Two fine-tuned checkpoints exist (<code>output/nli_training_finetuned/KP=GA1_IAS/citing=GA1/downsample_seed=13/date=2026.09.01_11_30/</code> and <code>.../date=2026.09.01_13_20/</code>), each with a <code>run_results.json</code> carrying a classification report. Those reports cannot be used to decide whether fine-tuning helped, for three independent reasons.</p>
+<section id="the-evaluation-split-leaks" class="level4">
+<h4 class="anchored" data-anchor-id="the-evaluation-split-leaks">The evaluation split leaks</h4>
+<p><code>scripts/training/train_nli.py</code> currently calls</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> dataset.train_test_split(test_size<span class="op">=</span><span class="fl">0.15</span>, seed<span class="op">=</span><span class="dv">42</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>which splits <strong>by row</strong>. The training set is 2,436 rows over only <strong>465 distinct claims</strong> — a mean of 5.2 citing works per claim, up to 72 for the largest. A random row split therefore places some of nearly every claim’s works in the training fold and the rest in the evaluation fold, with the <em>identical hypothesis string</em> on both sides.</p>
+<p>This matters more than the usual hand-wringing about leakage, because the label is not uniformly distributed over claims: the 562 REFUTES rows are concentrated in 191 claims. “Recognise this particular claim, predict REFUTES” is an available shortcut that scores well on the evaluation fold and transfers to nothing. We do not know how much of the reported performance it accounts for, and that is precisely the problem.</p>
+</section>
+<section id="the-runs-are-not-comparable-to-each-other" class="level4">
+<h4 class="anchored" data-anchor-id="the-runs-are-not-comparable-to-each-other">The runs are not comparable to each other</h4>
+<p>The split is computed inside the training run, from whatever data that run loaded, after downsampling. Two runs over different data — or the same data with a different <code>--downsample-seed</code> — evaluate on different rows. There is no fixed yardstick, so run-to-run differences confound “better model” with “easier evaluation fold”.</p>
+</section>
+<section id="the-baseline-was-never-measured" class="level4">
+<h4 class="anchored" data-anchor-id="the-baseline-was-never-measured">The baseline was never measured</h4>
+<p>Nothing has ever scored the zero-shot model (<code>MoritzLaurer/bge-m3-zeroshot-v2.0-c</code>) on the evaluation fold. A fine-tuned model’s F1 in isolation says nothing about whether fine-tuning was worth doing; the comparison that matters was never run.</p>
+</section>
+</section>
+<section id="the-shape-of-the-labelled-pool" class="level3">
+<h3 class="anchored" data-anchor-id="the-shape-of-the-labelled-pool">The shape of the labelled pool</h3>
+<p>Anything built here has to respect the structure of the data, which is lumpier than a row count suggests.</p>
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<td>rows</td>
+<td style="text-align: right;">2,436</td>
+</tr>
+<tr class="even">
+<td>distinct claims (<code>hypothesis</code>)</td>
+<td style="text-align: right;">465</td>
+</tr>
+<tr class="odd">
+<td>distinct Background Messages (<code>assessment</code>, <code>km</code>, <code>bm</code>)</td>
+<td style="text-align: right;">141</td>
+</tr>
+<tr class="even">
+<td>distinct citing/seed works (<code>work_id</code>)</td>
+<td style="text-align: right;">690</td>
+</tr>
+</tbody>
+</table>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>class</th>
+<th style="text-align: right;">rows</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SUPPORTS</td>
+<td style="text-align: right;">937</td>
+</tr>
+<tr class="even">
+<td>NOT_ENOUGH_INFO</td>
+<td style="text-align: right;">937</td>
+</tr>
+<tr class="odd">
+<td>REFUTES</td>
+<td style="text-align: right;">562</td>
+</tr>
+</tbody>
+</table>
+<p>Works per claim: median 3, mean 5.2, max 72. Claims per work: median 1, mean 3.5, max 99. <strong>Both axes repeat</strong>, which is why neither a row split nor a naive split on one key is sufficient.</p>
+<p>REFUTES — the class the whole project exists to find — is spread over 191 claims in 56 Background Messages, and is heavily concentrated by assessment:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>assessment</th>
+<th style="text-align: right;">SUPPORTS</th>
+<th style="text-align: right;">NOT_ENOUGH_INFO</th>
+<th style="text-align: right;">REFUTES</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GA1</td>
+<td style="text-align: right;">123</td>
+<td style="text-align: right;">123</td>
+<td style="text-align: right;">421</td>
+</tr>
+<tr class="even">
+<td>IAS</td>
+<td style="text-align: right;">749</td>
+<td style="text-align: right;">749</td>
+<td style="text-align: right;">137</td>
+</tr>
+<tr class="odd">
+<td>TCA</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr class="even">
+<td>VA</td>
+<td style="text-align: right;">41</td>
+<td style="text-align: right;">41</td>
+<td style="text-align: right;">2</td>
+</tr>
+</tbody>
+</table>
+<p>558 of 562 REFUTES come from GA1 and IAS. Whether anything learned here generalises to an assessment outside that pair is an open question the benchmark should <em>report on</em> rather than quietly average away.</p>
+</section>
+<section id="what-the-benchmark-measures-and-against-what" class="level3">
+<h3 class="anchored" data-anchor-id="what-the-benchmark-measures-and-against-what">What the benchmark measures, and against what</h3>
+<p><strong>It measures agreement with <code>gpt-4o-mini</code>.</strong> Every label in <code>output/nli_training/</code> originates in Phase 2’s grounded, quote-checked LLM verdict. Fine-tuning distils that judgment into the NLI model; benchmarking scores how well the distillation worked. It does not measure truth, and no amount of held-out discipline turns it into a measurement of truth. The LLM’s verdicts have never been checked against human labels.</p>
+<p>This is a ceiling, not a flaw — distilling an expensive accurate judge into a cheap one is the point of the exercise. But it must be stated wherever the numbers are, because “94% accurate” invites a reading the data does not support. See <em>Two gaps this design does not close</em> below.</p>
+</section>
+<section id="the-split" class="level3">
+<h3 class="anchored" data-anchor-id="the-split">The split</h3>
+<section id="grouped-by-background-message" class="level4">
+<h4 class="anchored" data-anchor-id="grouped-by-background-message">Grouped by Background Message</h4>
+<p>The grouping key is <code>(assessment, bm)</code> — 99 groups — and it deliberately <strong>omits <code>km</code></strong>. That omission is the least obvious decision here, and it was found by the verification rather than by reasoning.</p>
+<p>A Background Message belongs to several Key Messages. The same <code>bm</code> therefore appears under several <code>km</code> values carrying byte-identical claim text: VA’s <code>C9</code> sits under <code>KM7</code>, <code>KM8</code> and <code>KM9</code>. Keying on <code>(assessment, km, bm)</code> splits one Background Message into several groups, which the hash then scatters across both folds. Measured directly:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>grouping key</th>
+<th style="text-align: right;">groups</th>
+<th style="text-align: right;">claim strings in <strong>both</strong> folds</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>assessment</code> + <code>km</code> + <code>bm</code></td>
+<td style="text-align: right;">141</td>
+<td style="text-align: right;"><strong>126</strong></td>
+</tr>
+<tr class="even">
+<td><code>assessment</code> + <code>bm</code></td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;"><strong>0</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The finer-looking key was the leakier one. The first implementation used it, on exactly the assumption stated above — that claims never span BMs — and the leak check caught it immediately. This is what that check is for, and it is why the benchmark reports <code>claims_in_both_folds</code> on every run rather than trusting the grouping once.</p>
+<p>BM-level was chosen over claim-level (465 groups) deliberately. Claims within a BM are segmented from the same source text and share topic, vocabulary and often most of their citing works; splitting between them would leak nearly as much as splitting by row, just less visibly. The cost is fewer groups and therefore a noisier estimate, which is the right trade: an honest noisy number beats a precise misleading one.</p>
+</section>
+<section id="hash-assigned-not-shuffled" class="level4">
+<h4 class="anchored" data-anchor-id="hash-assigned-not-shuffled">Hash-assigned, not shuffled</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>hash_bucket <span class="ot">&lt;-</span> <span class="cf">function</span>(key, salt) {</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">vapply</span>(</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">paste</span>(key, salt, <span class="at">sep =</span> <span class="st">&quot;|&quot;</span>),</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    \(k) <span class="fu">strtoi</span>(<span class="fu">substr</span>(digest<span class="sc">::</span><span class="fu">digest</span>(k, <span class="at">algo =</span> <span class="st">&quot;md5&quot;</span>, <span class="at">serialize =</span> <span class="cn">FALSE</span>), <span class="dv">1</span>, <span class="dv">6</span>), <span class="dv">16</span>L) <span class="sc">%%</span> <span class="dv">100</span>L,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">integer</span>(<span class="dv">1</span>), <span class="at">USE.NAMES =</span> <span class="cn">FALSE</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>serialize = FALSE</code> hashes the string bytes directly rather than an R serialisation of them, so the assignment is stable across R and <code>digest</code> versions — which a benchmark meant to outlive several of both actually needs.</p>
+<p>A BM’s fold is a pure function of its own identity. Adding an assessment, re-running Phase 2, or growing the citing-works corpus never moves an existing BM across the boundary. A shuffled split would silently invalidate every previously recorded result the moment the corpus grew — and this corpus grows continuously, which is exactly the condition under which shuffling is worst.</p>
+</section>
+<section id="salted-so-re-cutting-is-deliberate" class="level4">
+<h4 class="anchored" data-anchor-id="salted-so-re-cutting-is-deliberate">Salted, so re-cutting is deliberate</h4>
+<p><code>salt = &quot;bench-v1&quot;</code> is the version tag. Changing it re-cuts the benchmark; that is the only way the benchmark should ever change, and the string makes the change visible in a diff and quotable in a result table.</p>
+</section>
+<section id="residual-leakage-quantified-rather-than-engineered-away" class="level4">
+<h4 class="anchored" data-anchor-id="residual-leakage-quantified-rather-than-engineered-away">Residual leakage, quantified rather than engineered away</h4>
+<p>A work can be cited under several Background Messages (up to 99 claims, mean 3.5), so a minority of abstracts will appear in both folds, paired with different claims. This is a genuine but much weaker leak than claim-text leakage: the model sees the premise before, never the premise-hypothesis pair or its label.</p>
+<p>Closing it properly means a connected-component split on the (claim, work) bipartite graph, which at 2,436 rows produces few, huge, unbalanced components — trading a small measurable bias for a large unmeasurable one. The design instead <strong>reports the cross-fold work overlap as a diagnostic</strong> alongside every result, so a reader can judge it.</p>
+<p>As realised, that overlap is <strong>62 of 683 distinct works (9.1%)</strong> — but those 62 are the heavily-cited ones, so they account for <strong>55.2% of the test fold’s rows</strong>. That is higher than “a minority of abstracts” suggests and should be read alongside every number in the report. It is not claim-text leakage and it is not a reason to distrust the comparison <em>between</em> models, all of which face it identically; it is a reason to treat the absolute level of any single model’s performance as optimistic.</p>
+</section>
+<section id="the-resulting-folds" class="level4">
+<h4 class="anchored" data-anchor-id="the-resulting-folds">The resulting folds</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th></th>
+<th style="text-align: right;">train</th>
+<th style="text-align: right;">test</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>rows</td>
+<td style="text-align: right;">1,969</td>
+<td style="text-align: right;">467</td>
+</tr>
+<tr class="even">
+<td>groups (assessment + bm)</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">17</td>
+</tr>
+<tr class="odd">
+<td>SUPPORTS</td>
+<td style="text-align: right;">802</td>
+<td style="text-align: right;">135</td>
+</tr>
+<tr class="even">
+<td>NOT_ENOUGH_INFO</td>
+<td style="text-align: right;">775</td>
+<td style="text-align: right;">162</td>
+</tr>
+<tr class="odd">
+<td>REFUTES</td>
+<td style="text-align: right;">392</td>
+<td style="text-align: right;">170</td>
+</tr>
+</tbody>
+</table>
+<p>19.2% of rows held out against a 0.2 target — hash assignment balances group <em>count</em>, not row count, and 17 of 99 groups is 17.2%. All four assessments with data appear in both folds. The headline subset (NLI said SUPPORTS, truth is REFUTES) has <strong>111 rows</strong> in the test fold, which is what makes the primary metric measurable at all.</p>
+</section>
+<section id="held-out-before-downsampling-never-after" class="level4">
+<h4 class="anchored" data-anchor-id="held-out-before-downsampling-never-after">Held out before downsampling, never after</h4>
+<p><code>train_nli.py</code> now takes the holdout out <strong>first</strong> and balances only the train fold. The order is not cosmetic: <code>--downsample-seed</code> caps every class to the smallest, so downsampling a combined pool and splitting afterwards would make the evaluation set itself a function of the seed. Two runs with different seeds would then be scored on different rows — reintroducing, by a different route, exactly the run-to-run incomparability the fixed holdout exists to remove.</p>
+<p>On the current pool that means 1,969 train rows balanced down to 392 per class (1,176 total), against a 467-row test fold left at its natural, mildly imbalanced composition. The evaluation fold is deliberately <em>not</em> balanced: it is meant to resemble the data, not the training regime.</p>
+</section>
+</section>
+<section id="what-to-report" class="level3">
+<h3 class="anchored" data-anchor-id="what-to-report">What to report</h3>
+<p>The default <code>classification_report</code> headline is actively misleading here, and should not be the number anyone quotes.</p>
+<section id="not-accuracy" class="level4">
+<h4 class="anchored" data-anchor-id="not-accuracy">Not accuracy</h4>
+<p>After <code>--downsample-seed</code> caps every class to the smallest, training and evaluation are near-balanced three-way. Deployment is not: REFUTES is 0.2–3% of pairs depending on the route. A balanced-set accuracy flatters every model equally and predicts nothing about behaviour on the real stream.</p>
+</section>
+<section id="refutes-precision-and-recall-separately" class="level4">
+<h4 class="anchored" data-anchor-id="refutes-precision-and-recall-separately">REFUTES precision and recall, separately</h4>
+<p>Stated as two numbers, never combined into F1 for the headline. The project’s tolerance for the two errors is not symmetric — a missed refutation is a finding that never surfaces, a false one is a claim a human discards in seconds — and F1 assumes it is.</p>
+</section>
+<section id="the-supportsrefutes-flip-rate" class="level4">
+<h4 class="anchored" data-anchor-id="the-supportsrefutes-flip-rate">The SUPPORTS→REFUTES flip rate</h4>
+<p>This is the number that decides whether fine-tuning worked.</p>
+<p>Tracing every confirmed refutation back to what the zero-shot NLI had said about that same pair:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>NLI said</th>
+<th style="text-align: right;">citing works</th>
+<th style="text-align: right;">key papers</th>
+<th style="text-align: right;">total</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SUPPORTS</td>
+<td style="text-align: right;">303</td>
+<td style="text-align: right;">34</td>
+<td style="text-align: right;"><strong>337 (60%)</strong></td>
+</tr>
+<tr class="even">
+<td>REFUTES</td>
+<td style="text-align: right;">105</td>
+<td style="text-align: right;">76</td>
+<td style="text-align: right;">181 (32%)</td>
+</tr>
+<tr class="odd">
+<td>NOT_ENOUGH_INFO</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">44</td>
+<td style="text-align: right;">44 (8%)</td>
+</tr>
+</tbody>
+</table>
+<p>Only 32% of confirmed refutations were pairs the zero-shot model flagged REFUTES. The <strong>largest single source, 60%, is pairs it confidently called SUPPORTS</strong> and the LLM overturned. The zero-shot model did not merely miss those — it got them backwards.</p>
+<p>So the benchmark’s primary metric is: <em>of the evaluation-fold rows where NLI said SUPPORTS and the LLM said REFUTES, what fraction does each model now call REFUTES?</em> If a fine-tuned checkpoint does not move that number, it has not done the job this project needs, whatever its macro-F1 says.</p>
+<p>(The zero in the citing-works <code>NOT_ENOUGH_INFO</code> row is an artefact of routing, not a finding — see below.)</p>
+</section>
+<section id="a-threshold-sweep-not-one-operating-point" class="level4">
+<h4 class="anchored" data-anchor-id="a-threshold-sweep-not-one-operating-point">A threshold sweep, not one operating point</h4>
+<p>Phase 1 stores the full probability distribution and every threshold decision is made downstream in <code>dplyr</code>. The benchmark should match that: emit precision/recall across the confidence range per model, not a single argmax operating point. This also yields the re-calibrated deployment threshold, which a balanced evaluation set’s argmax cannot — the base-rate shift between a 1:1:1 training distribution and a 0.2% deployment stream guarantees an argmax classifier over-predicts REFUTES in production.</p>
+</section>
+<section id="per-assessment-breakdown" class="level4">
+<h4 class="anchored" data-anchor-id="per-assessment-breakdown">Per-assessment breakdown</h4>
+<p>Given 558 of 562 REFUTES come from GA1+IAS, a pooled number mostly measures those two. Report TCA and VA separately even though their counts are tiny; “we cannot tell” is a legitimate and useful result.</p>
+</section>
+</section>
+<section id="two-gaps-this-design-does-not-close" class="level3">
+<h3 class="anchored" data-anchor-id="two-gaps-this-design-does-not-close">Two gaps this design does not close</h3>
+<p>Both should be visible in the rendered report rather than buried here, because each bounds what the headline number means.</p>
+<section id="the-holdout-cannot-measure-recall" class="level4">
+<h4 class="anchored" data-anchor-id="the-holdout-cannot-measure-recall">The holdout cannot measure recall</h4>
+<p>It inherits Phase 2’s routing bias. For citing works, only <code>REFUTES-certain</code> (9,054 pairs) and <code>SUPPORTS-certain</code> (181,705 pairs) were ever sent for LLM review. Pairs the zero-shot model called <code>NOT_ENOUGH_INFO</code> — 1,232,027 in GA1 alone — have never been reviewed, so no genuine refutation hiding among them is in the labelled pool, in the training set, or in any split of it.</p>
+<p>The key-paper chain is full-coverage and gives the only direct estimate:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>what NLI said</th>
+<th style="text-align: right;">pairs reviewed</th>
+<th style="text-align: right;">LLM confirmed REFUTES</th>
+<th style="text-align: right;">rate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>REFUTES</td>
+<td style="text-align: right;">2,457</td>
+<td style="text-align: right;">76</td>
+<td style="text-align: right;">3.09%</td>
+</tr>
+<tr class="even">
+<td>NOT_ENOUGH_INFO</td>
+<td style="text-align: right;">11,905</td>
+<td style="text-align: right;">44</td>
+<td style="text-align: right;">0.37%</td>
+</tr>
+</tbody>
+</table>
+<p>The REFUTES flag is ~8x enriched — real signal — but the NEI pile is 4.8x larger, so <strong>37% of every refutation found in the full-coverage chain was sitting in pairs NLI had called NEI</strong>. For citing works in GA1 the NEI pile is 3.8x the REFUTES pile, so the same effect applies at greater scale.</p>
+<p>A held-out split of a biased pool measures performance on the bias. Closing this needs a <strong>recall probe</strong>: a random sample drawn across the <em>full</em> NLI output including NEI, sent through Phase 2 for labelling. A few thousand pairs is a rounding error against Phase 2’s existing spend, and it is the only thing that can convert “we found 408 refutations” into “we found 408 of an estimated N”.</p>
+</section>
+<section id="the-labels-are-one-models-opinion" class="level4">
+<h4 class="anchored" data-anchor-id="the-labels-are-one-models-opinion">The labels are one model’s opinion</h4>
+<p>562 REFUTES rows, none human-checked. That is a single afternoon’s reading, and it is the highest value-per-unit-effort check available anywhere in this pipeline: it bounds the ceiling every other number here is measured against.</p>
+<p>The design therefore treats the label source as a <strong>column, not an assumption</strong> — the benchmark reads <code>(premise, hypothesis, label, label_source)</code> and a human-labelled set with <code>label_source = &quot;human&quot;</code> drops into the same targets with no restructuring. Retrofitting a second label source into a report built for one is the expensive way to do this; leaving the slot open costs nothing today.</p>
+</section>
+</section>
+<section id="where-it-lives-the-training-project-not-a-fifth-one" class="level3">
+<h3 class="anchored" data-anchor-id="where-it-lives-the-training-project-not-a-fifth-one">Where it lives: the training project, not a fifth one</h3>
+<p>The benchmark is <strong>four targets inside <code>_targets_training.R</code></strong>, not a project of its own. A fifth project was designed first and rejected; the reasoning is worth recording, because “add a project” was the obvious move and it is wrong.</p>
+<section id="the-existing-split-criterion-does-not-extend" class="level4">
+<h4 class="anchored" data-anchor-id="the-existing-split-criterion-does-not-extend">The existing split criterion does not extend</h4>
+<p>The four projects in <a href="TD_targets.html">TD_targets</a> are divided on cost, credentials and blast radius — collection has OpenAlex and a destructive rebuild, fact checking has GPU hours and OpenRouter, training has OpenRouter and a 25-minute local fine-tune, reporting has none. Benchmarking has none either, but <code>reporting</code> earns its separation by serving <strong>all four</strong> projects, whereas a benchmark only ever looks at what training produced.</p>
+<p><code>TD_targets.qmd</code>’s own test is whether something is a separate process sharing an input, or a stage of one process. Benchmarking is the evaluation half of training: nobody runs it without caring about a training run. That is the second case, and it belongs in the same DAG.</p>
+</section>
+<section id="the-cost-ratio" class="level4">
+<h4 class="anchored" data-anchor-id="the-cost-ratio">The cost ratio</h4>
+<p>As its own project the benchmark is roughly twelve targets — of which five are pure diagram overhead (<code>mmd_workflow_*</code>, <code>diagram_*</code>, <code>r_files</code>, <code>pipeline_mmd</code>) and three are re-declared configuration — plus a documentation tax of nine touchpoints: two CLAUDE.md tables, the README table, the four <code>workflow_*.mmd</code> headers that each enumerate the project set, the Shiny node metadata, the diagram selector, and TD_targets’ Running section. Every one of those is a place the set can drift out of sync, and several already have.</p>
+<p>Inside the training project it is four targets reusing <code>config_file</code>, <code>nli_active</code>, <code>granularity</code>, <code>r_files</code> and the existing diagram chain.</p>
+</section>
+<section id="the-decisive-reason-a-better-dependency-edge-becomes-available" class="level4">
+<h4 class="anchored" data-anchor-id="the-decisive-reason-a-better-dependency-edge-becomes-available">The decisive reason: a better dependency edge becomes available</h4>
+<p><code>nli_finetuned_model</code> is already a <code>format = &quot;file&quot;</code> target, so the training project already hashes its output. Taking it as a <strong>bare, never-read argument</strong> — the convention this codebase already uses three times (<code>nli_scores_qa_data</code> ← <code>nli_scores_keypaper_evidence</code>, <code>nli_finetuned_model</code> ← <code>nli_training_data</code>, <code>llm_verification_parquet</code> ← <code>nli_scores_by_claim_evidence</code>) — makes a new checkpoint invalidate the benchmark automatically, at no additional cost.</p>
+<p>Across a project boundary that edge is not available: the benchmark would have to re-declare the 42 GB <code>output/nli_training_finetuned/</code> tree as its own tracked input, which <code>reporting</code> already refuses to do for exactly this reason. The separate-project design was therefore forced into scanning the directory untracked and <em>documenting a manual re-run step</em> — a wart that disappears entirely by folding in.</p>
+<p>So the design uses <strong>both</strong> mechanisms, for two different jobs:</p>
+<ul>
+<li><strong>Enumeration</strong> — scan disk for every checkpoint to benchmark, since runs accumulate and no config key tracks them (the same instinct <code>shiny_app/R/discover_artifacts.R</code> applies to rendered artifacts).</li>
+<li><strong>Invalidation</strong> — the bare <code>nli_finetuned_model</code> argument, so producing a new checkpoint marks the benchmark stale without anyone remembering to.</li>
+</ul>
+<p>One consequence to know: because <code>benchmark_scores</code> now depends on <code>nli_finetuned_model</code>, naming it in a <code>tar_make()</code> while that target is outdated will start a real fine-tuning run. Use <code>shortcut = TRUE</code> to benchmark the checkpoints already on disk — the same discipline every paid target in this repository already requires.</p>
+</section>
+<section id="when-to-split-it-out-after-all" class="level4">
+<h4 class="anchored" data-anchor-id="when-to-split-it-out-after-all">When to split it out after all</h4>
+<p>Cheaply, and exactly as steps 2 and 3 of the pipeline split did — the targets move verbatim. Two things would justify it: a second input the training project does not have (the recall probe over the full NLI output, or a human gold set with its own labelling workflow), or wanting to benchmark models training never produced, such as a different base model or an external checkpoint. Either makes it a genuinely separate process. Until one exists, a fifth project is structure built for a future that may not arrive.</p>
+</section>
+</section>
+<section id="models-under-test" class="level3">
+<h3 class="anchored" data-anchor-id="models-under-test">Models under test</h3>
+<p>Discovered from disk, never from configuration:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  benchmark_config<span class="sc">$</span>baseline_model,  <span class="co"># MoritzLaurer/bge-m3-zeroshot-v2.0-c</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">grep</span>(<span class="st">&quot;/best$&quot;</span>, <span class="fu">list.dirs</span>(<span class="st">&quot;output/nli_training_finetuned&quot;</span>, <span class="at">recursive =</span> <span class="cn">TRUE</span>), <span class="at">value =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Three entries today. Each checkpoint’s path is already its identity (<code>KP=GA1_IAS/citing=GA1/downsample_seed=13/date=2026.09.01_11_30</code>), so it doubles as the output partition key and the result-table row label with no naming scheme to invent. The <code>.disabled/&lt;nli_config&gt;/</code> marker directory written when <code>training.finetune.enabled</code> is false contains no <code>best/</code> and is skipped by the same pattern.</p>
+</section>
+<section id="serving-the-models" class="level3">
+<h3 class="anchored" data-anchor-id="serving-the-models">Serving the models</h3>
+<p><strong>Local CPU, not RunPod.</strong> The NLI pool serves one model per deployment, so comparing three models through it means three deployments — real money, real setup, and a confound if their hardware differs. The evaluation fold is a few hundred rows; three models over it is minutes of local CPU using the same <code>transformers</code> stack and the same venv <code>train_nli.py</code> already requires.</p>
+<p><code>scripts/benchmark/score_nli_local.py --model &lt;path|hf-id&gt;</code> mirrors <code>train_nli.py</code>’s model/tokenizer loading and writes per-row probabilities; <code>R/build_nli_benchmark_scores.R</code> bridges to it exactly as <code>R/build_nli_finetuned_model.R</code> already bridges to <code>train_nli.py</code> — a thin <code>system2()</code> wrapper whose output directory is a real <code>format = &quot;file&quot;</code> target.</p>
+<p><code>score_nli_local.py</code> reproduces <code>server.py</code> rather than inventing a scheme, because a baseline scored differently from how it is deployed is not a baseline. The mode is derived from the model itself — does its <code>id2label</code> carry all three real label names? — not from a flag, so a model cannot be scored in the wrong mode by misconfiguration. Verified against real deployed scores: on clean abstracts the local probabilities reproduce the production server’s <code>nli_confidence</code> to about four decimal places.</p>
+<p><strong>One inexactness, recorded because it is real.</strong> The deployed pipeline cleans the premise (<code>clean_title()</code>/<code>clean_abstract()</code> strip HTML/JATS/LaTeX) while <code>train_nli.py</code> — and therefore this benchmark — uses the raw <code>title</code>/<code>abstract</code> stored in the training set. The comparison <em>between</em> models is unaffected, since all of them see the same premises; but the baseline row is a close rather than exact reproduction of deployed behaviour, and divergence concentrates in marked-up abstracts.</p>
+<p><code>max_length</code> also differs by mode and is recorded per model in the output: the zero-shot model is scored at the config’s deployed 2048, a fine-tuned checkpoint at the 512 it was trained on, because running it longer at inference would be out of distribution. Truncation counts are reported so this is visible rather than assumed harmless.</p>
+<p>Note <code>train_nli.py</code> forces <code>use_cpu=True</code> because MPS was measured to produce <code>grad_norm == 0.0</code> at this sequence length <em>and</em> to be slower. Inference is a different workload and MPS may well be fine here, but the benchmark’s job is comparability, not speed: pin CPU so results are reproducible, and revisit only if runtime becomes a real constraint.</p>
+</section>
+<section id="rendering-stays-in-reporting" class="level3">
+<h3 class="anchored" data-anchor-id="rendering-stays-in-reporting">Rendering stays in <code>reporting</code></h3>
+<p>The benchmark writes <code>output/tables/nli_benchmark_qa.rds</code> — the same cached-rds-holding-a-prebuilt-widget convention every other QA data builder here uses, because the qmd renders in a fresh session that never sources <code>R/*.R</code>. The reporting project declares that path as a <code>format = &quot;file&quot;</code> target keeping the producer’s name, and <code>input/reports/QA_NLI_Benchmark_Report.qmd</code> reads it.</p>
+<p>That is the one genuine cross-project edge this design adds, and it runs the same direction as every other one: everything renders in <code>reporting</code>, nothing else renders anything.</p>
+</section>
+<section id="what-this-changes-upstream" class="level3">
+<h3 class="anchored" data-anchor-id="what-this-changes-upstream">What this changes upstream</h3>
+<p>Adding the <code>split</code> column to <code>build_nli_training_data()</code> invalidates <code>nli_training_data</code> and therefore <code>nli_finetuned_model</code>. <strong>Both existing checkpoints need retraining before their numbers mean anything</strong> — they were trained on a leaking split, so they have seen evaluation-fold claims. That is not a cost of the benchmark; it is the benchmark’s first finding. Keep the old run directories rather than overwriting them: “trained with a leaking split” is a useful comparison row, and the cheapest evidence available for how much the leak was worth.</p>
+</section>
+<section id="an-incidental-finding-90-of-the-checkpoint-tree-is-dead-weight" class="level3">
+<h3 class="anchored" data-anchor-id="an-incidental-finding-90-of-the-checkpoint-tree-is-dead-weight">An incidental finding: 90% of the checkpoint tree is dead weight</h3>
+<p>Measured while checking what the bare <code>nli_finetuned_model</code> edge would cost to hash. One run directory:</p>
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<td><code>checkpoint-89</code></td>
+<td style="text-align: right;">6.3 GB</td>
+</tr>
+<tr class="even">
+<td><code>checkpoint-178</code></td>
+<td style="text-align: right;">6.3 GB</td>
+</tr>
+<tr class="odd">
+<td><code>checkpoint-267</code></td>
+<td style="text-align: right;">6.3 GB</td>
+</tr>
+<tr class="even">
+<td><code>best/</code></td>
+<td style="text-align: right;">2.1 GB</td>
+</tr>
+<tr class="odd">
+<td><code>run_results.json</code></td>
+<td style="text-align: right;">8 KB</td>
+</tr>
+</tbody>
+</table>
+<p>19 of every 21 GB is HuggingFace <code>Trainer</code>’s intermediate saves, and nothing reads them: <code>build_nli_finetuned_model_qa_data.R</code> reads <code>run_results.json</code>, the benchmark reads <code>best/</code>. A checkpoint is 6.3 GB because it carries AdamW optimiser state (roughly twice the parameters) on top of the 2.1 GB of weights; <code>best/</code> is <code>save_model()</code>, weights only.</p>
+<p><code>save_total_limit=1</code> is now set in <code>TrainingArguments</code>, which keeps one checkpoint instead of one per epoch — 8.4 GB per run rather than 21 GB. <code>load_best_model_at_end</code> still works: Trainer always retains the best checkpoint under the limit. Dropping checkpoints entirely after <code>best/</code> is written would reach 2.1 GB, but leaves no resumption point for a run that dies, and at 25 minutes a run that is not worth much.</p>
+<p>The two pre-existing 21 GB runs are untouched; they predate this and are kept deliberately as the “trained with a leaking split” comparison.</p>
+<p>Unrelated to benchmarking, and worth doing regardless.</p>
+</section>
+<section id="operating-notes" class="level3">
+<h3 class="anchored" data-anchor-id="operating-notes">Operating notes</h3>
+<p>Three things a future reader will otherwise rediscover the hard way.</p>
+<p><strong><code>benchmark_scores</code> is downstream of a ~25 minute training run.</strong> The bare <code>nli_finetuned_model</code> argument that keeps the benchmark honest also means naming <code>benchmark_scores</code> while that target is outdated <em>starts</em> a fine-tune. Use <code>shortcut = TRUE</code> to benchmark the checkpoints already on disk. This is a new path to an accidental local run that did not exist before the benchmark.</p>
+<p><strong>The training store churns more.</strong> The benchmark iterates fast — every metric tweak — while the fine-tune is slow, so <code>tar_outdated()</code> on the training project shows benchmark noise more often than it used to. Noise, not incorrectness.</p>
+<p><strong>The training store has no metadata for three targets.</strong> <code>llm_verification_keypaper_parquet</code>, <code>nli_training_data</code> and <code>nli_finetuned_model</code> were last built in the pre-split <code>_targets/</code> store; the training store has only ever run the NLI chain. So <code>tar_make(names = &quot;nli_training_data&quot;, shortcut = TRUE)</code> cannot bootstrap — it refuses to load a dependency it has never recorded — and building it for real would route ~945,000 uncached pairs through OpenRouter (~$140, see the backlog note in <code>TODO.md</code>).</p>
+<p>The first training set carrying the <code>split</code> column, and the first fine-tune trained on it, were therefore produced by calling <code>build_nli_training_data()</code> and <code>train_nli.py</code> <strong>directly</strong>, outside <code>targets</code>. What is on disk is exactly what those targets would have written; what is missing is store bookkeeping, which fills itself the first time the key-paper Phase 2 spend is authorised. Worth knowing before reading <code>tar_outdated()</code> and concluding the work was not done.</p>
 <hr>
+</section>
 </section>
 <section id="deployment" class="level2">
 <h2 class="anchored" data-anchor-id="deployment">Deployment</h2>
 <p>The fine-tuned model is a drop-in replacement for the original. Update the model path in the Docker container (<a href="external/runpod/docker/nli-runpod/">external/runpod/docker/nli-runpod/</a>) and redeploy:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode dockerfile code-with-copy"><code class="sourceCode dockerfile"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># In external/runpod/docker/nli-runpod/Dockerfile (or equivalent entrypoint)</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Replace:</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>MODEL_ID = <span class="st">&quot;MoritzLaurer/bge-m3-zeroshot-v2.0-c&quot;</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># With:</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>MODEL_ID = <span class="st">&quot;/app/nli-ipbes-finetuned/best&quot;</span>   <span class="co"># local path inside container</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode dockerfile code-with-copy"><code class="sourceCode dockerfile"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># In external/runpod/docker/nli-runpod/Dockerfile (or equivalent entrypoint)</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Replace:</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>MODEL_ID = <span class="st">&quot;MoritzLaurer/bge-m3-zeroshot-v2.0-c&quot;</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co"># With:</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>MODEL_ID = <span class="st">&quot;/app/nli-ipbes-finetuned/best&quot;</span>   <span class="co"># local path inside container</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Upload the fine-tuned model directory to the RunPod volume or push to a private HuggingFace Hub repo, then update the path accordingly.</p>
 <hr>
 </section>

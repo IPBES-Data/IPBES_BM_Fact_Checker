@@ -45,7 +45,7 @@ Two cautions worth knowing before a first run:
 
 See [CLAUDE.md](CLAUDE.md) for build system details (credentials, system
 dependencies) and the full pipeline architecture, and
-[TODO_PIPELINE_SPLIT.md](TODO_PIPELINE_SPLIT.md) for why the split is shaped
+[TD_targets.qmd](TD_targets.qmd) for why the split is shaped
 this way.
 
 ## Reports

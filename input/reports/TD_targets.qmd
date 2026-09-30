@@ -44,7 +44,7 @@ that used to rest on remembering `shortcut = TRUE`.
 |---|---|---|---|
 | `main` | `_targets.R` / `_targets/` | collection: LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
 | `factcheck` | `_targets_factcheck.R` / `_targets_factcheck/` | citing works → NLI (Phase 1) → LLM verification (Phase 2) | `API_openrouter` |
-| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → fine-tune | `API_openrouter` |
+| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → fine-tune → benchmark | `API_openrouter` |
 | `reporting` | `_targets_reporting.R` / `_targets_reporting/` | everything that renders | **none** |
 
 ```r
@@ -78,7 +78,124 @@ against. Targets were therefore *deleted from* `_targets.R` as they moved out.
 Each consumer declares the upstream outputs it reads as `format = "file"`
 targets **keeping the producing project's target names**, so the moved targets
 work verbatim and a genuine upstream change still invalidates downstream through
-content hashing. See `TODO_PIPELINE_SPLIT.md` for the full design.
+content hashing.
+
+## Why four projects
+
+The single DAG mixed several *purposes*. Fact checking is the deliverable:
+citing works discovered by the snowball, scored against assessment claims and
+routed to an LLM for grounded verification. Training is a side quest: key
+papers — the seed references IPBES itself cited — scored and LLM-reviewed
+*exhaustively* to distil a fine-tuning set that may or may not produce a model
+worth deploying. Reporting renders both. These are not stages of one process;
+they are separate processes sharing an input.
+
+| | fact checking | training |
+|---|---|---|
+| input | citing works (2,698,608) | key papers (10,432) |
+| LLM routing | filtered to `REFUTES`/`SUPPORTS` + certain (7.72% of scored pairs) | **every pair, unconditionally** |
+| output | the published finding | a model, plus QA on it |
+| cadence | per assessment, ongoing | occasional, experimental |
+| cost of being wrong | a wrong claim is published | a worse model you decline to deploy |
+
+Sharing a DAG meant sharing failure modes that had nothing to do with each
+other. Two concrete consequences, both since removed: `nli_scores_qa_data` took
+`nli_scores_keypaper_evidence` as a **bare, never-read argument** purely so the
+training chain would run during a fact-checking build — one line that made
+`tar_make(report_fact_checker)` dispatch key-paper GPU work; and rendering a
+report could spend money, because `report_fact_checker` transitively depended on
+`llm_verification_parquet`. Eleven such bare-argument edges existed solely
+because everything was one DAG with mismatched branch shapes.
+
+The split was cheap because the seams were already filesystem paths: 52 of the
+then-76 targets (~70%) were `format = "file"` returning parquet roots, and of
+the 24 value-returning targets 15 were trivial config reads. Essentially no
+*value* crossed a proposed boundary.
+
+**Reporting is its own project rather than part of fact checking** because
+reports come from both consumers — the funnel and `QA_NLI_Scores` families from
+fact checking, `QA_NLI_Training_Data` and `QA_NLI_Finetuned_Model` from
+training. Putting it inside one would split `config.yaml`'s `reports:` block and
+`generate_report_wrappers()` across two projects. It also delivers what the
+exercise was really about: a reporting project needs no credentials and has
+**no path to a paid target** — structurally, not by remembering `shortcut = TRUE`.
+
+### Why collection keeps the original store
+
+This is permanent operating knowledge, not migration trivia. A `targets` store
+is the record of what has been built, so a *fresh* store makes every target in
+it outdated by definition — regardless of whether its output already exists on
+disk. For the collection layer that is not survivable:
+
+| builder | behaviour on a fresh store |
+|---|---|
+| `download_ttls` | SHA-checked against GitHub, skips if unchanged |
+| `download_works` | **`unlink(output_path)` then refetches OpenAlex** |
+| `build_snowball_parquet` | **no existence check at all** — the 16 GB job |
+| `build_works_citing_parquet` | guard only checks that *upstream* nodes/edges exist |
+
+Re-running those would cost days and real OpenAlex budget, and worse would
+produce a *different* corpus from the one every existing score was computed
+against. Hence: **never run a bare `tar_make()` on `main`** — always name the
+targets.
+
+Relatedly, do not run `tar_prune()` on that store. Orphaned metadata for
+removed targets is harmless (`targets` ignores rows for targets not in the
+pipeline) and keeps a rollback available. For a `format = "file"` target the
+stored value is only the path, so `output/` is not endangered — but there is no
+reason to take the risk.
+
+### Cross-project contracts
+
+Consumers cut at the **small consolidated outputs**, never the large
+intermediates: `nli_scores_evidence_consolidated` is ~300 MB where
+`nli_ready_evidence` is 140 GB, and `format = "file"` hashes what it is given.
+
+A **manifest** — a small file of paths, row counts and a digest, tracked instead
+of the tree — was considered and rejected. `targets`' guarantee comes from
+hashing the actual bytes; a manifest substitutes trust in the producer's
+bookkeeping for direct verification, and breaks precisely when it matters: a
+partial write, a hand edit or a botched migration leaves the data changed and
+the manifest unmoved, so the downstream stays "current" on data that is not.
+
+Two pieces of **shared mutable state that no DAG describes**, and which
+therefore have to be remembered:
+
+- `output/nli_scores/.locks/` — the per-host lock directory, shared by both
+  scoring projects. Deliberate: one pool, one queue. If both run at once they
+  contend for the same hosts, which is the wanted behaviour.
+- `output/claim_completion/raw/` and `output/llm_verification/raw*/` — the
+  append-only LLM caches. Content-hash keyed, so concurrent use is safe, but
+  they are genuine side-channels between projects.
+
+### The feedback loop is a human, not an edge
+
+Training produces a fine-tuned model; if it is good, that model becomes an `nli`
+config that **fact checking consumes**. That is a cycle, and a DAG cannot
+contain one. After the split it is what it always was: independent pipelines
+joined by a person editing `training.finetune` and then `fact_checking.nli`.
+
+Adopting a checkpoint is not a config edit alone. It needs the checkpoint
+*served* (pushed to a private HF repo and the image rebuilt, or mounted from a
+network volume with `NLI_MODEL` pointed at it); `passes: 1`, which only works on
+`nli-runpod-bge-m3` **v0.4.0 or later** — earlier images silently drop the
+parameter; `candidate_labels: ["SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO"]`,
+because `_direct_label_order()` matches by name against the model's own
+`id2label` and `train_nli.py` writes exactly those three (the current
+`["supports", "refutes", "is not relevant to"]` would fail every request with a
+400); and a **full rescore**, since scored output is partitioned by
+`nli_config=<name>` and nothing carries over.
+
+### What the split made worse
+
+- **No single `tar_make()`.** Four projects run in order. Given that a bare
+  `tar_make()` used to be able to spend RunPod GPU *and* OpenRouter money, this
+  is closer to honesty than to loss.
+- **Config targets are duplicated** across four preambles. Millisecond
+  `yaml::read_yaml()` reads of one file; the cost is repetition, not compute.
+- **Ordering is the operator's responsibility.** File hashing still catches a
+  stale downstream, but nothing will *run* collection for you.
+- **The big trees get hashed by producer and consumer both.**
 
 ## Pipeline Diagrams
 
@@ -115,7 +232,7 @@ diagrams below.
 ### Pipeline
 
 Auto-generated from the live `targets` DAG. Since the pipeline was split into
-separate projects (see `TODO_PIPELINE_SPLIT.md` and `_targets.yaml`), there is
+separate projects (see `TD_targets.qmd` and `_targets.yaml`), there is
 no longer a single DAG to draw, so each project renders its own:
 `build_pipeline_mmd()` depicts whatever graph it is run inside. These can be
 combined into one overview later.

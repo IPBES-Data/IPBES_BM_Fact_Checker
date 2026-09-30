@@ -9,7 +9,7 @@ flowchart TD
   %% Conceptual workflow for the TRAINING project (_targets_training.R).
   %% --
   %% One of four hand-authored workflow diagrams, one per targets project
-  %% (see _targets.yaml and TODO_PIPELINE_SPLIT.md):
+  %% (see _targets.yaml and TD_targets.qmd):
   %% --
   %%   workflow_main.mmd        collection: LOD -> refs -> zotero -> works ->
   %%                            snowball -> works_citing
@@ -118,7 +118,7 @@ flowchart TD
   %% model is good, adding it to config.yaml's nli library, pointing
   %% fact_checking.nli at it, and accepting a full rescore (scored output is
   %% partitioned by nli_config, so nothing carries over).
-  adopt@{ shape: doc, label: "Manual: serve the checkpoint, add it to the <tt>nli:</tt> library,<br/>point <tt>fact_checking.nli</tt> at it, then FULL RESCORE<br/>(needs passes: 1 and the three real label names — see TODO_PIPELINE_SPLIT.md)" }
+  adopt@{ shape: doc, label: "Manual: serve the checkpoint, add it to the <tt>nli:</tt> library,<br/>point <tt>fact_checking.nli</tt> at it, then FULL RESCORE<br/>(needs passes: 1 and the three real label names — see TD_targets.qmd)" }
   model_db -.-> adopt
 
   %% Workflow-diagram navigation (shiny_app/) -- see workflow_main.mmd's own

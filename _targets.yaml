@@ -1,4 +1,4 @@
-# Multi-project targets configuration -- see TODO_PIPELINE_SPLIT.md.
+# Multi-project targets configuration -- see TD_targets.qmd.
 #
 # `main` is the COLLECTION project and deliberately keeps the original
 # _targets/ store: a fresh store would make every target outdated, and
