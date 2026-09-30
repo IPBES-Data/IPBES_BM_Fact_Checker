@@ -190,3 +190,31 @@ purpose_assessments_list <- function(cfg, purpose) {
   out <- lapply(cfg[["assessments"]], function(a) a[setdiff(names(a), "full_text")])
   out[vapply(out, `[[`, character(1), "id") %in% ids]
 }
+
+# Deterministic fold assignment for the benchmark holdout (TD_NLI_training.qmd).
+#
+# Returns a bucket 0-99 per key. Two properties are the whole point:
+#
+#   * HASH, not shuffle. A group's bucket is a pure function of its own
+#     identity, so adding an assessment, re-running Phase 2 or growing the
+#     citing-works corpus never moves an existing group across the train/test
+#     boundary. A shuffled split would silently invalidate every previously
+#     recorded benchmark result the moment the corpus grew -- and this corpus
+#     grows continuously, which is exactly when shuffling is worst.
+#   * serialize = FALSE. digest() defaults to hashing an R SERIALISATION of
+#     the value rather than the string bytes; the serialisation carries
+#     version attributes, so the default would make fold assignment depend on
+#     the R/digest versions in use. A benchmark meant to outlive several of
+#     both needs the bytes.
+#
+# `salt` is the benchmark version tag (config.yaml's `benchmark.salt`).
+# Changing it re-cuts every fold, which is the only way the benchmark should
+# ever change -- and it shows up in a diff and can be quoted in a result table.
+hash_bucket <- function(key, salt) {
+  vapply(
+    paste(key, salt, sep = "|"),
+    function(k) strtoi(substr(digest::digest(k, algo = "md5", serialize = FALSE), 1, 6), 16L) %% 100L,
+    integer(1),
+    USE.NAMES = FALSE
+  )
+}

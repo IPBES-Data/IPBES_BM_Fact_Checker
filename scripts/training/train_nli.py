@@ -65,6 +65,7 @@ anything below needs to change.
 import argparse
 import json
 import os
+import sys
 from datetime import datetime
 
 import pandas as pd
@@ -181,6 +182,20 @@ def parse_args():
             "filtered set as-is)."
         ),
     )
+    p.add_argument(
+        "--assessments", default=None,
+        help=(
+            "Comma-separated assessment ids to train on, e.g. 'GA1' or "
+            "'GA1,IAS'. Omit to pool everything on disk. Needed because "
+            "pooling is a real modelling decision, not a default: the "
+            "assessments differ in claim register (VA's background messages "
+            "are ~100%% normative against GA1's ~36%%) and TCA carries no "
+            "bm_description at all, so a pooled model is not automatically "
+            "the right one for a GA-scoped deployment. The run directory "
+            "records the choice via its KP=/citing= segments, so runs with "
+            "different pools never overwrite each other."
+        ),
+    )
     return p.parse_args()
 
 
@@ -201,6 +216,31 @@ def main():
     for col, val in filters.items():
         df = df[df[col] == val]
 
+    # Assessment scoping. Separate from FILTERS because it is a membership
+    # test, not equality -- and it fails loudly on an unknown id rather than
+    # silently training on an empty frame, which would otherwise surface much
+    # later as an inscrutable Trainer error.
+    if args.assessments:
+        want = [a.strip() for a in args.assessments.split(",") if a.strip()]
+        have = sorted(df["assessment"].unique())
+        missing = [a for a in want if a not in have]
+        if missing:
+            sys.exit(f"[train_nli] FATAL: no training rows for {missing!r}; on disk: {have!r}")
+        df = df[df["assessment"].isin(want)]
+        print(f"[train_nli] assessments = {want}")
+
+    # The benchmark holdout (TD_NLI_training.qmd). Fail loudly rather than falling
+    # back to a random split: a silent fallback would produce a
+    # plausible-looking run_results.json that is quietly incomparable to every
+    # benchmarked run -- the exact failure mode the holdout exists to remove.
+    if "split" not in df.columns:
+        sys.exit(
+            "[train_nli] FATAL: no 'split' column in "
+            f"{DATA_PATH}. Rebuild nli_training_data (R/build_nli_training_data.R "
+            "adds it) before training. Refusing to fall back to a random split -- "
+            "see TD_NLI_training.qmd."
+        )
+
     # KP=/citing= describe which rows EXIST; downsample_seed= (below) is an
     # orthogonal choice about how they get USED -- compute the run_id from
     # the pre-downsampling df so the KP=/citing= segments still show
@@ -217,6 +257,18 @@ def main():
     print(df[["granularity", "nli_config", "assessment"]].drop_duplicates())
     print(df["label"].value_counts())
     print(df["keypaper"].value_counts())
+
+    # Hold out the benchmark fold BEFORE downsampling, and never downsample it.
+    # Order matters: downsampling first would make the evaluation set depend on
+    # --downsample-seed, so two runs with different seeds would be scored on
+    # different rows -- exactly the incomparability the fixed holdout exists to
+    # remove. The train fold alone gets balanced.
+    df_test = df[df["split"] == "test"].reset_index(drop=True)
+    df = df[df["split"] == "train"].reset_index(drop=True)
+    print(f"[train_nli] holdout: {len(df)} train rows, {len(df_test)} test rows (grouped by BM, see TD_NLI_training.qmd)")
+    print(df_test["label"].value_counts())
+    if not len(df_test):
+        sys.exit("[train_nli] FATAL: benchmark holdout is empty -- check benchmark.holdout_fraction in input/config.yaml")
 
     if args.downsample_seed is not None:
         # Every label class capped at the smallest class's count -- real
@@ -240,8 +292,9 @@ def main():
         print(f"[train_nli] downsampled to {min_count} rows/class (seed={args.downsample_seed}), {len(df)} rows total")
         print(df["label"].value_counts())
 
-    df["premise"] = df.apply(build_premise, axis=1)
-    df["label_id"] = df["label"].map(LABEL2ID)
+    for frame in (df, df_test):
+        frame["premise"] = frame.apply(build_premise, axis=1)
+        frame["label_id"] = frame["label"].map(LABEL2ID)
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
@@ -254,10 +307,16 @@ def main():
             padding="max_length",
         )
 
-    dataset = Dataset.from_pandas(df[["premise", "hypothesis", "label_id"]])
-    dataset = dataset.rename_column("label_id", "labels")
-    dataset = dataset.map(tokenize, batched=True)
-    dataset = dataset.train_test_split(test_size=0.15, seed=42)
+    # The train/test boundary comes from the `split` column, NOT from
+    # train_test_split(). The old random row split put the identical hypothesis
+    # string in both folds -- ~2,400 rows over only ~465 distinct claims, with
+    # REFUTES concentrated in ~191 of them -- so "recognise the claim, predict
+    # the label" scored well on the eval fold and transferred to nothing.
+    def to_dataset(frame):
+        d = Dataset.from_pandas(frame[["premise", "hypothesis", "label_id"]].reset_index(drop=True))
+        return d.rename_column("label_id", "labels").map(tokenize, batched=True)
+
+    dataset = {"train": to_dataset(df), "test": to_dataset(df_test)}
 
     model = AutoModelForSequenceClassification.from_pretrained(
         MODEL_ID,
@@ -291,6 +350,13 @@ def main():
         per_device_eval_batch_size=32,
         eval_strategy="epoch",
         save_strategy="epoch",
+        # Keep one checkpoint, not one per epoch. Nothing downstream reads
+        # them -- build_nli_finetuned_model_qa_data.R reads run_results.json,
+        # the benchmark reads best/ -- and they are 6.3 GB each (2.1 GB of
+        # weights plus AdamW optimiser state), so three epochs wrote 18.9 GB
+        # of pure intermediate. load_best_model_at_end still works: Trainer
+        # always retains the best checkpoint under this limit.
+        save_total_limit=1,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         fp16=torch.cuda.is_available(),
@@ -334,10 +400,19 @@ def main():
         "model_id": MODEL_ID,
         "premise_mode": PREMISE_MODE,
         "filters": filters,
+        "assessments_arg": args.assessments,
         "downsample_seed": args.downsample_seed,
+        # n_rows_total is the TRAIN fold after holdout and downsampling; the
+        # benchmark fold is reported separately and is never downsampled.
         "n_rows_total": len(df),
         "n_rows_train": len(dataset["train"]),
         "n_rows_eval": len(dataset["test"]),
+        "n_rows_holdout": len(df_test),
+        "holdout": {
+            "source": "split column, grouped by Background Message",
+            "design": "TD_NLI_training.qmd",
+            "label_counts": {str(k): int(v) for k, v in df_test["label"].value_counts().items()},
+        },
         # .value_counts() values are numpy int64, not JSON-serialisable --
         # confirmed directly, cast to plain int explicitly rather than
         # relying on json.dump's default encoder.

@@ -114,6 +114,27 @@ training:
     # See scripts/training/train_nli.py.
     downsample_seed: 13
 
+
+# ---------------------------------------------------------------------------
+# Benchmark: held-out evaluation of the NLI models (see TD_NLI_training.qmd).
+#
+# Deliberately NOT a purpose block -- it selects no nli/llm config of its own.
+# Scope comes from `training:` above, because what is being benchmarked is what
+# `training:` produced. purpose_config() is untouched.
+#
+# The holdout is grouped by Background Message and assigned by HASH, so adding
+# an assessment or growing the corpus never moves an existing BM across the
+# boundary. `salt` is the version tag: changing it re-cuts every fold, which is
+# the only way the benchmark should ever change.
+# ---------------------------------------------------------------------------
+benchmark:
+  holdout_fraction: 0.2
+  salt: bench-v1
+  # The zero-shot model every fine-tuned checkpoint is measured against. Never
+  # measured before now -- a fine-tuned F1 in isolation says nothing about
+  # whether fine-tuning was worth doing.
+  baseline_model: MoritzLaurer/bge-m3-zeroshot-v2.0-c
+
 reports:
   - qmd_name: IPBES_Label_Funnel_Report
     title: "{label} - {assessment} ({granularity})"

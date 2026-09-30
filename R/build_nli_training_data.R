@@ -67,7 +67,14 @@ build_nli_training_data <- function(
   nli_active,
   llm_active,
   granularity,
-  output_root = "output/nli_training"
+  output_root = "output/nli_training",
+  # Benchmark holdout (TD_NLI_training.qmd). Grouped by Background Message and
+  # assigned by HASH rather than by shuffle, so growing the corpus never moves
+  # an existing BM across the boundary and past benchmark results stay
+  # comparable. `benchmark_salt` is the version tag -- changing it re-cuts
+  # every fold deliberately and visibly.
+  benchmark_salt = "bench-v1",
+  holdout_fraction = 0.2
 ) {
   assessment_id <- assessment$id
 
@@ -231,7 +238,8 @@ build_nli_training_data <- function(
   cols <- c(
     "id",
     "assessment", "km", "bm", "work_id", "hypothesis", "quote", "title", "abstract", "doi",
-    "label", "source", "llm_config", "nli_config", "nli_label", "nli_confidence", "keypaper"
+    "label", "source", "llm_config", "nli_config", "nli_label", "nli_confidence", "keypaper",
+    "split"
   )
   training_pairs <- dplyr::bind_rows(positives, negatives, refutes)
 
@@ -260,6 +268,45 @@ build_nli_training_data <- function(
       algo = "xxhash32"
     ),
     character(1)
+  )
+
+  # Benchmark fold. Grouped by BACKGROUND MESSAGE, not by row: the pool is
+  # ~2,400 rows over only ~465 distinct claims (mean 5.2 works per claim), so a
+  # row-wise split puts the identical hypothesis string in both folds, and
+  # REFUTES is concentrated in ~191 claims -- "recognise this claim, predict
+  # REFUTES" is then an available shortcut that scores well and transfers to
+  # nothing. That is precisely the bug train_nli.py's own
+  # train_test_split(test_size=0.15) had.
+  #
+  # The key is (assessment, bm) and deliberately OMITS km. A Background
+  # Message belongs to several Key Messages, so the same bm appears under
+  # several km values carrying byte-identical claim text -- VA's C9 sits under
+  # KM7, KM8 and KM9. Including km therefore splits one BM into several groups
+  # that a hash can scatter across both folds: measured directly, keying on
+  # (assessment, km, bm) gave 141 groups and left 126 claim strings present in
+  # BOTH folds, while (assessment, bm) gives 99 groups and exactly zero. The
+  # tighter-looking key was the leakier one.
+  #
+  # BM-level rather than claim-level (465 groups) deliberately: claims within
+  # one BM are segmented from the same source text and share topic, vocabulary
+  # and most of their citing works, so splitting between them would leak nearly
+  # as much, just less visibly. Fewer groups means a noisier estimate, which is
+  # the right trade.
+  #
+  # Residual, deliberately NOT engineered away: one work can be cited under
+  # several BMs (mean 3.5 claims, max 99), so a minority of abstracts appear in
+  # both folds paired with different claims. Much weaker than claim-text
+  # leakage -- the model sees the premise, never the pair or its label -- and
+  # closing it properly needs a connected-component split on the (claim, work)
+  # graph, which at this size yields few huge unbalanced components: a small
+  # measurable bias traded for a large unmeasurable one. The benchmark reports
+  # cross-fold work overlap as a diagnostic instead.
+  training_pairs$split <- ifelse(
+    hash_bucket(
+      paste(training_pairs$assessment, training_pairs$bm, sep = "|"),
+      benchmark_salt
+    ) < holdout_fraction * 100,
+    "test", "train"
   )
 
   training_pairs <- training_pairs |> dplyr::select(dplyr::all_of(cols))
