@@ -55,10 +55,22 @@ relevance_question <- function(work_id) {
 }
 
 # One request per claim. `works` is a data frame with work_id / premise.
-score_one_claim_relevance <- function(claim, works, model, api_key, batch_size = 20L) {
-  out <- vector("list", 0L)
-  for (start in seq(1L, nrow(works), by = batch_size)) {
-    chunk <- works[start:min(start + batch_size - 1L, nrow(works)), , drop = FALSE]
+#
+# CONCURRENT, not sequential. Each request carries batch_size questions against
+# one shared `state`, and the requests themselves go out max_active at a time
+# via httr2::req_perform_parallel() -- the same shape Phase 2 next door uses
+# (ellmer's own max_active, 24 on every shipped llm_verification config).
+#
+# This matters more than it looks. The work is almost entirely waiting on the
+# network: ~239,000 already-reviewed pairs at batch 20 is ~11,950 requests, and
+# at the ~0.5-1 s each measured that is 3-5 HOURS sequentially for something
+# that should take minutes. Batching alone does not fix it; batching reduces
+# the NUMBER of requests, concurrency reduces the time spent blocked on each.
+score_one_claim_relevance <- function(claim, works, model, api_key,
+                                      batch_size = 20L, max_active = 12L) {
+  chunks <- split(works, ceiling(seq_len(nrow(works)) / batch_size))
+
+  reqs <- lapply(chunks, function(chunk) {
     body <- list(
       model = model,
       state = list(
@@ -70,38 +82,40 @@ score_one_claim_relevance <- function(claim, works, model, api_key, batch_size =
       ),
       questions = setNames(lapply(chunk$work_id, relevance_question), chunk$work_id)
     )
-    resp <- tryCatch(
-      httr2::request(RELEVANCE_ENDPOINT) |>
-        httr2::req_auth_bearer_token(api_key) |>
-        httr2::req_body_json(body, auto_unbox = TRUE) |>
-        httr2::req_retry(max_tries = 3) |>
-        httr2::req_perform() |>
-        httr2::resp_body_json(),
-      error = function(e) NULL
-    )
-    if (is.null(resp)) {
-      # A failed chunk yields NA rather than a dropped row: a pair silently
+    httr2::request(RELEVANCE_ENDPOINT) |>
+      httr2::req_auth_bearer_token(api_key) |>
+      httr2::req_body_json(body, auto_unbox = TRUE) |>
+      httr2::req_retry(max_tries = 3)
+  })
+
+  # on_error = "continue" so one bad chunk cannot abandon the rest; failures
+  # come back as condition objects and are turned into NA rows below.
+  resps <- httr2::req_perform_parallel(reqs, max_active = max_active,
+                                       on_error = "continue")
+
+  dplyr::bind_rows(Map(function(chunk, resp) {
+    parsed <- tryCatch(httr2::resp_body_json(resp), error = function(e) NULL)
+    if (is.null(parsed) || is.null(parsed$answers)) {
+      # A failed chunk yields NA rather than dropped rows: a pair silently
       # missing from the output would later read as "not scored yet" and be
       # re-paid for, and NA is distinguishable from a real low score.
-      out[[length(out) + 1L]] <- dplyr::tibble(
+      return(dplyr::tibble(
         work_id = chunk$work_id, addresses = NA_real_,
         relevance_model = NA_character_, relevance_cost = NA_real_
-      )
-      next
+      ))
     }
-    out[[length(out) + 1L]] <- dplyr::tibble(
+    dplyr::tibble(
       work_id = chunk$work_id,
       addresses = vapply(chunk$work_id, function(w) {
-        v <- resp$answers[[w]]$noul
+        v <- parsed$answers[[w]]$noul
         if (is.null(v)) NA_real_ else as.numeric(v)
       }, numeric(1)),
-      relevance_model = resp$model %||% model,
+      relevance_model = parsed$model %||% model,
       # Per-pair share of the batch's cost, so summing the column gives the
       # true total whatever batch size was used.
-      relevance_cost = (resp$usage$cost %||% NA_real_) / nrow(chunk)
+      relevance_cost = (parsed$usage$cost %||% NA_real_) / nrow(chunk)
     )
-  }
-  dplyr::bind_rows(out)
+  }, chunks, resps))
 }
 
 # TWO USES, ONE QUESTION. `pairs_path` decides which:
@@ -146,7 +160,8 @@ build_llm_relevance_screen <- function(
   model = "typesafe/jev-1.13",
   output_root = "output/llm_relevance",
   api_key = Sys.getenv("API_openrouter"),
-  batch_size = 20L
+  batch_size = 20L,
+  max_active = 12L
 ) {
   assessment_id <- assessment$id
   output_path <- file.path(output_root, paste0("assessment=", assessment_id),
@@ -193,7 +208,7 @@ build_llm_relevance_screen <- function(
   scored <- vector("list", length(claims))
   for (i in seq_along(claims)) {
     g <- claims[[i]]
-    r <- score_one_claim_relevance(g$claim[1], g, model, api_key, batch_size)
+    r <- score_one_claim_relevance(g$claim[1], g, model, api_key, batch_size, max_active)
     scored[[i]] <- g |>
       dplyr::select(km, bm, claim_id, work_id) |>
       dplyr::left_join(r, by = "work_id")

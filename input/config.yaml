@@ -150,7 +150,7 @@ training:
 # ---------------------------------------------------------------------------
 relevance_screen:
   model: typesafe/jev-1.13
-  threshold: ~
+  threshold: ~           
   batch_size: 20
 
 benchmark:
