@@ -645,6 +645,83 @@ Given 558 of 562 REFUTES come from GA1+IAS, a pooled number mostly measures
 those two. Report TCA and VA separately even though their counts are tiny; "we
 cannot tell" is a legitimate and useful result.
 
+### Three human-labelled artifacts, none of which exist yet
+
+These are routinely conflated and they measure different things. All three were
+discussed and none has been built; this records what each is for, so the next
+person does not build one and believe they have another.
+
+Everything in this document so far measures **agreement with `gpt-4o-mini`**.
+Its verdicts are the training labels, and the benchmark scores how faithfully a
+fine-tuned model reproduces them. A model that perfectly reproduced a wrong
+judge would score perfectly. Nothing here breaks that circle — these three do.
+
+#### 1. Gold standard — adjudicate labels that already exist
+
+Humans re-judge a sample of pairs that **already have LLM verdicts**: was
+gpt-4o-mini right? Gives the judge's accuracy, which is the ceiling on every
+number in this document.
+
+Sample **stratified by label**, not uniformly: REFUTES is ~0.5% of verdicts, so
+a uniform draw of 300 contains one or two. Weight toward REFUTES and toward the
+cases where NLI and the LLM disagree, which is where the errors were found by
+reading. `output/tables/refutes_review.csv` is the first slice of this, already
+generated with empty `human_verdict`/`human_note` columns.
+
+**What it cannot do:** it only covers pairs that were *routed* for review, so it
+inherits Phase 2's routing bias. It measures the judge, not the pipeline.
+
+#### 2. Curated test set — evaluation that owes nothing to any model
+
+Humans judge `(claim, paper)` pairs drawn **independently of model output** —
+ideally a random sample of the corpus, including pairs no model flagged. This is
+the only artifact that can say whether the pipeline finds what is actually
+there, rather than whether it agrees with itself.
+
+It can serve the benchmark **and** training, but **not both with the same rows**:
+training on it and evaluating on it is leakage of exactly the kind the holdout
+exists to prevent. Split it by the same `(assessment, bm)` hash the rest of the
+benchmark uses, so the curated rows land in train/test consistently with
+everything else.
+
+Sizing is governed by REFUTES, as always. At the corpus base rate (0.2-3%
+depending on route) a random sample large enough to contain 50 refutations is
+thousands of pairs of human reading. Stratifying by NLI output makes it
+affordable but reintroduces a model-shaped bias — an honest compromise is a
+*two-stratum* design: a small uniform-random stratum that supports unbiased
+rate estimates, plus a larger enriched stratum that supplies enough REFUTES to
+train or evaluate on, with the inclusion probabilities recorded so the two can
+be reweighted.
+
+#### 3. Threshold validation for the relevance screen
+
+Humans judge pairs the Jev screen scores **below** a candidate threshold: was
+the screen right that this paper does not bear on the claim?
+
+This is the only one with a hard deadline attached to a decision: at 0.3 the
+screen discards ~24% of true SUPPORTS, and a wrongly dropped pair is never
+reviewed and leaves no trace — no verdict, no failed quote check, nothing to
+audit. `relevance_screen.threshold` stays `~` until this exists.
+
+Sample from the **dropped** side specifically. Validating the kept side measures
+nothing useful: those pairs go to the LLM anyway.
+
+#### Practical notes for all three
+
+**Two reviewers on at least a subset.** Inter-annotator agreement is the real
+ceiling: if two experts agree 75% on REFUTES, no model can be asked to beat 75%,
+and a model at 70% is near-ceiling rather than failing. Without that number the
+other two artifacts are uninterpretable.
+
+**Record the reviewer and the date per row**, not just the verdict. Judgements
+drift, reviewers disagree, and a disagreement that cannot be attributed cannot be
+resolved.
+
+**`label_source` is already a column** in the training set (`source`), carrying
+`llm_verified` today. Human rows enter as a different value and
+`build_nli_training_data()` can weight or filter on it with no restructuring --
+the slot was left open deliberately.
+
 ### Two gaps this design does not close
 
 Both should be visible in the rendered report rather than buried here, because

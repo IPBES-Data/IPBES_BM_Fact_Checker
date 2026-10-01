@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-09-28">
+<meta name="dcterms.date" content="2026-10-01">
 
 <title>Fine-tuning the NLI Model with IPBES-Derived Training Data</title>
 <style>
@@ -2256,6 +2256,13 @@ vertical-align: -.125em;
   <li><a href="#a-threshold-sweep-not-one-operating-point" id="toc-a-threshold-sweep-not-one-operating-point" class="nav-link" data-scroll-target="#a-threshold-sweep-not-one-operating-point">A threshold sweep, not one operating point</a></li>
   <li><a href="#per-assessment-breakdown" id="toc-per-assessment-breakdown" class="nav-link" data-scroll-target="#per-assessment-breakdown">Per-assessment breakdown</a></li>
   </ul></li>
+  <li><a href="#three-human-labelled-artifacts-none-of-which-exist-yet" id="toc-three-human-labelled-artifacts-none-of-which-exist-yet" class="nav-link" data-scroll-target="#three-human-labelled-artifacts-none-of-which-exist-yet">Three human-labelled artifacts, none of which exist yet</a>
+  <ul>
+  <li><a href="#gold-standard-adjudicate-labels-that-already-exist" id="toc-gold-standard-adjudicate-labels-that-already-exist" class="nav-link" data-scroll-target="#gold-standard-adjudicate-labels-that-already-exist">1. Gold standard — adjudicate labels that already exist</a></li>
+  <li><a href="#curated-test-set-evaluation-that-owes-nothing-to-any-model" id="toc-curated-test-set-evaluation-that-owes-nothing-to-any-model" class="nav-link" data-scroll-target="#curated-test-set-evaluation-that-owes-nothing-to-any-model">2. Curated test set — evaluation that owes nothing to any model</a></li>
+  <li><a href="#threshold-validation-for-the-relevance-screen" id="toc-threshold-validation-for-the-relevance-screen" class="nav-link" data-scroll-target="#threshold-validation-for-the-relevance-screen">3. Threshold validation for the relevance screen</a></li>
+  <li><a href="#practical-notes-for-all-three" id="toc-practical-notes-for-all-three" class="nav-link" data-scroll-target="#practical-notes-for-all-three">Practical notes for all three</a></li>
+  </ul></li>
   <li><a href="#two-gaps-this-design-does-not-close" id="toc-two-gaps-this-design-does-not-close" class="nav-link" data-scroll-target="#two-gaps-this-design-does-not-close">Two gaps this design does not close</a>
   <ul>
   <li><a href="#the-holdout-cannot-measure-recall" id="toc-the-holdout-cannot-measure-recall" class="nav-link" data-scroll-target="#the-holdout-cannot-measure-recall">The holdout cannot measure recall</a></li>
@@ -2304,7 +2311,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 28, 2026</p>
+      <p class="date">October 1, 2026</p>
     </div>
   </div>
   
@@ -2721,6 +2728,8 @@ vertical-align: -.125em;
 <span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><code>serialize = FALSE</code> hashes the string bytes directly rather than an R serialisation of them, so the assignment is stable across R and <code>digest</code> versions — which a benchmark meant to outlive several of both actually needs.</p>
 <p>A BM’s fold is a pure function of its own identity. Adding an assessment, re-running Phase 2, or growing the citing-works corpus never moves an existing BM across the boundary. A shuffled split would silently invalidate every previously recorded result the moment the corpus grew — and this corpus grows continuously, which is exactly the condition under which shuffling is worst.</p>
+<p><strong>What is guaranteed, and what is not.</strong> The <em>fold definition</em> is stable: which BMs are test BMs never changes. The <em>fold contents</em> are not frozen — reviewing more pairs under an existing test BM adds rows to the test fold. Observed directly: clearing GA1’s key-paper backlog took the holdout from 467 to 1,205 rows without a single BM changing sides.</p>
+<p>The consequence is operational. Because every model is re-scored on the current fold each time the benchmark runs, a single benchmark run is always internally comparable — that is the comparison that matters. But numbers from <em>different</em> benchmark runs are not comparable to each other, and a result table should carry the fold size it was computed against. What hash assignment buys is that a model trained a year ago can still be scored fairly today; it does not mean a number printed a year ago is still the right number.</p>
 </section>
 <section id="salted-so-re-cutting-is-deliberate" class="level4">
 <h4 class="anchored" data-anchor-id="salted-so-re-cutting-is-deliberate">Salted, so re-cutting is deliberate</h4>
@@ -2834,6 +2843,35 @@ vertical-align: -.125em;
 <section id="per-assessment-breakdown" class="level4">
 <h4 class="anchored" data-anchor-id="per-assessment-breakdown">Per-assessment breakdown</h4>
 <p>Given 558 of 562 REFUTES come from GA1+IAS, a pooled number mostly measures those two. Report TCA and VA separately even though their counts are tiny; “we cannot tell” is a legitimate and useful result.</p>
+</section>
+</section>
+<section id="three-human-labelled-artifacts-none-of-which-exist-yet" class="level3">
+<h3 class="anchored" data-anchor-id="three-human-labelled-artifacts-none-of-which-exist-yet">Three human-labelled artifacts, none of which exist yet</h3>
+<p>These are routinely conflated and they measure different things. All three were discussed and none has been built; this records what each is for, so the next person does not build one and believe they have another.</p>
+<p>Everything in this document so far measures <strong>agreement with <code>gpt-4o-mini</code></strong>. Its verdicts are the training labels, and the benchmark scores how faithfully a fine-tuned model reproduces them. A model that perfectly reproduced a wrong judge would score perfectly. Nothing here breaks that circle — these three do.</p>
+<section id="gold-standard-adjudicate-labels-that-already-exist" class="level4">
+<h4 class="anchored" data-anchor-id="gold-standard-adjudicate-labels-that-already-exist">1. Gold standard — adjudicate labels that already exist</h4>
+<p>Humans re-judge a sample of pairs that <strong>already have LLM verdicts</strong>: was gpt-4o-mini right? Gives the judge’s accuracy, which is the ceiling on every number in this document.</p>
+<p>Sample <strong>stratified by label</strong>, not uniformly: REFUTES is ~0.5% of verdicts, so a uniform draw of 300 contains one or two. Weight toward REFUTES and toward the cases where NLI and the LLM disagree, which is where the errors were found by reading. <code>output/tables/refutes_review.csv</code> is the first slice of this, already generated with empty <code>human_verdict</code>/<code>human_note</code> columns.</p>
+<p><strong>What it cannot do:</strong> it only covers pairs that were <em>routed</em> for review, so it inherits Phase 2’s routing bias. It measures the judge, not the pipeline.</p>
+</section>
+<section id="curated-test-set-evaluation-that-owes-nothing-to-any-model" class="level4">
+<h4 class="anchored" data-anchor-id="curated-test-set-evaluation-that-owes-nothing-to-any-model">2. Curated test set — evaluation that owes nothing to any model</h4>
+<p>Humans judge <code>(claim, paper)</code> pairs drawn <strong>independently of model output</strong> — ideally a random sample of the corpus, including pairs no model flagged. This is the only artifact that can say whether the pipeline finds what is actually there, rather than whether it agrees with itself.</p>
+<p>It can serve the benchmark <strong>and</strong> training, but <strong>not both with the same rows</strong>: training on it and evaluating on it is leakage of exactly the kind the holdout exists to prevent. Split it by the same <code>(assessment, bm)</code> hash the rest of the benchmark uses, so the curated rows land in train/test consistently with everything else.</p>
+<p>Sizing is governed by REFUTES, as always. At the corpus base rate (0.2-3% depending on route) a random sample large enough to contain 50 refutations is thousands of pairs of human reading. Stratifying by NLI output makes it affordable but reintroduces a model-shaped bias — an honest compromise is a <em>two-stratum</em> design: a small uniform-random stratum that supports unbiased rate estimates, plus a larger enriched stratum that supplies enough REFUTES to train or evaluate on, with the inclusion probabilities recorded so the two can be reweighted.</p>
+</section>
+<section id="threshold-validation-for-the-relevance-screen" class="level4">
+<h4 class="anchored" data-anchor-id="threshold-validation-for-the-relevance-screen">3. Threshold validation for the relevance screen</h4>
+<p>Humans judge pairs the Jev screen scores <strong>below</strong> a candidate threshold: was the screen right that this paper does not bear on the claim?</p>
+<p>This is the only one with a hard deadline attached to a decision: at 0.3 the screen discards ~24% of true SUPPORTS, and a wrongly dropped pair is never reviewed and leaves no trace — no verdict, no failed quote check, nothing to audit. <code>relevance_screen.threshold</code> stays <code>~</code> until this exists.</p>
+<p>Sample from the <strong>dropped</strong> side specifically. Validating the kept side measures nothing useful: those pairs go to the LLM anyway.</p>
+</section>
+<section id="practical-notes-for-all-three" class="level4">
+<h4 class="anchored" data-anchor-id="practical-notes-for-all-three">Practical notes for all three</h4>
+<p><strong>Two reviewers on at least a subset.</strong> Inter-annotator agreement is the real ceiling: if two experts agree 75% on REFUTES, no model can be asked to beat 75%, and a model at 70% is near-ceiling rather than failing. Without that number the other two artifacts are uninterpretable.</p>
+<p><strong>Record the reviewer and the date per row</strong>, not just the verdict. Judgements drift, reviewers disagree, and a disagreement that cannot be attributed cannot be resolved.</p>
+<p><strong><code>label_source</code> is already a column</strong> in the training set (<code>source</code>), carrying <code>llm_verified</code> today. Human rows enter as a different value and <code>build_nli_training_data()</code> can weight or filter on it with no restructuring – the slot was left open deliberately.</p>
 </section>
 </section>
 <section id="two-gaps-this-design-does-not-close" class="level3">

@@ -104,7 +104,21 @@ downstream consumption:
 - [ ] Run `llm_verification_parquet` against the new `SUPPORTS`+`certain` backlog (~52,061 pairs, ~$7.75 at `gpt-4o-mini` rates) added to `nli_labels` alongside the existing `REFUTES`+`certain` set — the `IPBES_SUPPORTS_Report_<id>.html` funnel reports render fine today but show an empty level 3 until this runs. Needs an explicit go-ahead, not automatic.
 - [ ] **Safety note**: `report_fact_checker` now transitively depends on `llm_verification_parquet` (via the label funnel reports folded into its dependency list), so a plain `tar_make()`/`tar_make(report_fact_checker)` will attempt to rebuild it — and therefore spend real OpenRouter money — whenever `llm_verification_config` is outdated (e.g. right now, from the `SUPPORTS` addition). Use `tar_make(names = ..., shortcut = TRUE)` to render against on-disk Phase 2 data without triggering a fresh run. See `TD_NLI_LLM_two_phase.qmd`'s "Where this sits in the pipeline" section.
 - [ ] Merge phase: use `llm_label` where available, fall back to `nli_label` — not yet wired into `nli_overview_data`/the report
-- [ ] Human expert review of all `REFUTES` calls
+- [ ] **Three human-labelled artifacts, none of which exist** — see TD_NLI_training.qmd's
+      "Three human-labelled artifacts" section for what each measures and how to sample.
+      They are routinely conflated and are not substitutes for each other:
+  - [ ] **Gold standard** — adjudicate a stratified sample of EXISTING LLM verdicts.
+        Measures the judge, which is the ceiling on every benchmark number.
+        `output/tables/refutes_review.csv` is the first slice, already generated.
+  - [ ] **Curated test set** — `(claim, paper)` pairs judged INDEPENDENTLY of model
+        output. The only artifact that breaks the circularity of measuring agreement
+        with gpt-4o-mini. Usable for benchmark AND training, but not the same rows for
+        both; split on the same `(assessment, bm)` hash.
+  - [ ] **Threshold validation for the Jev screen** — judge pairs scored BELOW a
+        candidate threshold. `relevance_screen.threshold` stays `~` until this exists,
+        because a wrongly dropped pair is never reviewed and leaves no trace.
+  - [ ] Two reviewers on at least a subset, for inter-annotator agreement — without it
+        the other numbers are uninterpretable.
 - [ ] Use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
 - [x] **DONE** — the hand-authored conceptual diagram's Phase 2 routing is current. `workflow_nli.mmd` no longer exists: it was re-cut into one file per targets project (`workflow_{main,factcheck,training,reporting}.mmd`), and `workflow_factcheck.mmd`'s Phase 2 node now states the real behaviour — routing by `nli_labels`/`nli_certainty` (REFUTES or SUPPORTS, certain only), every routed pair reviewed and tagged `direct_evidence_match` rather than filtered, verdicts demoted to NEI when the cited quote is not verbatim in the premise, and `nli_route=` per-row output partitioning.
 
