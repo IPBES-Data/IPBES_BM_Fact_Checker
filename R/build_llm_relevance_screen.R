@@ -54,6 +54,41 @@ relevance_question <- function(work_id) {
   )
 }
 
+# Split a claim's works into requests by TOKEN BUDGET, not by a fixed count.
+#
+# The decisions API caps `state` plus the longest question at 32,000 tokens
+# (docs.typesafe.ai/models), and `state` here carries the claim plus every
+# premise in the chunk. Premise length is wildly uneven -- measured on GA1's
+# key-paper corpus, 290 tokens at the median but 5,875 at the maximum -- so a
+# fixed batch of 20 ranges from ~10k tokens at p90 to ~117k in the worst case,
+# i.e. 3.7x over the limit and a hard 400 partway through a long run.
+#
+# Budgeting instead gives LARGER chunks for short premises (~46 per request at
+# p90, so fewer requests) and smaller ones where abstracts are long. A single
+# premise over budget still gets its own chunk rather than being dropped: the
+# server truncates, which is lossy but recoverable, where dropping is neither.
+#
+# 4 chars/token is the usual English approximation and is deliberately rough --
+# the budget below is 75% of the real limit, so the estimate has room to be
+# wrong without failing.
+RELEVANCE_STATE_BUDGET <- 24000L
+
+chunk_by_tokens <- function(works, budget = RELEVANCE_STATE_BUDGET) {
+  est <- nchar(works$premise) / 4
+  grp <- integer(nrow(works))
+  g <- 1L
+  used <- 0
+  for (i in seq_len(nrow(works))) {
+    if (used > 0 && used + est[i] > budget) {
+      g <- g + 1L
+      used <- 0
+    }
+    grp[i] <- g
+    used <- used + est[i]
+  }
+  split(works, grp)
+}
+
 # One request per claim. `works` is a data frame with work_id / premise.
 #
 # CONCURRENT, not sequential. Each request carries batch_size questions against
@@ -67,8 +102,10 @@ relevance_question <- function(work_id) {
 # that should take minutes. Batching alone does not fix it; batching reduces
 # the NUMBER of requests, concurrency reduces the time spent blocked on each.
 score_one_claim_relevance <- function(claim, works, model, api_key,
-                                      batch_size = 20L, max_active = 12L) {
-  chunks <- split(works, ceiling(seq_len(nrow(works)) / batch_size))
+                                      batch_size = NULL, max_active = 12L) {
+  # batch_size is accepted and ignored, so existing callers keep working; the
+  # token budget supersedes it. Chunking by count cannot respect a token limit.
+  chunks <- chunk_by_tokens(works)
 
   reqs <- lapply(chunks, function(chunk) {
     body <- list(
@@ -85,7 +122,12 @@ score_one_claim_relevance <- function(claim, works, model, api_key,
     httr2::request(RELEVANCE_ENDPOINT) |>
       httr2::req_auth_bearer_token(api_key) |>
       httr2::req_body_json(body, auto_unbox = TRUE) |>
-      httr2::req_retry(max_tries = 3)
+      # 429 is in httr2's default is_transient set and Retry-After is honoured
+      # automatically. Deliberately NO client-side rate limiter: the published
+      # limits (100K tokens/sec, 40 req/sec) "adjust dynamically" and "can
+      # change without notice", so any hardcoded ceiling is wrong eventually.
+      # Backoff finds the real one.
+      httr2::req_retry(max_tries = 5)
   })
 
   # on_error = "continue" so one bad chunk cannot abandon the rest; failures
