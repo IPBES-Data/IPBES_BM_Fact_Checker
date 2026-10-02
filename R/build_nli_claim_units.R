@@ -5,7 +5,18 @@
 # nli_ready_parquet at claim-scoring time (via partition-pruned filtering)
 # so this target's cached branch values stay small regardless of how many
 # works a claim has.
-build_nli_claim_units <- function(assessment, nli_ready_path, max_length) {
+# `km` scopes which Key Messages are enumerated; NULL (the default) means every
+# one, so the key-paper arm in _targets_training.R -- which passes nothing -- is
+# unaffected. This is the ONLY filter point the fact-checking chain needs: every
+# later stage reads from the one before it, so fewer units here means fewer
+# scoring branches, fewer consolidated rows, and fewer candidates reaching the
+# relevance screen and Phase 2.
+#
+# Deliberately NOT applied further upstream: output/nli_ready_evidence/ carries
+# no nli_config= level, so the cross-join is shared by every config, and
+# build_nli_ready_evidence_parquet() unlink()s the whole assessment= subtree
+# before writing -- filtering there would delete out-of-scope premises outright.
+build_nli_claim_units <- function(assessment, nli_ready_path, max_length, km = NULL) {
   assessment_id <- assessment$id
   filter_limit <- if (!is.null(max_length)) as.integer(max_length) else 512L
 
@@ -16,6 +27,28 @@ build_nli_claim_units <- function(assessment, nli_ready_path, max_length) {
 
   if (!nrow(ready)) {
     return(list())
+  }
+
+  # Scope validation lives here, not in purpose_config(): Key Messages come from
+  # key_messages_parquet, a target, so config cannot check its own values. A
+  # silent miss is the dangerous outcome -- `"A"` for `"A."` would enumerate zero
+  # claims, score nothing, and look exactly like a completed run.
+  if (!is.null(km) && length(km)) {
+    km <- as.character(km)
+    available <- sort(unique(ready$km))
+    missing <- setdiff(km, available)
+    if (length(missing)) {
+      stop(sprintf(
+        "build_nli_claim_units(%s): km scope names %s, which %s not exist in this assessment. Available: %s",
+        assessment_id, paste(sQuote(missing), collapse = ", "),
+        if (length(missing) == 1L) "does" else "do",
+        paste(available, collapse = ", ")
+      ), call. = FALSE)
+    }
+    ready <- ready[ready$km %in% km, , drop = FALSE]
+    if (!nrow(ready)) {
+      return(list())
+    }
   }
 
   claim_counts <- ready |>

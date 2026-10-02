@@ -83,11 +83,46 @@ assessments:
 # already has Phase 1 citing-works scores on disk from before this scoping, and
 # they stay there; they are simply no longer maintained by this pipeline until
 # IAS is listed here again.
+#
+# Unlike `training:` below, this block is a LIBRARY plus an `active:` selection,
+# the same shape `nli:` and `llm_verification:` already use. One pipeline, one
+# selection -- running every config would multiply GPU and OpenRouter spend by
+# the number of definitions, and each distinct model needs its own pod pool
+# anyway, because check_nli_pool_health() stops when hosts report different
+# models. purpose_config() accepts both shapes, so `training:` stays flat.
+#
+# km: scopes scoring to one or more Key Messages, and OMITTING IT MEANS ALL --
+# the pre-existing behaviour, so an entry without it is unchanged. GA1 has 4 KMs
+# over 39 BMs, so naming one is roughly a 4x cut in both arms. The strings are
+# matched literally against key_messages_parquet and validated at runtime by
+# build_nli_claim_units(), which stops naming the offender: they are
+# per-assessment and inconsistent ("A." in GA1, "KM-A1" in IAS, "KM1" in VA /
+# TCA / BBA), and "A" for "A." would otherwise enumerate zero claims and look
+# like a successful no-op. The filter operates on the (km, bm) PAIR, not on km
+# alone -- outside GA1 a BM can sit under several KMs.
+#
+# Narrowing the scope computes less; it never deletes what is out of scope. The
+# three stages that used to wipe their output wholesale before writing
+# (consolidate_nli_scores, relevance_screen, llm_verification) are all additive
+# now, so widening again costs only the pairs that were never scored.
 fact_checking:
-  assessments: [GA1]
-  nli: bge_m3_zeroshot_atomic_bm
-  llm: openrouter_cheap
-  claim_completion: haiku_completion
+  active: ga1_all
+  configs:
+    ga1_all:
+      assessments: [GA1]
+      nli: bge_m3_zeroshot_atomic_bm
+      llm: openrouter_cheap
+      claim_completion: haiku_completion
+
+    # The fine-tuned model from the 2026-09-29 GA1 run, served from its own
+    # image. Writes under nli_config=bge_m3_ft_ga1, so it cannot overwrite
+    # anything the zero-shot config scored.
+    ga1_ab_finetuned:
+      assessments: [GA1]
+      km: ["A.", "B."]
+      nli: bge_m3_ft_ga1
+      llm: openrouter_cheap
+      claim_completion: haiku_completion
 
 # _targets_training.R -- the key-paper arm. All five, because a key paper IS
 # the evidence a BM was written from, so every assessment's seed set is worth
@@ -282,6 +317,34 @@ nli:
       haiku_completion:
         model: "anthropic/claude-haiku-4.5"
 
+  # Everything scripts/runpod/start_nli_pods.sh needs to launch a pool, split
+  # into what is the same for every pod (here) and what a config chooses for
+  # itself (image:, pods: below). The wrapper merges the two into a disposable
+  # bash conf under output/config/ and hands it to the submodule's own
+  # create_pods.sh, so config.yaml stays the single source of truth and the
+  # hostnames stop being copy-pasted by hand.
+  #
+  # The hand-written input/nli_pods_*.conf files are what these values came
+  # from; they are kept for reference and are read by nothing.
+  pod_defaults:
+    gpu_type_id: "NVIDIA L4"
+    gpu_count: 1
+    pod_kind: http
+    port: 8080
+    health_path: /health
+    container_disk_gb: 15
+    volume_gb: 0
+    volume_mount_path: /workspace
+    cloud_type: SECURE
+    idle_min: 15
+    startup_grace_min: 60
+    poll_sec: 30
+    health_timeout_sec: 600
+    health_poll_interval_sec: 10
+    create_delay_sec: 5
+    max_consecutive_create_failures: 3
+    pod_env_runpod_api_key: '{{ RUNPOD_SECRET_TEI-RUNPOD-API }}'
+
 
   configs:
     # ACTIVE -- the sole production NLI config (see the comment above nli:
@@ -310,6 +373,13 @@ nli:
       nei_threshold: 0.90
       granularity: complete_bm    #  naive_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
 
+      image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.4.0
+      pods:
+        count: 4
+        min_ready: 4
+        name_prefix: nli-bge-m3-complete
+        registry_auth_id: ""
+
     bge_m3_zeroshot_atomic_bm:
       scheme: https
       host: ["6oh2gnus1851sb-8080.proxy.runpod.net"]
@@ -327,6 +397,13 @@ nli:
       nei_threshold: 0.90
       granularity: atomic_bm    #  naive_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
 
+      image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.4.0
+      pods:
+        count: 4
+        min_ready: 4
+        name_prefix: nli-bge-m3-atomic
+        registry_auth_id: ""
+
     bge_m3_zeroshot_naive_bm:
       scheme: https
       host: ["d78ew5xa898onb-8080.proxy.runpod.net", "k3d0ojjo3r34gn-8080.proxy.runpod.net", "imxudxy1q07w93-8080.proxy.runpod.net", "2yjh0c3crclwg2-8080.proxy.runpod.net", "qzv2pwdj8gccmj-8080.proxy.runpod.net", "6dbdypmy7ttlqe-8080.proxy.runpod.net", "tkmmt2u8s8xoy0-8080.proxy.runpod.net"]
@@ -341,6 +418,47 @@ nli:
       uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
       nei_threshold: 0.90
       granularity:  naive_bm   # complete_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
+
+      image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.4.0
+      pods:
+        count: 4
+        min_ready: 4
+        name_prefix: nli-bge-m3-naive
+        registry_auth_id: ""
+
+    # The 2026-09-29 GA1 fine-tune (atomic_bm, max_length 512, downsample_seed
+    # 13), baked into its own image by docker/ipbes-ft/Dockerfile. Not zero-shot:
+    # passes: 1 tells score_one_claim.R and the server to read the model's own
+    # native 3-way softmax directly instead of reformulating one hypothesis per
+    # candidate label, so candidate_labels MUST equal the checkpoint's own
+    # id2label values (server.py matches by name and fails loudly otherwise) and
+    # hypothesis_template is unused.
+    #
+    # max_length: 512 is the value the model was TRAINED at. start_nli_pods.sh
+    # DERIVES the pod's NLI_MAX_LENGTH from it rather than taking a second copy,
+    # so the pod and the scorer cannot disagree; a hand-written NLI_MAX_LENGTH
+    # under extra_env: that contradicts it is a hard error. Serving a
+    # 512-trained model at 2048 raises nothing at all and merely scores worse --
+    # the near-miss a8c6ea4 records.
+    bge_m3_ft_ga1:
+      scheme: https
+      host: []
+      port: null
+      auth_token_keyring: null
+      model: /opt/models/ipbes-bm-nli-atomic-ga1-512-v1
+      expect_model: /opt/models/ipbes-bm-nli-atomic-ga1-512-v1   # verified against /health by check_nli_pool_health()
+      candidate_labels: ["SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO"]
+      passes: 1
+      batch_size: 32
+      max_length: 512
+      uncertain_threshold: 0.60
+      granularity: atomic_bm
+      image: ghcr.io/rkrug/nli-runpod-bge-m3-ipbes-ft:v0.5.0-GA1-512-m1
+      pods:
+        count: 4
+        min_ready: 4
+        name_prefix: nli-ipbes-ft-ga1
+        registry_auth_id: ""     # set if the image is private on ghcr
 
     # nli_finetuned: a directly fine-tuned 3-way classifier (scripts/training/
     # train_nli.py), NOT a zero-shot model -- passes: 1 tells score_one_claim.R

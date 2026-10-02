@@ -131,26 +131,73 @@ alignement_branch_dir <- function(output_root, assessment_id, run_id) {
 # a typo that would otherwise read as "nothing has been scored yet" and quietly
 # re-dispatch a corpus at real GPU cost, so every one is checked here.
 purpose_config <- function(cfg, purpose) {
-  p <- cfg[[purpose]]
-  if (is.null(p)) {
+  block <- cfg[[purpose]]
+  if (is.null(block)) {
     stop(sprintf(
       "config.yaml has no `%s:` block (expected one of: fact_checking, training)",
       purpose
     ), call. = FALSE)
   }
 
+  # TWO SHAPES, deliberately. A purpose block is either the config itself (flat,
+  # what `training:` still uses) or a LIBRARY of named configs with `active:`
+  # naming which one runs -- the same "definitions select nothing themselves"
+  # discipline `nli:` and `llm_verification:` already use, so a definition left
+  # lying around cannot surprise anyone with N times the cost.
+  #
+  # Detected by the presence of `configs:`, not by a version key: a flat block
+  # has no `configs:` and a library block always does.
+  selected <- purpose           # how to name this block in error messages
+  if (!is.null(block[["configs"]])) {
+    active <- block[["active"]]
+    if (is.null(active) || !length(active)) {
+      stop(sprintf(
+        "config.yaml: `%s:` has `configs:` but no `active:` naming which one to run (defined: %s)",
+        purpose, paste(names(block[["configs"]]), collapse = ", ")
+      ), call. = FALSE)
+    }
+    active <- as.character(active)
+    if (length(active) != 1L) {
+      stop(sprintf(
+        "config.yaml: `%s.active` must name exactly ONE config, got %d (%s)",
+        purpose, length(active), paste(active, collapse = ", ")
+      ), call. = FALSE)
+    }
+    if (!active %in% names(block[["configs"]])) {
+      stop(sprintf(
+        "config.yaml: `%s.active: %s` is not a defined config (defined: %s)",
+        purpose, active, paste(names(block[["configs"]]), collapse = ", ")
+      ), call. = FALSE)
+    }
+    p <- block[["configs"]][[active]]
+    selected <- paste0(purpose, ".configs.", active)
+  } else {
+    p <- block
+  }
+
   pick <- function(field, library, required = TRUE) {
     name <- p[[field]]
     if (is.null(name) || !length(name)) {
       if (!required) return(NULL)
-      stop(sprintf("config.yaml: `%s:` is missing `%s:`", purpose, field), call. = FALSE)
+      stop(sprintf("config.yaml: `%s:` is missing `%s:`", selected, field), call. = FALSE)
     }
-    name <- as.character(name)[[1L]]
+    # STOPS on a list rather than silently taking its head. It used to do
+    # `as.character(name)[[1L]]`, so `nli: [a, b]` resolved to `a` with no
+    # complaint -- naming the wrong model is exactly the error class that reads
+    # as "nothing scored yet" and re-dispatches a corpus at real GPU cost.
+    # `km` is legitimately a vector and does NOT come through here.
+    name <- as.character(name)
+    if (length(name) != 1L) {
+      stop(sprintf(
+        "config.yaml: `%s.%s` must name exactly ONE config, got %d (%s)",
+        selected, field, length(name), paste(name, collapse = ", ")
+      ), call. = FALSE)
+    }
     known <- names(library)
     if (!name %in% known) {
       stop(sprintf(
         "config.yaml: `%s.%s: %s` is not a known config (known: %s)",
-        purpose, field, name, paste(known, collapse = ", ")
+        selected, field, name, paste(known, collapse = ", ")
       ), call. = FALSE)
     }
     name
@@ -166,12 +213,20 @@ purpose_config <- function(cfg, purpose) {
   if (length(unknown)) {
     stop(sprintf(
       "config.yaml: `%s.assessments` names unknown assessment(s): %s (known: %s)",
-      purpose, paste(unknown, collapse = ", "), paste(known_ids, collapse = ", ")
+      selected, paste(unknown, collapse = ", "), paste(known_ids, collapse = ", ")
     ), call. = FALSE)
   }
 
+  # Key Message scope. NULL (the key omitted) means every KM -- so an existing
+  # config is unscoped and unchanged. Values cannot be validated here: KMs come
+  # from key_messages_parquet, a target, not from config. build_nli_claim_units()
+  # does that, where the data is in hand.
+  km <- p[["km"]]
+  km <- if (is.null(km) || !length(km)) NULL else as.character(unlist(km, use.names = FALSE))
+
   list(
     assessments            = ids,
+    km                     = km,
     nli                    = nli_name,
     llm                    = llm_name,
     claim_completion       = cc_name,

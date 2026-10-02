@@ -76,5 +76,40 @@ check_nli_pool_health <- function(nli_config, nli_active) {
     ))
   }
 
+  # expect_model: an OPTIONAL hard assertion, where `model:` above is only a
+  # label and only warns. A fine-tuned model is served from a baked path
+  # (/opt/models/...), so pointing the pool at the wrong image produces a pool
+  # that answers every request perfectly well with a different model -- no error
+  # anywhere, just scores that silently are not what nli_config= says they are.
+  expect <- cfg[["expect_model"]]
+  if (!is.null(expect) && nzchar(expect) && !identical(as.character(expect), model_actual)) {
+    stop(sprintf(
+      "[NLI pool=%s] expect_model '%s' != server model '%s' -- refusing to score.",
+      nli_active, expect, model_actual
+    ), call. = FALSE)
+  }
+
+  # The same trap one layer down, and the reason the pod wrapper derives
+  # NLI_MAX_LENGTH from this very field: a model trained at 512 served at 2048
+  # raises nothing at all and merely scores worse (a8c6ea4). The server reports
+  # what it actually runs at, so this is the one place it can be caught.
+  #
+  # A WARNING, not a stop, unlike expect_model above. What a given server build
+  # reports here has not been confirmed against a live pod (the pool was down
+  # when this was written), so a stop could block a run over a reporting
+  # convention rather than a real mismatch. The bug it guards is already
+  # removed by construction for any pool start_nli_pods.sh launches, since that
+  # wrapper derives NLI_MAX_LENGTH from this same field. Promote to stop() once
+  # a healthy pod has been seen to report the configured value.
+  want_len <- cfg[["max_length"]]
+  served_len <- health_results[[1L]]$health[["max_length"]]
+  if (!is.null(want_len) && !is.null(served_len) &&
+        !identical(as.integer(want_len), as.integer(served_len))) {
+    warning(sprintf(
+      "[NLI pool=%s] config max_length %s != server max_length %s -- the pods may have been launched with the wrong NLI_MAX_LENGTH.",
+      nli_active, want_len, served_len
+    ), call. = FALSE)
+  }
+
   model_actual
 }

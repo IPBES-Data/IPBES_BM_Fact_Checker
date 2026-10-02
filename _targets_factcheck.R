@@ -100,6 +100,10 @@ list(
   # global `active:` -- see purpose_config() in R/branch_helpers.R for why.
   tar_target(purpose, purpose_config(yaml::read_yaml(config_file), "fact_checking")),
   tar_target(nli_active, purpose$nli),
+  # NULL = every KM, which is the pre-existing behaviour. Validated against the
+  # assessment's real key messages inside build_nli_claim_units(), not here:
+  # KMs live in key_messages_parquet, so config cannot check them.
+  tar_target(km_scope, purpose$km),
   tar_target(workers, yaml::read_yaml(config_file)[["workers"]]),
   tar_target(nli_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]]),
   tar_target(
@@ -249,7 +253,7 @@ list(
   # two approaches never hit one host concurrently if run together.
   tar_target(
     nli_claim_units_evidence,
-    build_nli_claim_units(assessment, nli_ready_evidence_parquet, max_length),
+    build_nli_claim_units(assessment, nli_ready_evidence_parquet, max_length, km_scope),
     pattern = map(assessment, nli_ready_evidence_parquet),
     iteration = "list"
   ),
@@ -288,7 +292,14 @@ list(
       nli_scores_by_claim_evidence,
       nli_claim_units_evidence_flat,
       output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity)),
-      nli_active = nli_active
+      nli_active = nli_active,
+      # Scope the groups it visits. Without this it globs every
+      # assessment=*/km=*/bm=* under the nli_config= root and stops dead on any
+      # group the current claim list no longer covers -- which is not a
+      # hypothetical: assessment=IAS still holds 9 scored groups from before
+      # the GA1 rescope. Out-of-scope groups are left untouched, not pruned.
+      assessments = vapply(assessments_list, function(a) a$id, character(1)),
+      km = km_scope
     ),
     format = "file",
     deployment = "main"
