@@ -32,22 +32,67 @@ done
 
 # ACTIVE / COUNT / CONF / CSV, resolved from config.yaml. This also fails loudly
 # on a config with no image: or no pods: block, before anything is charged for.
-eval "$(scripts/runpod/nli_pods.R conf)"
-COUNT="${N_OVERRIDE:-${COUNT}}"
+# ACTIVE / COUNT / CONF / CSV / HEALTH_PATH, resolved from config.yaml. This
+# also fails loudly on a config with no image: or no pods: block, before
+# anything is charged for. The count override is passed through so MIN_READY is
+# clamped to it: create_pods.sh sources the conf BEFORE applying its own
+# MIN_READY default, so a conf value wins over anything -n could say, and asking
+# for 1 pod against min_ready: 4 would fail every single time.
+eval "$(scripts/runpod/nli_pods.R conf ${N_OVERRIDE})"
 
 echo "[start_nli_pods] ${ACTIVE}: starting ${COUNT} pod(s)"
 echo "[start_nli_pods] conf: ${CONF}"
 
-"${CREATE}" -n "${COUNT}" -c "${CONF}" -o "${CSV}"
+# NOT under set -e. create_pods.sh exits 2 for PARTIAL (at least MIN_READY up,
+# fewer than requested) and 1 for below-MIN_READY, and in BOTH cases the pods
+# that did come up are real, billing, and worth recording. Letting set -e abort
+# here left them running with nothing written back anywhere -- the whole point
+# of the wrapper lost in exactly the case it exists for.
+rc=0
+"${CREATE}" -n "${COUNT}" -c "${CONF}" -o "${CSV}" || rc=$?
+case "${rc}" in
+  0) ;;
+  2) echo "WARNING: partial pool -- fewer pods ready than requested (create_pods.sh exit 2)." >&2 ;;
+  1) echo "WARNING: create_pods.sh reported failure (exit 1): no pod ready, or fewer than MIN_READY." >&2 ;;
+  *) echo "error: create_pods.sh exited ${rc}." >&2; exit "${rc}" ;;
+esac
 
-# create_pods.sh writes one row per pod that actually came up, so a short pool
-# is visible here rather than silently accepted. The ones that did start are
-# still written back -- a partial pool scores more slowly, it does not score
-# wrongly, and score_one_claim() dispatches per free host.
-READY=$(($(wc -l < "${CSV}") - 1))
-if [[ "${READY}" -lt "${COUNT}" ]]; then
-  echo "WARNING: requested ${COUNT} pod(s), ${READY} reported ready. Writing back the ${READY} that started." >&2
+if [[ ! -f "${CSV}" ]]; then
+  echo "error: no inventory at ${CSV} -- no pod was created, so there is nothing to write back." >&2
+  exit 1
 fi
 
-scripts/runpod/nli_pods.R hosts "${CSV}"
+# The inventory lists every pod CREATED, not every pod READY -- a pod that
+# never came up is in there precisely because it is billing and has to be
+# findable for teardown. Writing that column straight into config.yaml would
+# hand the pipeline a host check_nli_pool_health() then stops on, so the hosts
+# are filtered by asking them. The full inventory is what stop_nli_pods.sh
+# uses; only this filtered copy feeds the write-back.
+READY_CSV="${CSV%.csv}_ready.csv"
+head -1 "${CSV}" > "${READY_CSV}"
+n_created=0
+while IFS=, read -r id name host port; do
+  n_created=$((n_created + 1))
+  if curl -fsS -m 10 "https://${host}${HEALTH_PATH}" >/dev/null 2>&1; then
+    echo "${id},${name},${host},${port}" >> "${READY_CSV}"
+  else
+    echo "  not healthy, left out of host:  ${host}  (id=${id}, still billing)" >&2
+  fi
+done < <(tail -n +2 "${CSV}")
+
+n_ready=$(($(wc -l < "${READY_CSV}") - 1))
+echo "[start_nli_pods] ${n_ready}/${n_created} created pod(s) answering ${HEALTH_PATH}"
+
+if [[ "${n_ready}" -eq 0 ]]; then
+  echo "error: no pod is answering. input/config.yaml left untouched -- the previous host list is still there." >&2
+  echo "       ${n_created} pod(s) ARE RUNNING AND BILLING. Tear down with: scripts/runpod/stop_nli_pods.sh" >&2
+  exit 1
+fi
+if [[ "${n_ready}" -lt "${COUNT}" ]]; then
+  # A partial pool scores more slowly, not wrongly: score_one_claim() dispatches
+  # per free host, so the pool size is a throughput knob, not a correctness one.
+  echo "WARNING: requested ${COUNT} pod(s), ${n_ready} healthy. Writing back the ${n_ready} that came up." >&2
+fi
+
+scripts/runpod/nli_pods.R hosts "${READY_CSV}"
 echo "[start_nli_pods] done. Teardown: scripts/runpod/stop_nli_pods.sh"

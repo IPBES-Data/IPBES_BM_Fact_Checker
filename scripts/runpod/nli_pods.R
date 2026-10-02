@@ -1,8 +1,8 @@
 #!/usr/bin/env Rscript
 # Config plumbing for the two pod wrappers beside this file. Two subcommands:
 #
-#   nli_pods.R conf            emit output/config/runpod_nli_<ACTIVE>.conf and
-#                              print shell-eval'able ACTIVE/COUNT/CONF/CSV
+#   nli_pods.R conf [count]    emit output/config/runpod_nli_<ACTIVE>.conf and
+#                              print shell-eval'able ACTIVE/COUNT/CONF/CSV/HEALTH_PATH
 #   nli_pods.R hosts <csv>     write the started hosts back into
 #                              input/config.yaml's active nli config
 #
@@ -31,7 +31,7 @@ active_nli <- function(cfg) {
 }
 
 # ---------------------------------------------------------------- conf -----
-emit_conf <- function() {
+emit_conf <- function(count_override = NULL) {
   cfg <- read_yaml(CONFIG)
   name <- active_nli(cfg)
   nli <- cfg[["nli"]][["configs"]][[name]]
@@ -42,6 +42,19 @@ emit_conf <- function() {
 
   count <- pods[["count"]]
   if (is.null(count) || !is.numeric(count) || count < 1) die("nli.configs.%s.pods.count must be a positive number", name)
+  if (!is.null(count_override)) {
+    count <- suppressWarnings(as.integer(count_override))
+    if (is.na(count) || count < 1) die("pod count override must be a positive integer, got '%s'", count_override)
+  }
+
+  # MIN_READY is clamped to the count actually being requested. create_pods.sh
+  # sources this conf at its line 97, BEFORE its own `: "${MIN_READY:=1}"`
+  # default at line 132, so a conf value wins over anything the environment or
+  # a -n flag could say -- leaving min_ready: 4 in place while asking for 1 pod
+  # makes a successful launch exit 1 every time.
+  merged_min <- defaults[["min_ready"]] %||% pods[["min_ready"]]
+  if (!is.null(pods[["min_ready"]])) merged_min <- pods[["min_ready"]]
+  if (!is.null(merged_min)) pods[["min_ready"]] <- min(as.integer(merged_min), count)
 
   # NLI_MAX_LENGTH is DERIVED from max_length, never restated. A pod serving a
   # 512-trained model at 2048 raises nothing and merely scores worse (a8c6ea4);
@@ -85,7 +98,9 @@ emit_conf <- function() {
   csv <- file.path(OUTDIR, sprintf("runpod_nli_%s_hosts.csv", name))
   writeLines(lines, conf)
 
-  cat(sprintf("ACTIVE=%s\nCOUNT=%d\nCONF=%s\nCSV=%s\n", name, as.integer(count), conf, csv))
+  cat(sprintf("ACTIVE=%s\nCOUNT=%d\nCONF=%s\nCSV=%s\nHEALTH_PATH=%s\n",
+              name, as.integer(count), conf, csv,
+              shQuote(as.character(defaults[["health_path"]] %||% "/health"))))
 }
 
 # --------------------------------------------------------------- hosts -----
@@ -135,7 +150,7 @@ write_hosts <- function(csv) {
 `%||%` <- function(x, y) if (is.null(x)) y else x
 args <- commandArgs(trailingOnly = TRUE)
 switch(args[[1L]] %||% "",
-  conf  = emit_conf(),
+  conf  = emit_conf(if (length(args) > 1L) args[[2L]] else NULL),
   hosts = write_hosts(args[[2L]]),
-  die("usage: nli_pods.R conf | nli_pods.R hosts <csv>")
+  die("usage: nli_pods.R conf [count] | nli_pods.R hosts <csv>")
 )

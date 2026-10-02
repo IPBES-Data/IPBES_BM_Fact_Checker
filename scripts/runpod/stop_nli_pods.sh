@@ -21,5 +21,17 @@ eval "$(scripts/runpod/nli_pods.R conf)"
 [[ -f "${CSV}" ]] || { echo "error: no ${CSV} -- nothing recorded for ${ACTIVE}. Pass -i <pod-id> to ${STOP} directly." >&2; exit 1; }
 
 echo "[stop_nli_pods] ${ACTIVE}: $(($(wc -l < "${CSV}") - 1)) pod(s) from ${CSV}"
-"${STOP}" -f "${CSV}" "$@"
+
+# The FULL inventory, not the filtered _ready.csv the start wrapper writes back
+# from: a pod that never became healthy is still running and still billing, and
+# this is the only record of its id.
+rc=0
+"${STOP}" -f "${CSV}" "$@" || rc=$?
+
+# stop_pods.sh removes the inventory once every pod in it was actioned, so the
+# healthy-subset copy beside it has to go too -- otherwise it survives as the
+# only file left, looking like a current pool.
+[[ -f "${CSV}" ]] || rm -f "${CSV%.csv}_ready.csv"
+
 echo "[stop_nli_pods] done. input/config.yaml host: left untouched."
+exit "${rc}"
