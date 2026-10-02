@@ -1,0 +1,35 @@
+# Quarto project for the reports the TRAINING pipeline produces.
+#
+# A SECOND project directory, rather than a subdirectory of input/reports/ or a
+# filter over it, because Quarto gives a project exactly one `output-dir`. A
+# single-file render picks up a project's `format:` but NOT its `output-dir`
+# (measured -- it is why report_fact_checker has to copy its own html by hand,
+# and why `quarto render <file> --output-dir` is refused outright), so there is
+# no way to send part of one project's output somewhere else. Two output
+# directories means two projects.
+#
+# Rendered by `reports_training_project` in _targets_training.R. The documents
+# here read targets that live in the TRAINING store, so they can only render
+# from that project -- which is the whole point of the split: the QA reports
+# for training are now built by the pipeline whose work they describe.
+#
+# The project root is this directory rather than the repo root for the same
+# reason input/reports/ is: Quarto mirrors each input's project-relative path
+# underneath output-dir, so a repo-root project would emit
+# output/reports_training/input/reports_training/*.html.
+project:
+  type: default
+  output-dir: ../../output/reports_training
+
+# Deliberately a copy of input/reports/_quarto.yml's format block rather than
+# an include of it. Quarto has no cross-project config inheritance, and the two
+# projects are free to diverge; keeping them byte-identical today is a
+# convention, not a constraint.
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    embed-resources: true
+    code-fold: true
+    code-summary: 'Show the code'
+    keep-md: false

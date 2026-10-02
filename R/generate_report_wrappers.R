@@ -36,6 +36,19 @@
 # from R/branch_helpers.R rather than re-derived, so they match exactly what
 # the nine former render targets produced.
 
+# Which Quarto project each `reports:` entry belongs to, and where that
+# project's sources live. The names match _targets.yaml's own project names,
+# since that is what decides which STORE a wrapper's tar_read() calls resolve
+# against -- a wrapper in the wrong directory names targets that do not exist
+# in the project that renders it.
+#
+# Two projects rather than one because Quarto gives a project exactly one
+# output-dir: output/reports/ is published to GitHub Pages at the site root,
+# output/reports_training/ under /training/. See input/reports_training/_quarto.yml.
+report_project_dirs <- function() {
+  c(reporting = "input/reports", training = "input/reports_training")
+}
+
 # Marker written into every generated file. Pruning only ever removes files
 # carrying it, so a hand-written .qmd in input/reports/ can never be deleted
 # by accident.
@@ -391,9 +404,15 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
 #' Called from _targets.R's preamble. Idempotent: rewrites nothing when the
 #' resulting content is unchanged, and prunes generated wrappers that the
 #' current config no longer asks for.
+# Writes EVERY entry's wrappers, into whichever directory its `project:`
+# names, regardless of which pipeline called it. Called from both
+# _targets_reporting.R's and _targets_training.R's preamble: both calls are
+# idempotent (write_if_changed() leaves unchanged bytes alone), so running
+# either project leaves both directories correct, and neither can drift behind
+# a config edit made while only the other was being run.
 generate_report_wrappers <- function(
   config_file = "input/config.yaml",
-  dir = "input/reports",
+  dirs = report_project_dirs(),
   quiet = FALSE
 ) {
   if (!file.exists(config_file)) {
@@ -426,11 +445,20 @@ generate_report_wrappers <- function(
       ), call. = FALSE)
     }
 
+    project <- entry[["project"]] %||% "reporting"
+    if (!project %in% names(dirs)) {
+      stop(sprintf(
+        "reports: entry '%s' names project '%s'; known projects: %s",
+        qmd_name, project, paste(names(dirs), collapse = ", ")
+      ), call. = FALSE)
+    }
+    dir <- dirs[[project]]
+
     body_include <- paste0("_", qmd_name, "_body.qmd")
     if (!file.exists(file.path(dir, body_include))) {
       stop(sprintf(
-        "reports: entry '%s' has no shared body at %s",
-        qmd_name, file.path(dir, body_include)
+        "reports: entry '%s' declares project '%s' but has no shared body at %s",
+        qmd_name, project, file.path(dir, body_include)
       ), call. = FALSE)
     }
 
@@ -458,11 +486,19 @@ generate_report_wrappers <- function(
   }
 
   # Prune: only files carrying the marker, so hand-written sources are safe.
-  existing <- list.files(dir, pattern = "\\.qmd$", full.names = TRUE)
-  generated <- Filter(function(f) {
-    any(grepl(report_wrapper_marker, readLines(f, warn = FALSE), fixed = TRUE))
-  }, existing)
-  stale <- setdiff(generated, expected)
+  # Per DIRECTORY, not once over the union -- a single pass keyed on one dir
+  # would never visit the other, so a wrapper left behind by an entry that
+  # changed project (or was deleted while only the other pipeline was being
+  # run) would render forever against targets its project does not have.
+  stale <- character()
+  for (d in dirs) {
+    if (!dir.exists(d)) next
+    existing <- list.files(d, pattern = "\\.qmd$", full.names = TRUE)
+    generated <- Filter(function(f) {
+      any(grepl(report_wrapper_marker, readLines(f, warn = FALSE), fixed = TRUE))
+    }, existing)
+    stale <- c(stale, setdiff(generated, expected))
+  }
   for (s in stale) unlink(s, force = TRUE)
 
   if (!quiet) {

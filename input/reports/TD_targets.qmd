@@ -44,8 +44,17 @@ that used to rest on remembering `shortcut = TRUE`.
 |---|---|---|---|
 | `main` | `_targets.R` / `_targets/` | collection: LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
 | `factcheck` | `_targets_factcheck.R` / `_targets_factcheck/` | citing works → NLI (Phase 1) → LLM verification (Phase 2) | `API_openrouter` |
-| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → fine-tune → benchmark | `API_openrouter` |
-| `reporting` | `_targets_reporting.R` / `_targets_reporting/` | everything that renders | **none** |
+| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → gold standard → fine-tune → benchmark → its own three QA reports | `API_openrouter` |
+| `reporting` | `_targets_reporting.R` / `_targets_reporting/` | everything else that renders | **none** |
+
+`reporting` was originally "everything that renders". The three QA reports
+describing training's own work moved into `training` once it became clear that
+rendering them from `reporting` required re-declaring training's targets across
+the project boundary — two of those stubs reproducing training's output-path
+conventions by formula. They render to a second Quarto project
+(`input/reports_training/` → `output/reports_training/`), because Quarto gives a
+project exactly one `output-dir`. See TD_NLI_training's "Rendering moved into
+`training`".
 
 ```r
 # The default project is `main` (collection)

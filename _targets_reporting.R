@@ -45,11 +45,12 @@ list.files("./R", full.names = TRUE) |> lapply(source)
 # target would contribute nothing on the run that created it: no source, no
 # dependency edge, no output.
 #
-# It lives in THIS project rather than a scoring one because reports come from
-# both scoring consumers -- the funnel and QA_NLI_Scores families from fact
-# checking, QA_NLI_Training_Data and QA_NLI_Finetuned_Model from training. A
-# generator that only knew about half of `reports:` would be worse than useless.
-generate_report_wrappers("input/config.yaml", "input/reports")
+# It generates EVERY `reports:` entry's wrappers, into whichever project
+# directory each entry's `project:` key names -- input/reports/ here,
+# input/reports_training/ for the three QA reports the training pipeline now
+# renders itself. _targets_training.R's preamble makes the same call, which is
+# idempotent, so running either project leaves both directories correct.
+generate_report_wrappers("input/config.yaml")
 
 # ---------------------------------------------------------------------------
 # Cross-project inputs.
@@ -190,15 +191,6 @@ list(
     nli_scores_evidence_consolidated,
     "output/nli_scores_evidence", format = "file"
   ),
-  # Benchmark results (TD_NLI_training.qmd), written by the TRAINING project's
-  # nli_benchmark_qa_data target. Keeps the producer's name, same as every
-  # other cross-project input here. Tracked rather than untracked -- it is one
-  # small rds that always exists once the benchmark has run, unlike the Phase 2
-  # score trees below that legitimately do not exist for every assessment.
-  tar_target(
-    nli_benchmark_qa_data,
-    "output/tables/nli_benchmark_qa.rds", format = "file"
-  ),
   # UNTRACKED on purpose, and NOT format = "file".
   #
   # A file target errors when its path does not exist, and these legitimately
@@ -279,30 +271,6 @@ list(
   # reports: re-run this project after scoring. That is the same
   # operator-ordering trade-off the split accepts generally (see
   # TD_targets.qmd, "What gets worse").
-  tar_target(
-    nli_training_data,
-    file.path(
-      "output/nli_training", paste0("granularity=", granularity),
-      paste0("nli_config=", nli_active_training), paste0("assessment=", assessment$id)
-    ),
-    pattern = map(assessment)
-  ),
-  # UNTRACKED on purpose (42 GB of checkpoints). Reproduces what
-  # build_nli_finetuned_model() returns -- the timestamped run directory it
-  # recorded in its own sentinel, or the empty marker it writes when the active
-  # config has train: false. build_nli_finetuned_model_qa_data() already
-  # handles both.
-  tar_target(
-    nli_finetuned_model,
-    {
-      sentinel <- "output/nli_training_finetuned/.last_run_dir.txt"
-      if (file.exists(sentinel)) {
-        readLines(sentinel, warn = FALSE)[[1L]]
-      } else {
-        file.path("output/nli_training_finetuned", ".disabled", nli_active_training)
-      }
-    }
-  ),
 
   tar_target(
     mmd_workflow_reporting,
@@ -522,27 +490,6 @@ list(
     build_llm_verification_qa_figures(llm_verification_qa_data, "output/figures"),
     pattern = map(llm_verification_qa_data),
     format = "file"
-  ),
-  # Target 2h4d' (QA data/report): sibling to llm_verification_qa_data/
-  # llm_verification_qa_report_html — same "not a scoring result, a sanity
-  # check" framing, same cached-widget convention. See
-  # R/build_nli_training_qa_data.R.
-  tar_target(
-    nli_training_qa_data,
-    build_nli_training_qa_data(
-      nli_training_data, assessment$id, nli_active_training, granularity, "output/tables"
-    ),
-    pattern = map(assessment, nli_training_data),
-    format = "file"
-  ),
-  # Target 2h4e' (QA data/report): sibling to nli_training_qa_data/
-  # nli_training_qa_report_html -- same "not a scoring result, a progress
-  # check" framing. Single nli_config scope (fine-tuning pools across
-  # whatever assessments/granularity that config's own training data has,
-  # not per-assessment), so no cross()/map() over assessment here.
-  tar_target(
-    nli_finetuned_model_qa_data,
-    build_nli_finetuned_model_qa_data(nli_finetuned_model, nli_active_training, "output/tables")
   ),
   # Target 2h3: NLI overview figures — label split (overall/per-KM/per-BM),
   # confidence density, alignment density, per assessment.

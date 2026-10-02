@@ -29,10 +29,18 @@ pct <- function(x) ifelse(is.na(x), "--", sprintf("%.1f%%", 100 * x))
 **It measures agreement with `gpt-4o-mini`.** Every label in the holdout comes
 from Phase 2's grounded, quote-checked LLM verdict. Fine-tuning distils that
 judgment into the NLI model and this report scores how well the distillation
-worked. It does not measure truth: the LLM's verdicts have never been checked
-against human labels. That is a ceiling, not a flaw — distilling an expensive
-accurate judge into a cheap one is the point — but every number below inherits
-it.
+worked. Every table below is therefore reported **twice**:
+
+- `reference = "llm"` — truth is gpt-4o-mini's Phase 2 verdict. This measures
+  *fidelity to the judge*, not correctness, and is what earlier versions of this
+  report showed on their own. A model that perfectly reproduced a wrong judge
+  would score perfectly here.
+- `reference = "human"` — truth is the adjudicated verdict of two independent
+  reviewers. **This is the one to quote.**
+
+Under the human reference gpt-4o-mini stops being the yardstick and becomes just
+another predictor, scored on the same rows as every NLI model. The gap between
+the two references is the quantity this report exists to expose.
 
 Design and reasoning: [TD_NLI_training](TD_NLI_training.html).
 
@@ -41,21 +49,32 @@ Design and reasoning: [TD_NLI_training](TD_NLI_training.html).
 #| echo: false
 f <- qa$fold
 kable(data.frame(
-  Property = c("benchmark salt", "holdout fraction", "grouping key",
-               "train rows", "test rows", "train groups", "test groups",
-               "claims in BOTH folds", "works in both folds",
-               "test rows involving a shared work"),
-  Value = c(f$salt, f$holdout_fraction, f$group_key,
-            f$n_train, f$n_test, f$n_groups_train, f$n_groups_test,
+  Property = c("benchmark salt", "holdout fraction", "monitor fraction", "grouping key",
+               "train rows", "monitor rows", "holdout rows",
+               "train groups", "monitor groups", "holdout groups",
+               "claims in ANY two folds", "works in more than one fold",
+               "holdout rows involving a shared work",
+               "holdout rows with a human label"),
+  Value = c(f$salt, f$holdout_fraction, f$monitor_fraction, f$group_key,
+            f$n_train, f$n_monitor, f$n_holdout,
+            f$n_groups_train, f$n_groups_monitor, f$n_groups_holdout,
             f$claims_in_both_folds,
             sprintf("%d of %d (%s)", f$works_in_both_folds, f$works_total,
                     pct(f$works_in_both_folds / f$works_total)),
-            sprintf("%d (%s)", f$test_rows_with_shared_work,
-                    pct(f$test_rows_with_shared_work / f$n_test)))
-), caption = "Holdout composition and leakage diagnostics")
+            sprintf("%d (%s)", f$holdout_rows_with_shared_work,
+                    pct(f$holdout_rows_with_shared_work / f$n_holdout)),
+            sprintf("%d of %d sampled", f$n_gold_matched, f$n_gold))
+), caption = "Fold composition and leakage diagnostics")
 ```
 
-**`claims in BOTH folds` must be 0.** The holdout is grouped by
+**There are three folds, not two.** `monitor` is what fine-tuning evaluates on
+and selects its best checkpoint from; `holdout` is scored here and read by
+nothing during training. They were previously the same fold, so
+`load_best_model_at_end` picked the checkpoint that scored best on the very rows
+this report then published — every number from before that change is optimistic
+by an unmeasured margin.
+
+**`claims in ANY two folds` must be 0.** The holdout is grouped by
 `(assessment, bm)` — deliberately *without* `km`, because one Background
 Message belongs to several Key Messages and carries byte-identical claim text
 under each. Grouping on `(assessment, km, bm)` looked tighter and was measurably
@@ -113,6 +132,29 @@ uses raw `title`/`abstract`, matching what `train_nli.py` trains on. Spot-checke
 against real deployed scores, local and production probabilities agree to ~4
 decimal places on clean abstracts and diverge on marked-up ones.
 
+## The human ceiling
+
+Two reviewers labelled the same sample independently, blind to every model's
+output. How often they agreed with *each other* bounds how well any automated
+system can be expected to agree with the gold standard — a model scoring above
+this line is matching the adjudicated subset, not outperforming human judgement.
+
+Cohen's κ rather than raw agreement: around 95% of this corpus is
+`NOT_ENOUGH_INFO`, so two reviewers who both default to it agree over 90% of the
+time while carrying no information at all. κ prices that baseline in.
+
+```{r}
+#| label: agreement
+#| echo: false
+qa$agreement |>
+  transmute(pair, n, agreement = pct(agreement), kappa = round(kappa, 3)) |>
+  kable(caption = "Pairwise agreement. The first row is the ceiling; everything below is read against it.")
+```
+
+Rows the two reviewers could not agree on are excluded from scoring — they are
+reported as the ceiling, not resolved by a third opinion. The rule was fixed
+before any reviewing started, so it cannot have been chosen to flatter a result.
+
 ## The headline: SUPPORTS → REFUTES recovery
 
 60% of every confirmed refutation in this corpus is a pair the zero-shot model
@@ -126,8 +168,10 @@ REFUTES, how many does each model now call REFUTES?
 #| echo: false
 qa$flip |>
   left_join(qa$models |> select(model, model_id, split_aware), by = "model") |>
-  transmute(model_id, split_aware, n_subset, n_recovered, recovery_rate = pct(recovery_rate)) |>
-  arrange(desc(n_recovered)) |>
+  mutate(model_id = coalesce(model_id, model)) |>
+  transmute(reference, model_id, split_aware, n_subset, n_recovered,
+            recovery_rate = pct(recovery_rate)) |>
+  arrange(desc(reference), desc(n_recovered)) |>
   kable(caption = "Rows where NLI said SUPPORTS and the truth is REFUTES. Read only the split_aware = TRUE rows against the baseline (NA).")
 ```
 
@@ -148,10 +192,13 @@ and F1 assumes those cost the same.
 #| echo: false
 qa$per_class |>
   left_join(qa$models |> select(model, model_id, split_aware), by = "model") |>
-  transmute(model_id, split_aware, label, precision = pct(precision), recall = pct(recall),
-            f1 = pct(f1), support) |>
-  arrange(label, model_id) |>
-  kable()
+  mutate(model_id = coalesce(model_id, model)) |>
+  transmute(reference, model_id, split_aware, label,
+            precision = pct(precision), recall = pct(recall),
+            f1 = sprintf("%s [%s, %s]", pct(f1), pct(f1_lo), pct(f1_hi)),
+            support) |>
+  arrange(desc(reference), label, model_id) |>
+  kable(caption = "F1 is shown with its 95% bootstrap interval. Two models whose intervals overlap are not distinguishable on this holdout.")
 ```
 
 ```{r}
@@ -159,11 +206,59 @@ qa$per_class |>
 #| echo: false
 qa$confusion |>
   left_join(qa$models |> select(model, model_id), by = "model") |>
-  tidyr::pivot_wider(id_cols = c(model_id, label), names_from = pred_label,
+  mutate(model_id = coalesce(model_id, model)) |>
+  tidyr::pivot_wider(id_cols = c(reference, model_id, truth), names_from = pred_label,
                      values_from = n, values_fill = 0) |>
-  arrange(model_id, label) |>
-  kable(caption = "Confusion matrix: rows = LLM verdict (truth), columns = model prediction")
+  arrange(desc(reference), model_id, truth) |>
+  kable(caption = "Confusion matrix: rows = truth (the LLM verdict, or the adjudicated human verdict), columns = model prediction")
 ```
+
+### Weighted rates — these are the corpus-level numbers
+
+The human sample deliberately over-draws REFUTES, so **the unweighted table
+above describes the sample, not the corpus**. Reweighting by inverse inclusion
+probability recovers corpus-level rates.
+
+**Both precision and recall need it.** An earlier version of this report
+reweighted only precision, on the reasoning that recall is unbiased under
+stratification. That holds when the stratification is on the *true* label. Here
+it is on the **LLM's label** — the thing under question — and every NLI model
+scored was distilled from that same LLM, so its predictions correlate with the
+stratification variable and the sample is skewed *within* each truth class.
+Measured on the GA1 sample: gpt-4o-mini's SUPPORTS recall is 40.4% unweighted
+against 75.4% weighted. Between-model *ranking* on identical rows is unaffected.
+
+```{r}
+#| label: weighted
+#| echo: false
+if (is.null(qa$per_class_weighted)) {
+  cat("_No sample manifest found — weighted rates unavailable._")
+} else {
+  qa$per_class_weighted |>
+    left_join(qa$models |> select(model, model_id), by = "model") |>
+    mutate(model_id = coalesce(model_id, model)) |>
+    transmute(model_id, label,
+              precision = pct(precision_weighted), recall = pct(recall_weighted),
+              f1 = pct(f1_weighted),
+              est_share = pct(support_weighted / sum(support_weighted))) |>
+    arrange(label, model_id) |>
+    kable(caption = "Corpus-level rates, inverse-inclusion-probability weighted (human reference). `est_share` is that class's estimated share of the holdout — a tiny share means the sample barely saw the class, so read its rates as indicative only.")
+}
+```
+
+::: {.callout-warning}
+## REFUTES is not estimable from this sample
+
+The sample drew 100 of 200 rows from the REFUTES stratum and yielded **one**
+adjudicated REFUTES, because the judge's REFUTES precision is a few per cent.
+Stratifying on a label that is mostly wrong is not an enrichment.
+
+So the SUPPORTS → REFUTES recovery rate above, and every REFUTES per-class
+figure, rests on a support of ~1 and must not be read as a measurement. What
+this sample *does* establish — and it is the question that motivated building a
+gold standard at all — is that the judge's REFUTES calls are overwhelmingly not
+refutations.
+:::
 
 ## Threshold sweep
 
