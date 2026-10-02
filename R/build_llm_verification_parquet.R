@@ -407,7 +407,10 @@ build_llm_verification_parquet <- function(
     # missing files" the moment a real assessment/config combo has zero
     # routed candidates (confirmed directly: this is what happened on the
     # first real run against GA1, before nli_scores_path was fixed above).
-    if (dir.exists(output_path)) unlink(output_path, recursive = TRUE, force = TRUE)
+    # Deliberately does NOT unlink what is already there. "This run routed no
+    # candidates" is not "nothing was ever verified" -- under a KM scope it is
+    # the ordinary outcome for a narrow selection, and wiping the tree would
+    # discard every previously verified row for the whole assessment.
     dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
     return(output_path)
   }
@@ -660,7 +663,13 @@ build_llm_verification_parquet <- function(
       quote, quote_verbatim, explanation
     )
 
-  if (dir.exists(output_path)) unlink(output_path, recursive = TRUE, force = TRUE)
+  # NO unlink() of output_path. It used to wipe llm_config=<cfg>/assessment=<id>/
+  # wholesale before writing, which made every narrowing of scope destructive:
+  # restricting to one KM deleted every other KM's verified rows, and the only
+  # way back was to re-run Phase 2 over them (the raw JSON cache makes that free
+  # in money but not in time). `delete_matching` already clears exactly the
+  # (llm_config, assessment, nli_route, km, bm) partitions this run writes, so a
+  # group outside the current scope is simply never visited.
   arrow::write_dataset(
     dataset = out,
     path = output_root,

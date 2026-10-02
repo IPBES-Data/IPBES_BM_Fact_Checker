@@ -250,6 +250,32 @@ build_llm_relevance_screen <- function(
       dplyr::distinct(work_id, .keep_all = TRUE)
     pairs <- pairs |> dplyr::inner_join(premises, by = "work_id")
   }
+  # ---- RESUME: drop pairs already scored ----------------------------------
+  # This screen had no cache of any kind: it unlink()ed its whole output subtree
+  # and rescreened every pair on every run, so any invalidation re-paid in full
+  # (~$0.51 for GA1's citing works, every time). It also made narrowing scope
+  # destructive -- out-of-scope pairs were simply deleted, and with no cache the
+  # only way back was to pay again.
+  #
+  # Keying on the full (km, bm, claim_id, work_id) matters: claim_id strings like
+  # "bm_description-01" repeat across every BM, so claim_id + work_id alone would
+  # treat one BM's score as another's. Same bug class the Phase 2 cache key
+  # already documents.
+  existing <- NULL
+  if (dir.exists(output_path) &&
+      length(list.files(output_path, pattern = "[.]parquet$", recursive = TRUE))) {
+    existing <- arrow::open_dataset(output_path) |> dplyr::collect()
+  }
+  pair_key <- function(d) paste(d$km, d$bm, d$claim_id, d$work_id, sep = "\r")
+  if (!is.null(existing) && nrow(existing)) {
+    todo <- !pair_key(pairs) %in% pair_key(existing)
+    message(sprintf(
+      "[relevance %s] %d of %d pairs already scored, screening %d",
+      assessment_id, sum(!todo), nrow(pairs), sum(todo)
+    ))
+    pairs <- pairs[todo, , drop = FALSE]
+  }
+
   claims <- split(pairs, list(pairs$km, pairs$bm, pairs$claim_id), drop = TRUE)
   message(sprintf("[relevance %s] %d pairs across %d claims",
                   assessment_id, nrow(pairs), length(claims)))
@@ -264,20 +290,39 @@ build_llm_relevance_screen <- function(
     if (i %% 25 == 0) message(sprintf("  %d/%d claims", i, length(claims)))
   }
   res <- dplyr::bind_rows(scored)
+  n_new <- nrow(res)
+  cost_new <- if (n_new) sum(res$relevance_cost, na.rm = TRUE) else 0
+
+  # ---- write the UNION, never just this run's rows -------------------------
+  # The unlink() below still clears this chain's subtree (clearing assessment=
+  # wholesale would delete the other chain's scores -- the collision the
+  # keypaper partition exists to prevent), but what goes back is everything
+  # previously scored PLUS what was scored now. Writing only `res` would make a
+  # narrowed run delete every out-of-scope pair, which is the behaviour this
+  # change exists to remove.
+  res <- if (is.null(existing) || !nrow(existing)) res else dplyr::bind_rows(existing, res)
+
+  if (!nrow(res)) {
+    message(sprintf("[relevance %s] nothing to write", assessment_id))
+    dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
+    return(output_path)
+  }
+
+  # The partition columns are re-attached HERE, after the union, not where the
+  # new rows are built: `existing` is read from inside the two hive directories,
+  # so arrow surfaces neither `assessment` nor `keypaper` as a column (they are
+  # the dataset's own root, not a level below it). Setting them only on the new
+  # rows made a resumed run with nothing new to do fail the write outright.
   res$assessment <- assessment_id
   res$keypaper <- as.logical(keypaper)
 
-  # Unlink only THIS chain's subtree. Clearing assessment=<id>/ wholesale would
-  # delete the other chain's scores -- the collision this partition exists to
-  # prevent.
   if (dir.exists(output_path)) unlink(output_path, recursive = TRUE, force = TRUE)
   arrow::write_dataset(res, output_root, format = "parquet",
                        partitioning = c("assessment", "keypaper"),
                        existing_data_behavior = "delete_matching")
   message(sprintf(
-    "[relevance %s] wrote %d rows (%d NA) to %s, cost $%.4f",
-    assessment_id, nrow(res), sum(is.na(res$addresses)), output_path,
-    sum(res$relevance_cost, na.rm = TRUE)
+    "[relevance %s] wrote %d rows (%d new, %d NA) to %s, cost $%.4f this run",
+    assessment_id, nrow(res), n_new, sum(is.na(res$addresses)), output_path, cost_new
   ))
   output_path
 }

@@ -52,6 +52,11 @@ consolidate_nli_scores <- function(
   claim_units,
   output_root,
   nli_active,
+  # Current scope, so out-of-scope groups are never visited. `assessments` and
+  # `km` both NULL means "everything", which is the behaviour before scoping
+  # existed. See the groups filter below for why this is not optional.
+  assessments = NULL,
+  km = NULL,
   max_prune_fraction = 0.5
 ) {
   # ---- current (authoritative) claim list ---------------------------------
@@ -106,6 +111,39 @@ consolidate_nli_scores <- function(
     groups_from(scratch_root),
     current_group
   ))
+
+  # ---- restrict to the CURRENT SCOPE --------------------------------------
+  # groups_from(disk_root) globs every assessment=*/km=*/bm=* under the
+  # nli_config= root and is scoped by nothing. Any group on disk that the
+  # current claim list does not cover therefore reaches the loop, where
+  # `!group_in_current` stops outright ("contains NO claims for this group at
+  # all. Refusing to delete"). That is right when claims genuinely vanished
+  # upstream; it is wrong when the group was simply never in scope.
+  #
+  # This was already live before any KM scoping existed: fact_checking scoped to
+  # [GA1] while 18 assessment=IAS groups sat on disk from an earlier run, so the
+  # next consolidation would have failed -- and it is a non-patterned
+  # deployment = "main" target, so it takes relevance_screen and
+  # llm_verification_parquet down with it.
+  #
+  # Narrowing scope must mean "compute less", never "delete what is out of
+  # scope": out-of-scope groups are neither merged nor pruned, so re-widening
+  # finds them intact and score_one_claim()'s delta dispatch skips them.
+  # In-scope orphan pruning is untouched.
+  if (length(groups) && (!is.null(assessments) || !is.null(km))) {
+    parsed <- strsplit(groups, "\r", fixed = TRUE)
+    in_scope <- vapply(parsed, function(q) {
+      (is.null(assessments) || q[[1L]] %in% assessments) &&
+        (is.null(km) || q[[2L]] %in% km)
+    }, logical(1))
+    if (any(!in_scope)) {
+      message(sprintf(
+        "[NLI consolidate %s] %d group(s) outside the current scope left untouched",
+        nli_active, sum(!in_scope)
+      ))
+    }
+    groups <- groups[in_scope]
+  }
 
   if (!length(groups)) {
     message(sprintf("[NLI consolidate %s] nothing to consolidate", nli_active))
