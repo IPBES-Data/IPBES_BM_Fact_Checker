@@ -322,7 +322,11 @@ trainer = Trainer(
     model         = model,
     args          = args,
     train_dataset = dataset["train"],
-    eval_dataset  = dataset["test"],
+    # The MONITOR fold, not the holdout. load_best_model_at_end selects a
+    # checkpoint from whatever this points at, so pointing it at the benchmark
+    # fold makes every benchmark number a score on rows the model was chosen
+    # to do well on. See "Three folds, not two" below.
+    eval_dataset  = dataset["monitor"],
 )
 
 trainer.train()
@@ -459,6 +463,33 @@ numbers are, because "94% accurate" invites a reading the data does not
 support. See *Two gaps this design does not close* below.
 
 ### The split
+
+#### Three folds, not two
+
+| fold | buckets | share | read by |
+|---|---|---:|---|
+| `holdout` | 0–19 | 20% | the benchmark, and the gold-standard sample drawn from it |
+| `monitor` | 20–29 | 10% | `train_nli.py` — `eval_loss`, checkpoint selection |
+| `train` | 30–99 | 70% | `train_nli.py` |
+
+`monitor` was added after a confirmed bug: `train_nli.py` set
+`load_best_model_at_end=True` with `metric_for_best_model="eval_loss"` and
+`eval_dataset` pointing at the **benchmark fold**. The checkpoint was therefore
+selected on the very rows the benchmark then scored, and every number published
+before this change is optimistic by an unmeasured margin. The fix is a third
+fold, not a different metric: any selection signal computed on the holdout
+contaminates it, however it is computed.
+
+The bucket ranges are ordered so `holdout` keeps **exactly** the buckets the old
+two-way `test` fold held, and `monitor` is carved out of what was `train`. No
+Background Message already in the holdout moved out of it, so results from
+before the change remain comparable — verified directly: every holdout row falls
+in buckets 0–19 and nothing else does.
+
+`train_nli.py` and `score_nli_local.py` both **refuse to run** on data still
+carrying the old `test`/`train` values, rather than silently treating `test` as
+a holdout. Current shape: train 3,087 / monitor 415 / holdout 1,131, with zero
+claim strings shared between *any* two folds.
 
 #### Grouped by Background Message
 
@@ -645,31 +676,109 @@ Given 558 of 562 REFUTES come from GA1+IAS, a pooled number mostly measures
 those two. Report TCA and VA separately even though their counts are tiny; "we
 cannot tell" is a legitimate and useful result.
 
-### Three human-labelled artifacts, none of which exist yet
+### Three human-labelled artifacts, one of which now exists
 
-These are routinely conflated and they measure different things. All three were
-discussed and none has been built; this records what each is for, so the next
-person does not build one and believe they have another.
+These are routinely conflated and they measure different things. **The first is
+now built and is a hard prerequisite for fine-tuning and benchmarking**; the
+other two remain outstanding. This records what each is for, so the next person
+does not build one and believe they have another.
 
 Everything in this document so far measures **agreement with `gpt-4o-mini`**.
 Its verdicts are the training labels, and the benchmark scores how faithfully a
 fine-tuned model reproduces them. A model that perfectly reproduced a wrong
 judge would score perfectly. Nothing here breaks that circle — these three do.
 
-#### 1. Gold standard — adjudicate labels that already exist
+#### 1. Gold standard — adjudicate labels that already exist — **BUILT**
 
 Humans re-judge a sample of pairs that **already have LLM verdicts**: was
 gpt-4o-mini right? Gives the judge's accuracy, which is the ceiling on every
 number in this document.
 
-Sample **stratified by label**, not uniformly: REFUTES is ~0.5% of verdicts, so
-a uniform draw of 300 contains one or two. Weight toward REFUTES and toward the
-cases where NLI and the LLM disagree, which is where the errors were found by
-reading. `output/tables/refutes_review.csv` is the first slice of this, already
-generated with empty `human_verdict`/`human_note` columns.
+Implemented as `R/build_goldstandard_sample.R` (draw, hand-run) and
+`R/build_goldstandard.R` (adjudicate, a target). Artifacts live in
+`input/goldstandard/`, which is tracked, so human labels are versioned:
+
+| file | what it is |
+|---|---|
+| `REVIEWER_GUIDE.md` | label definitions, written **before** the pilot round |
+| `Rx_<id>_template.csv` | generated, blinded, independently shuffled per reviewer |
+| `Rx_<id>.csv` | the reviewer's filled copy |
+| `gold_<id>.csv` | adjudicated; generated, never hand-edited |
+| `sample_manifest_<id>.csv` | strata + inclusion probabilities; reviewers never see it |
+
+Drawn **from the `holdout` fold only**, so gold rows are never trained on and
+the LLM label, the human label and every model's prediction exist on identical
+rows — which is what makes the full agreement matrix computable. Stratified by
+label with REFUTES over-sampled (it is ~2% of the pool, so a proportional draw
+of 200 would contain a handful), with `p_include` recorded per stratum so
+corpus-level rates can be recovered by inverse-probability weighting.
+
+**Both precision and recall need that weighting**, and an earlier version of
+this document said only precision did. That would be true if the sample were
+stratified on the *true* label. It is stratified on the **LLM's label** — the
+thing under question — and every NLI model scored here was distilled from that
+same LLM, so its predictions correlate with the stratification variable and the
+sample is skewed *within* each truth class. Measured on the real GA1 sample:
+gpt-4o-mini's SUPPORTS recall is 40.4% unweighted against 75.4% weighted.
+Between-model ranking on identical rows is unaffected; any corpus-level rate is
+not.
+
+::: {.callout-warning}
+## The REFUTES headline is out of reach with this instrument
+
+Found on the first real pass. The sample over-drew the REFUTES stratum as hard
+as is reasonable — 100 of 200 rows, inclusion probability 0.585 — and yielded
+**one** adjudicated REFUTES, because the judge's REFUTES precision is only a few
+per cent. Stratifying on a label that is mostly wrong is not an enrichment.
+
+So the **SUPPORTS → REFUTES recovery rate**, named above as the primary metric,
+cannot be estimated against human labels at any feasible sample size through
+this scheme: 50 true REFUTES would need on the order of 10,000 reviewed pairs.
+Neither can REFUTES recall, which additionally requires finding refutations the
+judge *missed* — i.e. reviewing the ~95% `NOT_ENOUGH_INFO` mass, a different and
+much larger instrument.
+
+What this sample measures well, and cheaply, is the judge's **REFUTES
+precision** — "of the pairs gpt-4o-mini called REFUTES, how many are real?" —
+which is the question that motivated building a gold standard at all. The
+model-facing REFUTES metrics need a separate design; one option is a second
+review pass over works drawn from the *reviewed* corpus after a first run,
+rather than from the judge's labels.
+:::
+
+Two exclusions, both measured: rows with no usable abstract (25% of the holdout)
+and rows referencing orphaned works. A reviewer cannot judge what they cannot
+read, and must not judge a paper the pipeline no longer contains.
+
+The instruments carry `id`, `claim`, `title`, `abstract`, `doi` and empty
+verdict columns — **no model output of any kind**. `verdict` has four values:
+the three labels plus `CANNOT_JUDGE`, which is a failure of the *instrument*
+(unreadable abstract, unparseable claim) as opposed to NEI, which is a real
+finding about the paper. Collapsing them would corrupt the class that already
+dominates the corpus.
+
+Adjudication keeps the rows where both reviewers agree and reports the rest as
+the **human ceiling** — the rule was fixed here, before any reviewing started,
+so it cannot have been chosen afterwards to flatter a result. Agreement is
+reported as Cohen's κ: at ~95% NEI, two reviewers who both default to it agree
+over 90% of the time while carrying no information at all.
+
+**It is a gate, not a report.** `nli_finetuned_model` and `nli_benchmark_qa_data`
+both require it and `stop()` with instructions until the filled files exist.
+`nli_training_data` is deliberately *not* gated — the sample is drawn from the
+fold that target defines, so making gold an input there would be circular. The
+ordering is: `nli_training_data` → hand-run draw → two humans → commit → the
+expensive half unblocks.
+
+**Still to do before reviewing starts:** a **pilot round** of ~30 pairs with both
+reviewers, computing κ and discussing every disagreement, then refining
+`REVIEWER_GUIDE.md` before the 200 are drawn. Without a written definition of
+the labels *for this task*, the two reviewers diverge on definitions rather than
+judgement and κ measures the wrong thing.
 
 **What it cannot do:** it only covers pairs that were *routed* for review, so it
-inherits Phase 2's routing bias. It measures the judge, not the pipeline.
+inherits Phase 2's routing bias. It measures the judge, not the pipeline — which
+is precisely what artifact 2 below is for.
 
 #### 2. Curated test set — evaluation that owes nothing to any model
 
@@ -702,6 +811,24 @@ This is the only one with a hard deadline attached to a decision: at 0.3 the
 screen discards ~24% of true SUPPORTS, and a wrongly dropped pair is never
 reviewed and leaves no trace — no verdict, no failed quote check, nothing to
 audit. `relevance_screen.threshold` stays `~` until this exists.
+
+It also costs training data, measured on the train fold (sparing
+`NOT_ENOUGH_INFO`, since irrelevance *is* that label):
+
+| threshold | REFUTES | SUPPORTS | per-class cap | training rows |
+|---|---:|---:|---:|---:|
+| `~` (off) | 489 | 1,568 | **489** | **1,467** |
+| 0.3 | 303 | 1,192 | **303** | **909** |
+| 0.5 | 127 | 753 | **127** | **381** |
+
+REFUTES is the binding class, so the screen bites hardest exactly where the
+corpus is thinnest, and a dropped pair never reaches Phase 2, never gets a
+verdict, and cannot enter training later without re-running the LLM — a one-way
+door. **The implication is that the two purposes want different thresholds**:
+fact checking is cost-dominated and can afford to screen hard, training is
+data-starved and should screen lightly or not at all. `relevance_screen.threshold`
+is currently a single global key; it should be split per purpose, the way `nli`
+and `llm` already are, before any real value is set.
 
 Sample from the **dropped** side specifically. Validating the kept side measures
 nothing useful: those pairs go to the LLM anyway.
@@ -900,18 +1027,46 @@ different workload and MPS may well be fine here, but the benchmark's job is
 comparability, not speed: pin CPU so results are reproducible, and revisit only
 if runtime becomes a real constraint.
 
-### Rendering stays in `reporting`
+### Rendering moved into `training`
 
 The benchmark writes `output/tables/nli_benchmark_qa.rds` — the same
 cached-rds-holding-a-prebuilt-widget convention every other QA data builder
 here uses, because the qmd renders in a fresh session that never sources
-`R/*.R`. The reporting project declares that path as a `format = "file"` target
-keeping the producer's name, and
-`input/reports/QA_NLI_Benchmark_Report.qmd` reads it.
+`R/*.R`.
 
-That is the one genuine cross-project edge this design adds, and it runs the
-same direction as every other one: everything renders in `reporting`, nothing
-else renders anything.
+**This originally rendered in `reporting`**, on the principle that everything
+renders there and nothing else renders anything. That principle did not
+survive contact with the three QA reports describing *this* pipeline's work.
+Rendering them from `reporting` meant re-declaring training's targets across
+the project boundary, and two of the three stubs reproduced training's own
+output-path logic by formula — `output/nli_training/granularity=…/nli_config=…/`
+rebuilt by hand, and `.last_run_dir.txt` read directly to recover the
+fine-tuning run directory. Two copies of a path convention, one of them in a
+project that has no business knowing it.
+
+So `QA_NLI_Benchmark_Report`, `QA_NLI_Training_Data_Report` and
+`QA_NLI_Finetuned_Model_Report` now render from `training` itself, as the
+`reports_training_project` target over a second Quarto project in
+`input/reports_training/`, output to `output/reports_training/` and published
+under `/training/` on the site. Reporting lost five targets, training gained
+three. A second *project directory* is unavoidable rather than chosen: Quarto
+gives a project exactly one `output-dir`, and a single-file render picks up a
+project's `format:` but not its `output-dir`.
+
+Two consequences, both deliberate and both worth knowing before they surprise
+someone:
+
+* **Rendering these three now needs credentials.** `_targets_training.R` calls
+  `keyring::key_get("API_openrouter")` when sourced; `reporting` needs none.
+* **All three sit behind the gold-standard gate.** `nli_benchmark_qa_data`
+  requires `goldstandard`, and a Quarto project render is all-or-nothing, so
+  the two reports that have nothing to do with human labels cannot render until
+  the gold standard exists either.
+
+`TD_*.qmd` design documents — including this one — stay in `input/reports/`:
+the main report links them via `td_doc_link()` and the Shiny app lists
+`TD_*.html` out of `output/reports/`, both of which would silently lose any
+that moved.
 
 ### What this changes upstream
 

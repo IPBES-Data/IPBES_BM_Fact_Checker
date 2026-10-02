@@ -69,6 +69,19 @@ tar_option_set(
 
 list.files("./R", full.names = TRUE) |> lapply(source)
 
+# Generate the wrapper .qmd files for EVERY `reports:` entry, into whichever
+# project directory each one declares -- the same plain call reporting's
+# preamble makes, for the same reason it cannot be a target: tarchetypes::
+# tar_quarto() resolves a project's file list and its dependency edges when
+# this script is SOURCED, so a wrapper produced by an upstream target would
+# contribute nothing on the run that created it.
+#
+# Both pipelines calling it is deliberate, not redundant. write_if_changed()
+# makes it idempotent, and it means running either project leaves both
+# directories correct -- a config edit made while only one was being run
+# cannot leave the other's wrappers stale.
+generate_report_wrappers("input/config.yaml")
+
 # ---------------------------------------------------------------------------
 # Cross-project inputs.
 #
@@ -372,7 +385,8 @@ list(
       granularity,
       "output/nli_training",
       benchmark_salt = benchmark_config$salt,
-      holdout_fraction = benchmark_config$holdout_fraction
+      holdout_fraction = benchmark_config$holdout_fraction,
+      monitor_fraction = benchmark_config$monitor_fraction
     ),
     pattern = map(
       assessment, llm_verification_keypaper_parquet,
@@ -382,6 +396,22 @@ list(
     deployment = "main",
     garbage_collection = TRUE
   ),
+  # ---- gold standard: human labels, and the gate on everything below -------
+  # Hand-maintained input, same format = "file" + path convention as
+  # config_file and the prompt files. The DIRECTORY is tracked rather than
+  # individual files, so adding an assessment's reviews invalidates downstream
+  # without anyone editing the pipeline.
+  #
+  # The sample itself is drawn by R/build_goldstandard_sample.R, which is
+  # deliberately NOT a target: a target would regenerate the instruments
+  # whenever upstream changed and destroy reviewer work in progress. Ordering is
+  # nli_training_data (defines the holdout) -> hand-run draw -> humans -> gold
+  # -> the two targets below. That is why gold gates fine-tuning and
+  # benchmarking but NOT nli_training_data: the sample is drawn from the fold
+  # nli_training_data defines, so making it an input there would be circular.
+  tar_target(goldstandard_dir, "input/goldstandard", format = "file"),
+  tar_target(goldstandard, build_goldstandard(goldstandard_dir)),
+
   # Fine-tune the active nli config's model, IFF that config's own train: field
   # is true (default false). A real local CPU training run (~25 min), opt-in per
   # config so a bare tar_make() never triggers one by surprise.
@@ -398,7 +428,13 @@ list(
     build_nli_finetuned_model(
       nli_train_enabled, nli_active,
       downsample_seed = nli_downsample_seed,
-      nli_training_data_dep = nli_training_data
+      # Both were tracked targets that were never reaching the CLI, so every
+      # targets-driven run silently trained at max_length 512 over every
+      # assessment on disk, regardless of config.
+      max_length = max_length,
+      assessments = vapply(assessments_list, function(a) a$id, character(1)),
+      nli_training_data_dep = nli_training_data,
+      goldstandard_dep = goldstandard
     ),
     format = "file",
     deployment = "main"
@@ -446,15 +482,56 @@ list(
     format = "file",
     deployment = "main"
   ),
+  # ---- QA reports for this pipeline's own work -----------------------------
+  #
+  # These three (training data, fine-tuned model, benchmark) used to be built
+  # and rendered in the REPORTING project. Moving them here removed two stub
+  # targets that reproduced this project's own output paths by formula --
+  # reporting had to re-derive output/nli_training/granularity=.../ and read
+  # the .last_run_dir.txt sentinel itself, because the real targets were over
+  # a project boundary. They are right here, so the QA data now reads them
+  # directly and the duplicated path logic is gone.
+  #
+  # The cost is that rendering these reports now needs this script's
+  # keyring::key_get("API_openrouter") call at the top to succeed, where
+  # reporting needed no credentials at all. See CLAUDE.md on Keychain access
+  # from tmux/SSH sessions.
+  tar_target(
+    nli_training_qa_data,
+    build_nli_training_qa_data(
+      nli_training_data, assessment$id, nli_active, granularity, "output/tables"
+    ),
+    pattern = map(assessment, nli_training_data),
+    format = "file"
+  ),
+  # Single nli_config scope, no branching over assessment: fine-tuning pools
+  # across whatever assessments that config's training data holds.
+  tar_target(
+    nli_finetuned_model_qa_data,
+    build_nli_finetuned_model_qa_data(nli_finetuned_model, nli_active, "output/tables")
+  ),
   tar_target(
     nli_benchmark_qa_data,
     build_nli_benchmark_metrics(
       benchmark_scores,
       nli_active = nli_active,
-      benchmark_config = benchmark_config
+      benchmark_config = benchmark_config,
+      goldstandard = goldstandard
     ),
     format = "file",
     deployment = "main"
+  ),
+  # The Quarto project in input/reports_training/, rendered to
+  # output/reports_training/. Separate from reporting's `reports_project`
+  # because Quarto gives a project exactly one output-dir -- see that
+  # directory's own _quarto.yml.
+  #
+  # tar_quarto() derives this target's dependencies from the tar_read() calls
+  # in the project's sources, so the three QA data targets above are real
+  # edges here and nothing has to be listed by hand.
+  tarchetypes::tar_quarto(
+    reports_training_project,
+    path = "input/reports_training"
   ),
   NULL
 )

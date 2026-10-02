@@ -34,7 +34,15 @@ nli_benchmark_models <- function(baseline_model, finetuned_root = "output/nli_tr
 # date= were designed to describe a run -- so it is reused rather than
 # inventing a naming scheme, with the separators flattened.
 nli_benchmark_model_id <- function(model, finetuned_root = "output/nli_training_finetuned") {
-  if (!dir.exists(model)) return(basename(model))          # a HuggingFace id
+  # Decided by PATH SHAPE, not by dir.exists(). A local checkpoint whose
+  # directory has since moved or been deleted is still a local checkpoint, and
+  # the existence test silently sent it down the HuggingFace branch, which
+  # returns basename(model) -- i.e. "best" for EVERY fine-tuned run. Distinct
+  # models then collapsed to one id and their rows merged in every per-model
+  # table. Hit for real after the run tree gained a max_length= level: the
+  # paths recorded in existing benchmark score files no longer resolved, and
+  # five models became one.
+  if (!startsWith(model, finetuned_root)) return(basename(model))   # a HuggingFace id
   rel <- sub(paste0("^", finetuned_root, "/?"), "", model)
   rel <- sub("/best$", "", rel)
   gsub("[^A-Za-z0-9._=-]+", "_", rel)

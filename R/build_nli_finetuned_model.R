@@ -19,6 +19,13 @@ build_nli_finetuned_model <- function(
   train_enabled,
   nli_active,
   downsample_seed = NULL,
+  # Both of these are tracked targets that were NOT being passed on, so every
+  # targets-driven run silently used train_nli.py's own defaults: max_length
+  # 512 (the 1024 model on disk was trained by hand, and a plain tar_make()
+  # would have quietly retrained it at 512 and overwritten the comparison) and
+  # every assessment present in the training data.
+  max_length = NULL,
+  assessments = NULL,
   # DAG-dependency-only, never read in this function's body -- train_nli.py
   # reads output/nli_training directly off disk at runtime, not through a
   # targets-tracked value. Its purpose is purely to make targets mark this
@@ -27,6 +34,14 @@ build_nli_finetuned_model <- function(
   # bare-argument convention nli_scores_qa_data/llm_verification_qa_data
   # already use for their own upstream dependencies.
   nli_training_data_dep = NULL,
+  # The human labels. Required, not optional, and checked BEFORE the ~25 min
+  # run rather than after: without them every number this project reports
+  # measures only agreement with gpt-4o-mini, which is the thing under
+  # question. build_goldstandard() already stops loudly when there are no
+  # reviewed files, so by the time a value arrives here it is real -- this
+  # argument exists to make the dependency explicit in the DAG and to refuse an
+  # empty gold set.
+  goldstandard_dep = NULL,
   python_bin = "~/.venvs/specter2-merge/bin/python3",
   script_path = "scripts/training/train_nli.py",
   output_root = "output/nli_training_finetuned"
@@ -41,6 +56,13 @@ build_nli_finetuned_model <- function(
       nli_active
     ))
     return(disabled_path)
+  }
+
+  if (is.null(goldstandard_dep) || !nrow(goldstandard_dep$gold)) {
+    stop(
+      "build_nli_finetuned_model: no gold standard -- refusing to fine-tune.\n",
+      goldstandard_gate_message()
+    )
   }
 
   python_bin_expanded <- path.expand(python_bin)
@@ -69,6 +91,12 @@ build_nli_finetuned_model <- function(
   cli_args <- c(shQuote(script_path), "--nli-config", shQuote(nli_active))
   if (!is.null(downsample_seed)) {
     cli_args <- c(cli_args, "--downsample-seed", shQuote(as.character(as.integer(downsample_seed))))
+  }
+  if (!is.null(max_length)) {
+    cli_args <- c(cli_args, "--max-length", shQuote(as.character(as.integer(max_length))))
+  }
+  if (length(assessments)) {
+    cli_args <- c(cli_args, "--assessments", shQuote(paste(assessments, collapse = ",")))
   }
   status <- system2(python_bin_expanded, args = cli_args, stdout = "", stderr = "")
   if (!identical(status, 0L)) {

@@ -101,7 +101,7 @@ fact_checking:
 # and putting `train:` in the serving block meant every config carried a field
 # only one pipeline ever read.
 training:
-  assessments: [GA1, VA, TCA, IAS, BBA]
+  assessments: [GA1] # , VA, TCA, IAS, BBA]
   nli: bge_m3_zeroshot_atomic_bm
   llm: openrouter_cheap
   claim_completion: haiku_completion
@@ -150,11 +150,35 @@ training:
 # ---------------------------------------------------------------------------
 relevance_screen:
   model: typesafe/jev-1.13
-  threshold: ~           
+  # ~ means the screen SCORES but never filters -- nothing is dropped. Before
+  # setting a real value, note that this one key currently applies to BOTH
+  # purposes, and they want different answers:
+  #
+  #   fact_checking is cost-dominated and can afford to screen hard;
+  #   training is data-starved and should screen lightly, or not at all.
+  #
+  # A dropped pair never reaches Phase 2, so it never gets a verdict, so it can
+  # never enter the training set without re-running the LLM -- a one-way door,
+  # and it opens widest on the scarcest class. Measured on the train fold
+  # (sparing NOT_ENOUGH_INFO, since irrelevance IS that label):
+  #
+  #   threshold   REFUTES   SUPPORTS   per-class cap   training rows
+  #   ~ (off)         489      1,568             489           1,467
+  #   0.3             303      1,192             303             909
+  #   0.5             127        753             127             381
+  #
+  # If a real threshold is ever wanted, split this into the two purpose blocks
+  # first rather than setting it globally here.
+  threshold: ~
   batch_size: 20
 
 benchmark:
   holdout_fraction: 0.2
+  # A third fold, carved out of what used to be `train`, used ONLY for
+  # eval_loss / checkpoint selection during fine-tuning. Separate from the
+  # holdout because selecting the best checkpoint on the rows the benchmark
+  # then scores makes every reported number optimistic by an unmeasured margin.
+  monitor_fraction: 0.1
   salt: bench-v1
   # The zero-shot model every fine-tuned checkpoint is measured against. Never
   # measured before now -- a fine-tuned F1 in isolation says nothing about
@@ -182,8 +206,13 @@ reports:
     assessment: [GA1]
     llm_config: [openrouter_cheap]
 
+  # `project:` picks which Quarto project (and therefore which output
+  # directory, and which targets STORE the wrapper's tar_read() calls resolve
+  # against) the generated wrapper belongs to. Omitted = reporting.
+  # See R/generate_report_wrappers.R's report_project_dirs().
   - qmd_name: QA_NLI_Training_Data_Report
     title: "QA NLI Training Data - {assessment} ({granularity})"
+    project: training
     assessment: [GA1]
     granularity: [atomic_bm]
 
@@ -192,6 +221,7 @@ reports:
   # `.skipped_<cfg>` placeholder-file hack outright.
   - qmd_name: QA_NLI_Finetuned_Model_Report
     title: "QA NLI Fine-tuned Model - {nli_config}"
+    project: training
     nli_config: [bge_m3_zeroshot_atomic_bm]
 
 # NLI alignment backend. The pipeline POSTs (premise, hypothesis) pairs to a
@@ -282,7 +312,7 @@ nli:
 
     bge_m3_zeroshot_atomic_bm:
       scheme: https
-      host: ["79erot8kkavryo-8080.proxy.runpod.net"]
+      host: ["6oh2gnus1851sb-8080.proxy.runpod.net"]
       # kuhykgssi61j0v-8080.proxy.runpod.net dropped for now -- confirmed
       # unreachable (HTTP 404 on /health, not just a boot-time delay) while
       # the other 5 were healthy. Add it back once its pod is confirmed up.

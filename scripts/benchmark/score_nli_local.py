@@ -92,7 +92,15 @@ def parse_args():
     p.add_argument("--data", default="output/nli_training")
     p.add_argument("--config", default="input/config.yaml")
     p.add_argument("--nli-config", default=None, help="restrict to one nli_config partition")
-    p.add_argument("--split", default="test")
+    p.add_argument("--split", default="holdout")
+    p.add_argument(
+        "--granularity", default=None,
+        help="restrict to one granularity partition (default: the one training.nli declares)",
+    )
+    p.add_argument(
+        "--assessments", default=None,
+        help="comma-separated assessment ids to score (default: all present)",
+    )
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--limit", type=int, default=None, help="score only the first N rows (smoke test)")
     return p.parse_args()
@@ -111,15 +119,43 @@ def main():
     df = pd.read_parquet(args.data)
     if "split" not in df.columns:
         sys.exit(f"[benchmark] FATAL: no 'split' column in {args.data} -- rebuild nli_training_data first.")
+    # Scope to ONE (granularity, nli_config) slot. nli_config alone was not
+    # enough: output/nli_training holds every granularity ever built, and the
+    # same nli_config name can appear under more than one of them, so the
+    # baseline was quietly being scored on a pooled set that no deployed
+    # configuration corresponds to.
+    gran = args.granularity or cfg["nli"]["configs"][nli_name].get("granularity", "naive_bm")
     df = df[df["nli_config"] == nli_name]
+    if "granularity" in df.columns:
+        df = df[df["granularity"] == gran]
+    want = [a.strip() for a in args.assessments.split(",")] if args.assessments else None
+    if want:
+        have = sorted(df["assessment"].unique())
+        missing = sorted(set(want) - set(have))
+        if missing:
+            sys.exit(f"[benchmark] FATAL: no rows for assessment(s) {missing!r}; on disk: {have!r}")
+        df = df[df["assessment"].isin(want)]
+    seen = set(df["split"].unique())
+    if "test" in seen:
+        sys.exit(
+            f"[benchmark] FATAL: `split` holds {sorted(seen)!r} -- this is the OLD two-way split, "
+            "whose `test` fold doubled as fine-tuning's checkpoint-selection set. "
+            "Rebuild nli_training_data before benchmarking."
+        )
     df = df[df["split"] == args.split].reset_index(drop=True)
     if args.limit:
         df = df.head(args.limit).reset_index(drop=True)
     if not len(df):
-        sys.exit(f"[benchmark] FATAL: no rows with split=={args.split!r} and nli_config=={nli_name!r}")
+        sys.exit(
+            f"[benchmark] FATAL: no rows with split=={args.split!r}, nli_config=={nli_name!r}, "
+            f"granularity=={gran!r}"
+        )
 
     print(f"[benchmark] model = {args.model}")
-    print(f"[benchmark] {len(df)} rows, split={args.split!r}, nli_config={nli_name!r}")
+    print(
+        f"[benchmark] {len(df)} rows, split={args.split!r}, nli_config={nli_name!r}, "
+        f"granularity={gran!r}, assessments={sorted(df['assessment'].unique())}"
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForSequenceClassification.from_pretrained(args.model)

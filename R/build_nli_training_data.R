@@ -74,7 +74,12 @@ build_nli_training_data <- function(
   # comparable. `benchmark_salt` is the version tag -- changing it re-cuts
   # every fold deliberately and visibly.
   benchmark_salt = "bench-v1",
-  holdout_fraction = 0.2
+  holdout_fraction = 0.2,
+  # A THIRD fold, used for eval_loss / early stopping during fine-tuning.
+  # Without it train_nli.py selects its best checkpoint on the same rows the
+  # benchmark later scores, which makes every reported number optimistic by an
+  # unmeasured margin.
+  monitor_fraction = 0.1
 ) {
   assessment_id <- assessment$id
 
@@ -95,7 +100,10 @@ build_nli_training_data <- function(
   # link, not for training itself.
   work_lookup <- function(path, ids) {
     if (!has_data(path) || !length(ids)) {
-      return(dplyr::tibble(work_id = character(), title = character(), abstract = character(), doi = character()))
+      return(dplyr::tibble(
+        work_id = character(), title = character(), abstract = character(),
+        doi = character(), in_corpus = logical()
+      ))
     }
     arrow::open_dataset(path) |>
       dplyr::select(work_id = id, title, abstract, doi) |>
@@ -107,7 +115,13 @@ build_nli_training_data <- function(
         abstract = dplyr::first(abstract[!is.na(abstract)], default = NA_character_),
         doi      = dplyr::first(doi[!is.na(doi)], default = NA_character_),
         .groups = "drop"
-      )
+      ) |>
+      # Marks "this work_id was actually FOUND in the corpus", which the
+      # left_joins below turn into NA for anything that was not. Distinct from
+      # "has no abstract": a real work with a missing abstract still has a row
+      # here. See the orphan filter further down for why that difference
+      # matters.
+      dplyr::mutate(in_corpus = TRUE)
   }
 
   empty_pairs <- function() {
@@ -172,10 +186,32 @@ build_nli_training_data <- function(
     real_negatives(llm_verification_keypaper_path) |> dplyr::mutate(.works_path = works_path, keypaper = TRUE)
   )
 
-  set.seed(42)
+  # Downsample to roughly the positive count, by a DETERMINISTIC per-row hash
+  # rather than set.seed(42) + slice_sample(). The seeded version drew from
+  # whatever rows happened to be present, so every time the corpus grew the
+  # drawn SET changed wholesale -- and because the fold assignment below is
+  # computed afterwards, the holdout contents changed with it, quietly making
+  # each benchmark run incomparable with the last. That is the same failure the
+  # hashed fold assignment exists to prevent, reintroduced one step upstream.
+  #
+  # Ordering by a hash of the row's natural key instead makes a row's RANK a
+  # function of the row alone. Measured on a pool growing 400 -> 460 with
+  # n_target 150: the seeded version kept 113 of the 150 previously-drawn rows,
+  # the hashed one 132. Not a strict superset -- a new row can hash ahead of an
+  # existing one and displace it, and no fixed-size draw avoids that -- but the
+  # churn is now only what the new rows actually force, instead of a full
+  # reshuffle of rows that did not change.
   n_target <- max(nrow(positives), 1L)
   negatives <- if (nrow(negatives_raw) > n_target) {
-    negatives_raw |> dplyr::slice_sample(n = n_target)
+    neg_rank <- vapply(
+      paste(
+        assessment_id, negatives_raw$km, negatives_raw$bm,
+        negatives_raw$work_id, negatives_raw$claim, sep = "|"
+      ),
+      function(k) digest::digest(k, algo = "md5", serialize = FALSE),
+      character(1), USE.NAMES = FALSE
+    )
+    negatives_raw[order(neg_rank), ][seq_len(n_target), ]
   } else {
     negatives_raw
   }
@@ -214,7 +250,7 @@ build_nli_training_data <- function(
     if (!has_data(path)) {
       return(dplyr::mutate(
         empty_pairs(), title = character(), abstract = character(), doi = character(),
-        keypaper = logical()
+        in_corpus = logical(), keypaper = logical()
       ))
     }
     d <- arrow::open_dataset(path) |>
@@ -243,6 +279,29 @@ build_nli_training_data <- function(
   )
   training_pairs <- dplyr::bind_rows(positives, negatives, refutes)
 
+  # Drop ORPHANS: rows whose work_id is not in the corpus any more. Measured on
+  # GA1, 165 training rows (26 of them REFUTES) reference works that are absent
+  # from works_citing_meta -- scored under an earlier snowball, then dropped
+  # when the corpus was rebuilt. They are not merely abstract-less: the premise
+  # cannot be reconstructed at all, so they would train the model on an empty
+  # string and be unreviewable by a human.
+  #
+  # This is an INTERIM guard. The real fix is rebuilding the citing-works chain
+  # from one consistent corpus, which produces no orphans by construction; until
+  # that runs, this stops them entering training and the gold-standard sample.
+  # `in_corpus` comes from work_lookup() above and is NA exactly when the
+  # left_join found no row -- deliberately not `is.na(abstract)`, which would
+  # also discard real works that simply have no abstract on OpenAlex.
+  n_orphan <- sum(is.na(training_pairs$in_corpus))
+  if (n_orphan > 0L) {
+    message(sprintf(
+      "[nli_training_data %s] dropping %d orphaned row(s) (%d REFUTES) whose work_id is absent from the corpus",
+      assessment_id, n_orphan,
+      sum(is.na(training_pairs$in_corpus) & training_pairs$label == "REFUTES")
+    ))
+    training_pairs <- training_pairs[!is.na(training_pairs$in_corpus), ]
+  }
+
   if (!nrow(training_pairs)) {
     if (dir.exists(output_path)) unlink(output_path, recursive = TRUE, force = TRUE)
     dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
@@ -270,7 +329,7 @@ build_nli_training_data <- function(
     character(1)
   )
 
-  # Benchmark fold. Grouped by BACKGROUND MESSAGE, not by row: the pool is
+  # Benchmark folds. Grouped by BACKGROUND MESSAGE, not by row: the pool is
   # ~2,400 rows over only ~465 distinct claims (mean 5.2 works per claim), so a
   # row-wise split puts the identical hypothesis string in both folds, and
   # REFUTES is concentrated in ~191 claims -- "recognise this claim, predict
@@ -301,12 +360,19 @@ build_nli_training_data <- function(
   # graph, which at this size yields few huge unbalanced components: a small
   # measurable bias traded for a large unmeasurable one. The benchmark reports
   # cross-fold work overlap as a diagnostic instead.
+  # THREE folds, not two. The bucket ranges are ordered so that `holdout`
+  # occupies exactly the buckets it occupied under the old two-way split
+  # (0 .. holdout_fraction*100), and `monitor` is carved out of what was
+  # `train` -- so no BM that was already in the holdout moves out of it, and
+  # benchmark results from before this change stay comparable.
+  bucket <- hash_bucket(
+    paste(training_pairs$assessment, training_pairs$bm, sep = "|"),
+    benchmark_salt
+  )
+  holdout_hi <- holdout_fraction * 100
   training_pairs$split <- ifelse(
-    hash_bucket(
-      paste(training_pairs$assessment, training_pairs$bm, sep = "|"),
-      benchmark_salt
-    ) < holdout_fraction * 100,
-    "test", "train"
+    bucket < holdout_hi, "holdout",
+    ifelse(bucket < holdout_hi + monitor_fraction * 100, "monitor", "train")
   )
 
   training_pairs <- training_pairs |> dplyr::select(dplyr::all_of(cols))

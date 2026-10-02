@@ -284,11 +284,32 @@ def main():
     # --downsample-seed, so two runs with different seeds would be scored on
     # different rows -- exactly the incomparability the fixed holdout exists to
     # remove. The train fold alone gets balanced.
-    df_test = df[df["split"] == "test"].reset_index(drop=True)
+    #
+    # THREE folds. `monitor` is what Trainer evaluates on and selects its best
+    # checkpoint from; `holdout` is read by NOTHING here and exists solely for
+    # the benchmark. Previously there were two, and eval_dataset was the
+    # benchmark fold itself -- so load_best_model_at_end picked the checkpoint
+    # that scored best on the very rows the benchmark would later report, and
+    # every published number was optimistic by an unmeasured margin.
+    seen = set(df["split"].unique())
+    if "test" in seen or "monitor" not in seen:
+        sys.exit(
+            f"[train_nli] FATAL: `split` holds {sorted(seen)!r}, expected "
+            "['holdout', 'monitor', 'train']. This is the OLD two-way split, whose "
+            "`test` fold was used both for checkpoint selection and for the benchmark. "
+            "Rebuild nli_training_data before training."
+        )
+    n_holdout = int((df["split"] == "holdout").sum())
+    df_monitor = df[df["split"] == "monitor"].reset_index(drop=True)
     df = df[df["split"] == "train"].reset_index(drop=True)
-    print(f"[train_nli] holdout: {len(df)} train rows, {len(df_test)} test rows (grouped by BM, see TD_NLI_training.qmd)")
-    print(df_test["label"].value_counts())
-    if not len(df_test):
+    print(
+        f"[train_nli] folds: {len(df)} train, {len(df_monitor)} monitor, "
+        f"{n_holdout} holdout (untouched here; grouped by BM, see TD_NLI_training.qmd)"
+    )
+    print(df_monitor["label"].value_counts())
+    if not len(df_monitor):
+        sys.exit("[train_nli] FATAL: monitor fold is empty -- check benchmark.monitor_fraction in input/config.yaml")
+    if not n_holdout:
         sys.exit("[train_nli] FATAL: benchmark holdout is empty -- check benchmark.holdout_fraction in input/config.yaml")
 
     if args.downsample_seed is not None:
@@ -313,7 +334,7 @@ def main():
         print(f"[train_nli] downsampled to {min_count} rows/class (seed={args.downsample_seed}), {len(df)} rows total")
         print(df["label"].value_counts())
 
-    for frame in (df, df_test):
+    for frame in (df, df_monitor):
         frame["premise"] = frame.apply(build_premise, axis=1)
         frame["label_id"] = frame["label"].map(LABEL2ID)
 
@@ -346,7 +367,7 @@ def main():
         d = Dataset.from_pandas(frame[["premise", "hypothesis", "label_id"]].reset_index(drop=True))
         return d.rename_column("label_id", "labels").map(tokenize, batched=True)
 
-    dataset = {"train": to_dataset(df), "test": to_dataset(df_test)}
+    dataset = {"train": to_dataset(df), "monitor": to_dataset(df_monitor)}
 
     model = AutoModelForSequenceClassification.from_pretrained(
         MODEL_ID,
@@ -376,8 +397,44 @@ def main():
         output_dir=output_dir,
         use_cpu=True,
         num_train_epochs=3,
-        per_device_train_batch_size=16,
-        per_device_eval_batch_size=32,
+        # Batch 4 with 4x accumulation, NOT batch 16. Mathematically identical
+        # -- same effective batch, same gradients, same number of optimiser
+        # steps -- but a quarter of the peak activation memory.
+        #
+        # Why it is needed: XLM-R-large attention is quadratic in sequence
+        # length. At batch 16 x seq 2048 one attention matrix is
+        # 16 x 16 heads x 2048^2 x 4 bytes ~= 4.3 GB, across 24 layers. Two runs
+        # were SIGKILLed by the OS at exactly step 27/192 -- the same step both
+        # times, because the sampler is seeded and that batch carries a long
+        # premise. At 512 (what every run before the --max-length fix silently
+        # used) the same figure is 268 MB/layer, which is why this never bit
+        # before.
+        #
+        # Reducing max_length instead would be cheaper still, but that value is
+        # also the SERVING truncation length (input/config.yaml's
+        # nli.configs.<name>.max_length), so lowering it would make new NLI
+        # scores inconsistent with the millions already computed at 2048.
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=4,
+        # Eval batch 32 at seq 2048 peaks HIGHER than the training batch did.
+        # It only runs at epoch end, so it would have OOMed at step 64 even if
+        # training had survived step 27.
+        per_device_eval_batch_size=8,
+        # group_by_length is deliberately NOT set, although it would cut
+        # computed tokens by ~34% here (padding waste 34.3% -> 0.8% at batch 4,
+        # measured on the real downsampled set).
+        #
+        # It sorts examples into length-homogeneous batches -- but in THIS
+        # corpus length is a proxy for the label: median tokens are 148 for
+        # NOT_ENOUGH_INFO, 414 for SUPPORTS, 472 for REFUTES
+        # (Kruskal-Wallis H=219.8, p<0.0001). Sorting by length therefore sorts
+        # by label: 22.4% of batches of 4 end up single-label against 4.3% when
+        # shuffled. On a 3-class problem with only 192 optimiser steps, that is
+        # label-correlated gradient noise -- precisely what shuffling prevents.
+        #
+        # Re-enable only if wall clock matters more than the trajectory, and
+        # say so in the run notes, because it makes the result less comparable
+        # to every checkpoint trained without it.
         eval_strategy="epoch",
         save_strategy="epoch",
         # Keep one checkpoint, not one per epoch. Nothing downstream reads
@@ -397,7 +454,7 @@ def main():
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
-        eval_dataset=dataset["test"],
+        eval_dataset=dataset["monitor"],
         data_collator=DataCollatorWithPadding(tokenizer),
     )
 
@@ -408,9 +465,9 @@ def main():
     tokenizer.save_pretrained(best_dir)
     print(f"[train_nli] saved fine-tuned model to {best_dir}")
 
-    preds = trainer.predict(dataset["test"])
+    preds = trainer.predict(dataset["monitor"])
     pred_labels = preds.predictions.argmax(axis=1)
-    true_labels = dataset["test"]["labels"]
+    true_labels = dataset["monitor"]["labels"]
     report_text = classification_report(
         true_labels, pred_labels, target_names=list(LABEL2ID.keys())
     )
@@ -438,13 +495,19 @@ def main():
         # benchmark fold is reported separately and is never downsampled.
         "n_rows_total": len(df),
         "n_rows_train": len(dataset["train"]),
-        "n_rows_eval": len(dataset["test"]),
-        "n_rows_holdout": len(df_test),
+        "n_rows_eval": len(dataset["monitor"]),
+        "n_rows_monitor": len(df_monitor),
+        "n_rows_holdout": n_holdout,
         "holdout": {
             "source": "split column, grouped by Background Message",
             "design": "TD_NLI_training.qmd",
-            "label_counts": {str(k): int(v) for k, v in df_test["label"].value_counts().items()},
+            "note": "never loaded by this script; scored only by scripts/benchmark/score_nli_local.py",
         },
+        # The classification_report below is computed on the MONITOR fold --
+        # the same rows load_best_model_at_end selected the checkpoint from.
+        # It is a training diagnostic, NOT an evaluation result, and must not
+        # be quoted as one. The comparable numbers come from the benchmark.
+        "classification_report_fold": "monitor",
         # .value_counts() values are numpy int64, not JSON-serialisable --
         # confirmed directly, cast to plain int explicitly rather than
         # relying on json.dump's default encoder.
