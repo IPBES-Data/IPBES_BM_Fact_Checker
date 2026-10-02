@@ -48,12 +48,30 @@ tar_option_set(
   # It is, with the two append-only LLM caches, the cross-project state that no
   # DAG describes; see TD_targets.qmd's "Cross-project contracts".
   controller = crew::crew_controller_local(
+    #
+    # Resolved inline rather than via purpose_config(), which lives in R/ and is
+    # sourced AFTER this block. It must handle both purpose-block shapes: the
+    # flat one and the library+active: one fact_checking: now uses. It did not,
+    # and the failure was silent -- `fact_checking$nli` became NULL, tryCatch
+    # swallowed the subscript error and sized the pool at ONE worker, so every
+    # pod past the first sat idle while being billed. Hence the warning on the
+    # fallback path: one worker is a legitimate value and an indistinguishable
+    # symptom, so it must not be reached quietly.
     workers = tryCatch({
       cfg <- yaml::read_yaml("input/config.yaml")
-      sel <- cfg[["fact_checking"]][["nli"]]
+      fc <- cfg[["fact_checking"]]
+      sel <- if (!is.null(fc[["configs"]])) fc[["configs"]][[fc[["active"]]]][["nli"]] else fc[["nli"]]
+      if (is.null(sel)) stop("could not resolve fact_checking's nli config name")
       n <- length(unlist(cfg[["nli"]][["configs"]][[sel]][["host"]]))
-      max(1L, n)
-    }, error = function(e) 1L)
+      if (n < 1L) stop(sprintf("nli.configs.%s.host is empty -- start the pool first", sel))
+      n
+    }, error = function(e) {
+      warning(sprintf(
+        "crew workers falling back to 1: %s. Every host past the first will sit idle.",
+        conditionMessage(e)
+      ), call. = FALSE)
+      1L
+    })
   )
 )
 

@@ -106,7 +106,7 @@ assessments:
 # (consolidate_nli_scores, relevance_screen, llm_verification) are all additive
 # now, so widening again costs only the pairs that were never scored.
 fact_checking:
-  active: ga1_all
+  active: ga1_finetuned
   configs:
     ga1_all:
       assessments: [GA1]
@@ -117,9 +117,9 @@ fact_checking:
     # The fine-tuned model from the 2026-09-29 GA1 run, served from its own
     # image. Writes under nli_config=bge_m3_ft_ga1, so it cannot overwrite
     # anything the zero-shot config scored.
-    ga1_ab_finetuned:
+    ga1_finetuned:
       assessments: [GA1]
-      km: ["A.", "B."]
+      km: ["C."]
       nli: bge_m3_ft_ga1
       llm: openrouter_cheap
       claim_completion: haiku_completion
@@ -455,7 +455,7 @@ nli:
       granularity: atomic_bm
       image: ghcr.io/rkrug/nli-runpod-bge-m3-ipbes-ft:v0.5.0-GA1-512-m1
       pods:
-        count: 4
+        count: 10
         min_ready: 4
         name_prefix: nli-ipbes-ft-ga1
         registry_auth_id: ""     # set if the image is private on ghcr
