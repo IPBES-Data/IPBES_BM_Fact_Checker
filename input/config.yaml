@@ -382,6 +382,14 @@ nli:
 
     bge_m3_zeroshot_atomic_bm:
       scheme: https
+      # expect_model turns the model check from a warning into a hard stop. It
+      # matters most HERE, not on the fine-tuned config: both can be served from
+      # the same pool of L4 pods, and the fine-tune differs by passes: 1 vs 3 --
+      # a different scoring scheme entirely, not just a different checkpoint --
+      # so pointing this config at a fine-tuned pod would score key papers with
+      # the wrong model while recording nli_config=bge_m3_zeroshot_atomic_bm.
+      # Nearly done by accident on 2026-10-02.
+      expect_model: MoritzLaurer/bge-m3-zeroshot-v2.0-c
       host: ["6oh2gnus1851sb-8080.proxy.runpod.net"]
       # kuhykgssi61j0v-8080.proxy.runpod.net dropped for now -- confirmed
       # unreachable (HTTP 404 on /health, not just a boot-time delay) while

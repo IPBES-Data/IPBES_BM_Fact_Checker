@@ -146,7 +146,18 @@ scripts/runpod/start_nli_pods.sh         # pods.count from config; -n overrides
 scripts/runpod/stop_nli_pods.sh          # -d to delete rather than stop
 ```
 
-`start_nli_pods.sh` resolves `fact_checking.active` → its `nli:` name, merges
+Both take **`-p/--purpose`** (`fact_checking`, the default, or `training`). It is
+not cosmetic: the two purposes deliberately run **different models** — fact
+checking on the fine-tune, training left on zero-shot so the training set is not
+distilled from labels the model itself shaped — so a single wrapper that only
+ever resolved `fact_checking` could not start training's pool at all, and the
+obvious workaround (point training at whatever pool happens to be up) scores key
+papers with the wrong model under the right `nli_config=` name. That is why
+`bge_m3_zeroshot_atomic_bm` now carries `expect_model:` — the two models differ
+by `passes: 1` vs `3`, a different scoring scheme entirely, and the plain `model:`
+check is only a warning.
+
+`start_nli_pods.sh` resolves the chosen purpose's `nli:` name, merges
 `nli.pod_defaults` with that config's own `image:` and `pods:` block into
 `output/config/runpod_nli_<ACTIVE>.conf`, launches, and writes the resulting
 hostnames back into that config's `host:`. The `.conf` is **disposable** —

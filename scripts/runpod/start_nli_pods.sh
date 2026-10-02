@@ -10,8 +10,15 @@
 #
 # Usage (from the repo root):
 #   export RUNPOD_API_KEY=...
-#   scripts/runpod/start_nli_pods.sh            # pods.count from config
-#   scripts/runpod/start_nli_pods.sh -n 2       # override the count
+#   scripts/runpod/start_nli_pods.sh                     # fact_checking's pool
+#   scripts/runpod/start_nli_pods.sh -p training        # training's pool
+#   scripts/runpod/start_nli_pods.sh -n 2               # override the count
+#
+# -p matters: the two purposes deliberately run DIFFERENT models -- fact
+# checking on the fine-tune, training left on zero-shot so the training set is
+# not distilled from labels the model itself shaped. Starting one pool and
+# pointing the other chain at it scores with the wrong model under the right
+# config name.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -22,9 +29,11 @@ CREATE="${NLI_CREATE_PODS:-external/runpod/scripts/runpod/create_pods.sh}"
 [[ -n "${RUNPOD_API_KEY:-}" ]] || { echo "error: RUNPOD_API_KEY is not set. export RUNPOD_API_KEY=... first." >&2; exit 1; }
 
 N_OVERRIDE=""
+PURPOSE="fact_checking"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -n) N_OVERRIDE="$2"; shift 2 ;;
+    -p|--purpose) PURPOSE="$2"; shift 2 ;;
     -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "error: unknown argument '$1'" >&2; exit 1 ;;
   esac
@@ -38,9 +47,9 @@ done
 # clamped to it: create_pods.sh sources the conf BEFORE applying its own
 # MIN_READY default, so a conf value wins over anything -n could say, and asking
 # for 1 pod against min_ready: 4 would fail every single time.
-eval "$(scripts/runpod/nli_pods.R conf ${N_OVERRIDE})"
+eval "$(scripts/runpod/nli_pods.R conf "${PURPOSE}" ${N_OVERRIDE})"
 
-echo "[start_nli_pods] ${ACTIVE}: starting ${COUNT} pod(s)"
+echo "[start_nli_pods] ${PURPOSE} -> ${ACTIVE}: starting ${COUNT} pod(s)"
 echo "[start_nli_pods] conf: ${CONF}"
 
 # NOT under set -e. create_pods.sh exits 2 for PARTIAL (at least MIN_READY up,
@@ -94,5 +103,5 @@ if [[ "${n_ready}" -lt "${COUNT}" ]]; then
   echo "WARNING: requested ${COUNT} pod(s), ${n_ready} healthy. Writing back the ${n_ready} that came up." >&2
 fi
 
-scripts/runpod/nli_pods.R hosts "${READY_CSV}"
+scripts/runpod/nli_pods.R hosts "${PURPOSE}" "${READY_CSV}"
 echo "[start_nli_pods] done. Teardown: scripts/runpod/stop_nli_pods.sh"
