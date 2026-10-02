@@ -332,7 +332,7 @@ nli:
     pod_kind: http
     port: 8080
     health_path: /health
-    container_disk_gb: 15
+    container_disk_gb: 30
     volume_gb: 0
     volume_mount_path: /workspace
     cloud_type: SECURE
@@ -442,7 +442,7 @@ nli:
     # the near-miss a8c6ea4 records.
     bge_m3_ft_ga1:
       scheme: https
-      host: []
+      host: ["lbejw3goolcv4e-8080.proxy.runpod.net", "q5nit6knsp5soz-8080.proxy.runpod.net", "41expfvjm9au2a-8080.proxy.runpod.net", "k9n70564ss49xh-8080.proxy.runpod.net", "95i20tdzwg3fsg-8080.proxy.runpod.net"]
       port: null
       auth_token_keyring: null
       model: /opt/models/ipbes-bm-nli-atomic-ga1-512-v1
@@ -455,7 +455,7 @@ nli:
       granularity: atomic_bm
       image: ghcr.io/rkrug/nli-runpod-bge-m3-ipbes-ft:v0.5.0-GA1-512-m1
       pods:
-        count: 10
+        count: 5
         min_ready: 4
         name_prefix: nli-ipbes-ft-ga1
         registry_auth_id: ""     # set if the image is private on ghcr

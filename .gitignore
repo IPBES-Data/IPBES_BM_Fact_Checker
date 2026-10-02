@@ -95,3 +95,6 @@ IPBES_Fact_Checker.zip
 # Non-GA1 training-chain artifacts, moved aside when the purpose blocks were
 # narrowed to GA1. Bulk pipeline output -- see deep_archive/MANIFEST.md.
 /deep_archive/
+
+# Quarto render cache beside the reviewer guide
+input/goldstandard/.quarto/
