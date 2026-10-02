@@ -237,10 +237,17 @@ build_llm_relevance_screen <- function(
   # the nli_ready tree.
   if (!"premise" %in% names(pairs)) {
     if (is.null(premise_path)) stop("pairs carry no premise column and premise_path is NULL")
+    # Filter to the works actually needed BEFORE collecting. The citing-works
+    # premise tree is ~165 GB and GA1 alone holds 918,176 distinct works with
+    # full abstracts; collecting all of them to join against ~190k pairs would
+    # pull multiple GB into memory for data most of which is then discarded.
+    # Arrow pushes the %in% down to the scan.
+    want <- unique(pairs$work_id)
     premises <- arrow::open_dataset(premise_path) |>
+      dplyr::filter(work_id %in% want) |>
       dplyr::select(work_id, premise) |>
-      dplyr::distinct(work_id, .keep_all = TRUE) |>
-      dplyr::collect()
+      dplyr::collect() |>
+      dplyr::distinct(work_id, .keep_all = TRUE)
     pairs <- pairs |> dplyr::inner_join(premises, by = "work_id")
   }
   claims <- split(pairs, list(pairs$km, pairs$bm, pairs$claim_id), drop = TRUE)
