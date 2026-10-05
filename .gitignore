@@ -98,3 +98,4 @@ IPBES_Fact_Checker.zip
 
 # Quarto render cache beside the reviewer guide
 input/goldstandard/.quarto/
+input/ai_goldstandard/.cache/
