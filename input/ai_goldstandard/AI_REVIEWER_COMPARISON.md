@@ -3,7 +3,7 @@
 Generated 2026-10-05 by `scripts/ai_reviewer_report.R`. 
 **Not a gold standard** — see `NOT_A_GOLD_STANDARD.md` beside this file.
 
-200 rows, 11 reviewers.
+200 rows, 12 reviewers.
 
 ## The sample
 
@@ -30,6 +30,7 @@ stratified on **the LLM's own label** with REFUTES over-sampled:
 | `jev-1.13` | 91 | **3** | 106 | 0 | 0 | $0.007 |
 | `llama-4-maverick` | 137 | **6** | 54 | 3 | 0 | $0.021 |
 | `mistral-medium-3` | 60 | **3** | 127 | 10 | 0 | $0.076 |
+| `nli-zeroshot` | 137 | **39** | 24 | 0 | 0 | — |
 | `qwen3-235b` | 69 | **3** | 123 | 5 | 0 | $0.013 |
 
 ## Agreement with gpt-4o-mini (the judge whose labels the training set carries)
@@ -46,42 +47,44 @@ stratified on **the LLM's own label** with REFUTES over-sampled:
 | `jev-1.13` | 200 | 42.0% | 0.223 |
 | `llama-4-maverick` | 197 | 42.6% | 0.225 |
 | `mistral-medium-3` | 190 | 40.5% | 0.200 |
+| `nli-zeroshot` | 200 | 34.0% | 0.059 |
 | `qwen3-235b` | 195 | 39.0% | 0.182 |
 
-## Agreement with the zero-shot NLI model (`nli_label`)
+## Agreement with the zero-shot NLI model
 
 | reviewer | n | agreement | Cohen's kappa |
 |---|---:|---:|---:|
-| `claude-haiku-4.5` | 146 | 31.5% | -0.089 |
-| `claude-sonnet-4.6` | 144 | 18.1% | -0.095 |
-| `deepseek-v4-pro` | 148 | 15.5% | -0.036 |
-| `gemini-2.5-flash` | 145 | 14.5% | -0.030 |
-| `gemini-2.5-pro` | 139 | 25.2% | -0.055 |
-| `gpt-4o-mini` | 146 | 19.2% | -0.085 |
-| `gpt-5-mini` | 147 | 12.9% | -0.029 |
-| `jev-1.13` | 150 | 24.7% | -0.045 |
-| `llama-4-maverick` | 147 | 38.8% | -0.107 |
-| `mistral-medium-3` | 140 | 15.0% | -0.056 |
-| `qwen3-235b` | 145 | 20.7% | -0.040 |
+| `claude-haiku-4.5` | 196 | 39.8% | -0.090 |
+| `claude-sonnet-4.6` | 194 | 27.3% | -0.103 |
+| `deepseek-v4-pro` | 198 | 22.2% | -0.068 |
+| `gemini-2.5-flash` | 195 | 24.1% | -0.063 |
+| `gemini-2.5-pro` | 188 | 32.4% | -0.063 |
+| `gpt-4o-mini` | 196 | 29.6% | -0.128 |
+| `gpt-5-mini` | 195 | 21.5% | -0.018 |
+| `jev-1.13` | 200 | 34.0% | -0.061 |
+| `llama-4-maverick` | 197 | 46.2% | -0.119 |
+| `mistral-medium-3` | 190 | 26.3% | -0.063 |
+| `qwen3-235b` | 195 | 29.2% | -0.049 |
 
-For reference, gpt-4o-mini vs the zero-shot NLI on the same rows: 23.3% agreement, kappa 0.055.
+For reference, gpt-4o-mini vs the zero-shot NLI on the same rows: 34.0% agreement, kappa 0.059.
 
 ## Reviewers against each other
 
 Cohen's kappa, lower triangle:
 
-| | `claude-haiku-4.5` | `claude-sonnet-4.6` | `deepseek-v4-pro` | `gemini-2.5-flash` | `gemini-2.5-pro` | `gpt-4o-mini` | `gpt-5-mini` | `jev-1.13` | `llama-4-maverick` | `mistral-medium-3` |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `claude-sonnet-4.6` | 0.51 |  |  |  |  |  |  |  |  |  |
-| `deepseek-v4-pro` | 0.34 | 0.43 |  |  |  |  |  |  |  |  |
-| `gemini-2.5-flash` | 0.37 | 0.62 | 0.42 |  |  |  |  |  |  |  |
-| `gemini-2.5-pro` | 0.49 | 0.53 | 0.48 | 0.41 |  |  |  |  |  |  |
-| `gpt-4o-mini` | 0.47 | 0.37 | 0.21 | 0.41 | 0.29 |  |  |  |  |  |
-| `gpt-5-mini` | 0.28 | 0.42 | 0.38 | 0.38 | 0.33 | 0.15 |  |  |  |  |
-| `jev-1.13` | 0.60 | 0.59 | 0.40 | 0.48 | 0.46 | 0.41 | 0.33 |  |  |  |
-| `llama-4-maverick` | 0.51 | 0.30 | 0.21 | 0.20 | 0.27 | 0.42 | 0.14 | 0.37 |  |  |
-| `mistral-medium-3` | 0.47 | 0.63 | 0.43 | 0.68 | 0.39 | 0.44 | 0.32 | 0.49 | 0.26 |  |
-| `qwen3-235b` | 0.54 | 0.62 | 0.50 | 0.58 | 0.55 | 0.33 | 0.44 | 0.47 | 0.33 | 0.62 |
+| | `claude-haiku-4.5` | `claude-sonnet-4.6` | `deepseek-v4-pro` | `gemini-2.5-flash` | `gemini-2.5-pro` | `gpt-4o-mini` | `gpt-5-mini` | `jev-1.13` | `llama-4-maverick` | `mistral-medium-3` | `nli-zeroshot` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `claude-sonnet-4.6` | 0.51 |  |  |  |  |  |  |  |  |  |  |
+| `deepseek-v4-pro` | 0.34 | 0.43 |  |  |  |  |  |  |  |  |  |
+| `gemini-2.5-flash` | 0.37 | 0.62 | 0.42 |  |  |  |  |  |  |  |  |
+| `gemini-2.5-pro` | 0.49 | 0.53 | 0.48 | 0.41 |  |  |  |  |  |  |  |
+| `gpt-4o-mini` | 0.47 | 0.37 | 0.21 | 0.41 | 0.29 |  |  |  |  |  |  |
+| `gpt-5-mini` | 0.28 | 0.42 | 0.38 | 0.38 | 0.33 | 0.15 |  |  |  |  |  |
+| `jev-1.13` | 0.60 | 0.59 | 0.40 | 0.48 | 0.46 | 0.41 | 0.33 |  |  |  |  |
+| `llama-4-maverick` | 0.51 | 0.30 | 0.21 | 0.20 | 0.27 | 0.42 | 0.14 | 0.37 |  |  |  |
+| `mistral-medium-3` | 0.47 | 0.63 | 0.43 | 0.68 | 0.39 | 0.44 | 0.32 | 0.49 | 0.26 |  |  |
+| `nli-zeroshot` | -0.09 | -0.10 | -0.07 | -0.06 | -0.06 | -0.13 | -0.02 | -0.06 | -0.12 | -0.06 |  |
+| `qwen3-235b` | 0.54 | 0.62 | 0.50 | 0.58 | 0.55 | 0.33 | 0.44 | 0.47 | 0.33 | 0.62 | -0.05 |
 
 ## The REFUTES question
 
@@ -89,11 +92,11 @@ Of the **100** rows gpt-4o-mini called REFUTES, the reviewers' majority verdict 
 
 | majority verdict | n |
 |---|---:|
-| SUPPORTS | 40 |
-| REFUTES | 3 |
-| NOT_ENOUGH_INFO | 53 |
+| SUPPORTS | 31 |
+| REFUTES | 2 |
+| NOT_ENOUGH_INFO | 48 |
 
-REFUTES count per reviewer, out of 200 rows: `claude-haiku-4.5` 4, `claude-sonnet-4.6` 1, `deepseek-v4-pro` 2, `gemini-2.5-flash` 3, `gemini-2.5-pro` 1, `gpt-4o-mini` 16, `gpt-5-mini` 4, `jev-1.13` 3, `llama-4-maverick` 6, `mistral-medium-3` 3, `qwen3-235b` 3.
+REFUTES count per reviewer, out of 200 rows: `claude-haiku-4.5` 4, `claude-sonnet-4.6` 1, `deepseek-v4-pro` 2, `gemini-2.5-flash` 3, `gemini-2.5-pro` 1, `gpt-4o-mini` 16, `gpt-5-mini` 4, `jev-1.13` 3, `llama-4-maverick` 6, `mistral-medium-3` 3, `nli-zeroshot` 39, `qwen3-235b` 3.
 Rows where **every** reviewer said REFUTES: **0**.
 
 ## Cost to run a reviewer over all of GA1

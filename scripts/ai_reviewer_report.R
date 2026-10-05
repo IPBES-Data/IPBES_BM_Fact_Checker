@@ -21,6 +21,16 @@ d <- lapply(f, function(p) {
 w <- tidyr::pivot_wider(d, names_from = m, values_from = v) |> inner_join(man, by = "id")
 ms <- sort(setdiff(names(w), c("id", "judge", "nli", "stratum", "km", "bm")))
 
+# The zero-shot NLI's verdicts come from the EXTRACTED file when it exists, not
+# from the manifest's nli_label column: the manifest leaves 50 of the 200 blank,
+# while scripts/extract_nli_reviewer.R recovers all 200 from the two scored trees
+# (and cross-checks the 150 the manifest does carry). It stays in `ms` as well,
+# so it appears in the distribution table and the pairwise matrix like any other
+# reviewer -- but it is dropped from the "agreement with the NLI" table below,
+# where it would only ever score 1.0 against itself.
+NLI_SLUG <- "nli-zeroshot"
+if (NLI_SLUG %in% ms) w$nli <- w[[NLI_SLUG]]
+
 # measured spend: chat models from their per-row cache, jev from its own column
 spend <- function(slug) {
   if (grepl("^jev", slug)) {
@@ -41,6 +51,8 @@ PRICES <- list(
   "claude-haiku-4.5" = c(1.00, 5.00),   "gemini-2.5-flash" = c(0.30, 2.50),
   "mistral-medium-3" = c(0.40, 2.00),   "gpt-4o-mini" = c(0.15, 0.60),
   "llama-4-maverick" = c(0.188, 0.652), "qwen3-235b" = c(0.087, 0.350)
+  # nli-zeroshot has no entry deliberately: it is GPU time already spent, not a
+  # per-token cost, so it shows "—" in the cost column rather than a wrong number.
 )
 
 agree_vs <- function(a, b) {   # on rows both answered with one of the 3 labels
@@ -78,9 +90,9 @@ wr("", "## Agreement with gpt-4o-mini (the judge whose labels the training set c
 for (m in ms) { a <- agree_vs(w[[m]], w$judge)
   wr(sprintf("| `%s` | %d | %.1f%% | %.3f |", m, a[["n"]], a[["agree"]], a[["kappa"]])) }
 
-wr("", "## Agreement with the zero-shot NLI model (`nli_label`)", "",
+wr("", "## Agreement with the zero-shot NLI model", "",
    "| reviewer | n | agreement | Cohen's kappa |", "|---|---:|---:|---:|")
-for (m in ms) { a <- agree_vs(w[[m]], w$nli)
+for (m in setdiff(ms, NLI_SLUG)) { a <- agree_vs(w[[m]], w$nli)
   wr(sprintf("| `%s` | %d | %.1f%% | %.3f |", m, a[["n"]], a[["agree"]], a[["kappa"]])) }
 a <- agree_vs(w$judge, w$nli)
 wr("", sprintf("For reference, gpt-4o-mini vs the zero-shot NLI on the same rows: %.1f%% agreement, kappa %.3f.",
