@@ -13,6 +13,48 @@ format:
 
 # Fine-tuning the NLI Model with IPBES-Derived Training Data
 
+**Status: retired 2026-10-05, source removed.** The whole arm this document
+designs — `nli_training_data`, `nli_finetuned_model`, the benchmark and the
+`training` targets project — no longer exists. It is kept, like
+[TD_LLM_approach.qmd](TD_LLM_approach.html), as a record of a design that was
+built, run, and then found to be answering the wrong question.
+
+**What ended it** was not a flaw in the training design. It was the measurement
+that the model being fine-tuned is at or below chance at the job: scored against
+refutations confirmed by three independent reviewers, the zero-shot NLI reaches
+AUC 0.50 for REFUTES and 0.38 for SUPPORTS, and 97.7% of high-confidence
+contradiction candidates lie *outside* the label it routes on. Improving a model
+that points away from the thing being looked for has no payoff. The full
+reasoning, with the measurements, is in `design_notes.md` points 3 and 5–8.
+
+**Two findings in here outlived the arm and still matter:**
+
+- The **fold discipline** — three-way train/monitor/holdout, grouped by
+  `(assessment, bm)` and assigned by hash so growing the corpus never moves a
+  group across a boundary. `input/goldstandard/sample_manifest_GA1.csv` was
+  drawn from the holdout this defines, and `benchmark:` in `input/config.yaml`
+  still carries `salt`, `holdout_fraction` and `monitor_fraction` for that
+  reason. `R/build_nli_training_data.R` survives as a hand-run utility, not a
+  target, because `build_goldstandard_sample()` needs it to find that fold.
+- The **gold-standard argument** — that benchmarking against gpt-4o-mini's own
+  labels measures fidelity to the judge rather than accuracy. That turned out to
+  be the central problem rather than a caveat: the judge reproduces only 53% of
+  its own verdicts. `goldstandard` survives and now lives in `_targets_factcheck.R`.
+
+**What was deleted:** `_targets_training.R`, `scripts/training/train_nli.py`,
+`scripts/benchmark/score_nli_local.py`, `R/build_nli_finetuned_model.R`,
+`R/build_nli_finetuned_model_qa_data.R`, `R/build_nli_training_qa_data.R`,
+`R/build_nli_benchmark_scores.R`, and the two training QA reports. The source
+links below are kept as plain paths for that reason.
+`R/build_nli_benchmark_metrics.R` and its report survive but are parked
+(`input/reports/_QA_NLI_Benchmark_Report.qmd`, underscore-prefixed so Quarto
+skips it) — the metrics are still wanted, the subject is not.
+
+**Checkpoints and data** are in `deep_archive/2026-10-05_training_dormant/`, and
+the state before any of this is the `NLI_dirty` branch. Nothing here is
+irreversible, deliberately: every conclusion that retired this arm comes from
+models judging models, and the human review round has not happened yet.
+
 ## Overview
 
 **Status note (updated):** written while `MoritzLaurer/deberta-v3-large-zeroshot-v2.0`

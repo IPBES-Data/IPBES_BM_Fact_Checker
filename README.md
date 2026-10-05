@@ -34,8 +34,10 @@ targets::tar_visnetwork()                              # dependency graph of the
 ```
 
 Which named configuration each project uses — and which assessments it covers —
-comes from a **purpose block** in `input/config.yaml` (`fact_checking:`,
-`training:`), not from a global `active:` setting.
+comes from a **purpose block** in `input/config.yaml` — `fact_checking:`, which
+is itself a library of named configs with one `active:` selection — not from a
+global `active:` setting. A second block, `training:`, existed until 2026-10-05;
+`purpose_config()` still accepts the flat shape it used.
 
 Two cautions worth knowing before a first run:
 

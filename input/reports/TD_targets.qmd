@@ -43,18 +43,29 @@ that used to rest on remembering `shortcut = TRUE`.
 | Project | Script / store | Holds | Credentials |
 |---|---|---|---|
 | `main` | `_targets.R` / `_targets/` | collection: LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
-| `factcheck` | `_targets_factcheck.R` / `_targets_factcheck/` | citing works → NLI (Phase 1) → LLM verification (Phase 2) | `API_openrouter` |
-| `training` | `_targets_training.R` / `_targets_training/` | key papers → NLI → LLM → training set → gold standard → fine-tune → benchmark → its own three QA reports | `API_openrouter` |
+| `factcheck` | `_targets_factcheck.R` / `_targets_factcheck/` | citing works → NLI (Phase 1) → LLM verification (Phase 2); **also** the key-paper QA chain and the gold standard | `API_openrouter` |
 | `reporting` | `_targets_reporting.R` / `_targets_reporting/` | everything else that renders | **none** |
 
-`reporting` was originally "everything that renders". The three QA reports
-describing training's own work moved into `training` once it became clear that
-rendering them from `reporting` required re-declaring training's targets across
-the project boundary — two of those stubs reproducing training's output-path
-conventions by formula. They render to a second Quarto project
-(`input/reports_training/` → `output/reports_training/`), because Quarto gives a
-project exactly one `output-dir`. See TD_NLI_training's "Rendering moved into
-`training`".
+**There were four projects until 2026-10-05.** A `training` project held key
+papers → NLI → LLM → training set → fine-tune → benchmark, plus its own Quarto
+project (`input/reports_training/` → `output/reports_training/`) for three QA
+reports, because Quarto gives a project exactly one `output-dir`. It was retired
+when the model it existed to improve was measured at or below chance at the job
+— see [TD_NLI_training.qmd](TD_NLI_training.html) for that record and
+`design_notes.md` for the measurements.
+
+Two of its parts were never training and moved into `factcheck`: the **key-paper
+QA chain** (do the papers IPBES itself cites as evidence for a Background Message
+support it?) and the **gold standard**, which is now the only thing that can test
+the decision that retired the rest. With the second Quarto project gone,
+`reporting` is once more "everything that renders", and
+`report_project_dirs()` is back to a single directory — kept as a one-element
+vector so adding a second is adding an element.
+
+The argument below for splitting fact checking from training still holds; it is
+simply no longer load-bearing, because there is no second process to separate
+from. It is kept because the same reasoning applies to the key-paper chain, which
+*is* still a separate process sharing an input.
 
 ```r
 # The default project is `main` (collection)
@@ -89,7 +100,7 @@ targets **keeping the producing project's target names**, so the moved targets
 work verbatim and a genuine upstream change still invalidates downstream through
 content hashing.
 
-## Why four projects
+## Why separate projects
 
 The single DAG mixed several *purposes*. Fact checking is the deliverable:
 citing works discovered by the snowball, scored against assessment claims and
@@ -99,13 +110,17 @@ papers — the seed references IPBES itself cited — scored and LLM-reviewed
 worth deploying. Reporting renders both. These are not stages of one process;
 they are separate processes sharing an input.
 
-| | fact checking | training |
+| | fact checking (citing works) | key-paper QA |
 |---|---|---|
 | input | citing works (2,698,608) | key papers (10,432) |
 | LLM routing | filtered to `REFUTES`/`SUPPORTS` + certain (7.72% of scored pairs) | **every pair, unconditionally** |
-| output | the published finding | a model, plus QA on it |
-| cadence | per assessment, ongoing | occasional, experimental |
-| cost of being wrong | a wrong claim is published | a worse model you decline to deploy |
+| output | the published finding | a check on whether the finding's own evidence holds |
+| cadence | per assessment, ongoing | alongside it, small and bounded |
+| cost of being wrong | a wrong claim is published | a sanity check that misleads |
+
+Both now live in `factcheck`, but with entirely separate roots — own premise
+tree, own scores tree, own Phase 2 output, own relevance partition — so either
+can be run, re-run or deleted without touching the other.
 
 Sharing a DAG meant sharing failure modes that had nothing to do with each
 other. Two concrete consequences, both since removed: `nli_scores_qa_data` took
@@ -254,10 +269,6 @@ combined into one overview later.
 
 ![Pipeline: factcheck](../../output/figures/pipeline_factcheck.png)
 
-#### `training` (`_targets_training.R`)
-
-![Pipeline: training](../../output/figures/pipeline_training.png)
-
 #### `reporting` (`_targets_reporting.R`)
 
 ![Pipeline: reporting](../../output/figures/pipeline_reporting.png)
@@ -265,8 +276,8 @@ combined into one overview later.
 ## Pipeline DAG
 
 This is the **logical** dependency chain end to end, as it was before the
-split and as it still is in substance — it now spans four projects rather than
-one, with each consumer re-declaring the upstream outputs it reads as
+split and as it still is in substance — it now spans three projects rather than
+one (four until the `training` project was retired on 2026-10-05), with each consumer re-declaring the upstream outputs it reads as
 `format = "file"` inputs under the producing project's own target names. The
 per-project pictures above show where the cuts fall.
 
@@ -375,9 +386,11 @@ training:
 
 There is no global `active:` any more. It was a single answer to a question each
 project answers for itself: fact checking is scoped to one assessment because it
-is the expensive arm, training pools all five key-paper sets, and the two need
-not agree on a model. While there was one DAG the conflation was invisible; with
-four projects it is wrong.
+is the expensive arm, while training pooled all five key-paper sets, and the two
+need not have agreed on a model. While there was one DAG the conflation was
+invisible; once the projects were split it was wrong. With `training` retired
+there is again only one purpose block, but the mechanism is unchanged and the
+hazard would return with any second one.
 
 Selections are resolved and **validated** by `purpose_config()`
 ([R/branch_helpers.R](R/branch_helpers.R)) — naming a config that is not in the
