@@ -40,12 +40,38 @@ RELEVANCE_ENDPOINT <- "https://openrouter.ai/api/alpha/decisions"
 
 # Free-standing so a future screen can move to another model without touching
 # callers; the model id is recorded per row either way.
-relevance_question <- function(work_id) {
+# THE PAPER GOES IN THE QUESTION, NOT IN THE SHARED STATE.
+#
+# This was wrong until 2026-10-05 and the symptom was invisible: the papers sat
+# in `state` as a `papers: [{id, text}]` array and each question was keyed by
+# work_id, on the assumption that the key anchored the question to its paper.
+# It does not -- question ids are for code and are never sent to the model. So
+# the model saw one blob of ~80 abstracts and a question saying "does this paper
+# address the claim", with no way to tell which. It answered about the chunk.
+#
+# Measured on the output this produced: 7,889 works under a single claim share
+# 23 distinct values (ratio 0.003), and a controlled triple -- one paper plainly
+# supporting a claim, one plainly refuting it, one about GPU kernels -- came back
+# 0.750 / 0.750 / 0.750. The file's own earlier note, "answers correlate 0.904
+# with the per-pair run", is true ACROSS claims and says nothing about ranking
+# WITHIN one, which is the only thing a screen is for.
+#
+# The documented pattern puts the item in each question's `instructions` and
+# keeps only shared context in `state`. Verified: Spearman against per-paper
+# scoring is 0.91 at 10 papers/request, 0.85 at 20, 0.88 at 40, against a 0.87
+# run-to-run baseline -- batch size becomes a throughput knob rather than a
+# quality one. Same shape R/score_one_claim_jev.R uses.
+RELEVANCE_PROMPT_VERSION <- 2L
+
+relevance_question <- function(premise) {
   list(
     type = "noul",
-    instructions = paste(
-      "Does this paper address the specific subject of the claim closely enough",
-      "that its findings bear on whether the claim is true?"
+    instructions = list(
+      paper = premise,
+      question = paste(
+        "Does this paper address the specific subject of the claim closely enough",
+        "that its findings bear on whether the claim is true?"
+      )
     ),
     criteria = list(
       "true"  = "the paper studies the same phenomenon, taxa, driver or region the claim is about, and its findings speak to the claim",
@@ -110,14 +136,10 @@ score_one_claim_relevance <- function(claim, works, model, api_key,
   reqs <- lapply(chunks, function(chunk) {
     body <- list(
       model = model,
-      state = list(
-        description = "One assessment claim and the papers cited against it. Judge only from the papers.",
-        claim = claim,
-        papers = lapply(seq_len(nrow(chunk)), function(i) {
-          list(id = chunk$work_id[i], text = chunk$premise[i])
-        })
-      ),
-      questions = setNames(lapply(chunk$work_id, relevance_question), chunk$work_id)
+      # Only SHARED context in state. The per-paper text lives in each
+      # question -- see relevance_question() above for why.
+      state = list(claim = claim),
+      questions = setNames(lapply(chunk$premise, relevance_question), chunk$work_id)
     )
     httr2::request(RELEVANCE_ENDPOINT) |>
       httr2::req_auth_bearer_token(api_key) |>
@@ -143,7 +165,8 @@ score_one_claim_relevance <- function(claim, works, model, api_key,
       # re-paid for, and NA is distinguishable from a real low score.
       return(dplyr::tibble(
         work_id = chunk$work_id, addresses = NA_real_,
-        relevance_model = NA_character_, relevance_cost = NA_real_
+        relevance_model = NA_character_, relevance_prompt_version = RELEVANCE_PROMPT_VERSION,
+        relevance_cost = NA_real_
       ))
     }
     dplyr::tibble(
@@ -153,6 +176,7 @@ score_one_claim_relevance <- function(claim, works, model, api_key,
         if (is.null(v)) NA_real_ else as.numeric(v)
       }, numeric(1)),
       relevance_model = parsed$model %||% model,
+      relevance_prompt_version = RELEVANCE_PROMPT_VERSION,
       # Per-pair share of the batch's cost, so summing the column gives the
       # true total whatever batch size was used.
       relevance_cost = (parsed$usage$cost %||% NA_real_) / nrow(chunk)
@@ -265,6 +289,28 @@ build_llm_relevance_screen <- function(
   if (dir.exists(output_path) &&
       length(list.files(output_path, pattern = "[.]parquet$", recursive = TRUE))) {
     existing <- arrow::open_dataset(output_path) |> dplyr::collect()
+  }
+
+  # DISCARD rows scored under an older prompt version. Resumability is keyed on
+  # the pair, so without this the 170,405 rows produced before 2026-10-05 would
+  # be treated as done and never corrected -- and they are chunk-level answers,
+  # not per-paper ones (see relevance_question()). A version bump therefore has
+  # to invalidate, the same discipline score_one_claim()'s content guard uses
+  # for a changed model or claim text.
+  #
+  # Discarded rather than rescored in place because the two are not comparable:
+  # a tree holding both would mix per-chunk and per-paper scores under one
+  # column name, which is worse than having none.
+  if (!is.null(existing) && nrow(existing)) {
+    v <- if ("relevance_prompt_version" %in% names(existing)) existing$relevance_prompt_version else 1L
+    stale <- is.na(v) | v < RELEVANCE_PROMPT_VERSION
+    if (any(stale)) {
+      message(sprintf(
+        "[relevance %s] discarding %d of %d rows scored under prompt version < %d -- they are per-chunk, not per-paper",
+        assessment_id, sum(stale), nrow(existing), RELEVANCE_PROMPT_VERSION
+      ))
+      existing <- existing[!stale, , drop = FALSE]
+    }
   }
   pair_key <- function(d) paste(d$km, d$bm, d$claim_id, d$work_id, sep = "\r")
   if (!is.null(existing) && nrow(existing)) {
