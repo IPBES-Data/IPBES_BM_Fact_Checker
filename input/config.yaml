@@ -106,7 +106,7 @@ assessments:
 # (consolidate_nli_scores, relevance_screen, llm_verification) are all additive
 # now, so widening again costs only the pairs that were never scored.
 fact_checking:
-  active: ga1_finetuned
+  active: ga1_jev
   configs:
     ga1_all:
       assessments: [GA1]

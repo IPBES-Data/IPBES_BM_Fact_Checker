@@ -68,10 +68,19 @@ tar_option_set(
       # workers here only decide how many CLAIMS are in flight at once. Four is
       # a deliberate compromise: enough to keep the API busy across claims,
       # few enough that four claims' premise frames are not all in memory.
-      if (identical(nc[["backend"]], "jev")) return(4L)
-      n <- length(unlist(nc[["host"]]))
-      if (n < 1L) stop(sprintf("nli.configs.%s.host is empty -- start the pool first", sel))
-      n
+      # NO return() HERE. This block is an argument to crew_controller_local(),
+      # evaluated at script top level where there is no enclosing function, so a
+      # return() aborts the WHOLE SCRIPT and hands targets that value instead of
+      # the target list -- "Expected a list of target definition objects". It
+      # survived every expression-by-expression check, because those only abort
+      # the one expression. Keep this an if/else that yields a value.
+      if (identical(nc[["backend"]], "jev")) {
+        4L
+      } else {
+        n <- length(unlist(nc[["host"]]))
+        if (n < 1L) stop(sprintf("nli.configs.%s.host is empty -- start the pool first", sel))
+        n
+      }
     }, error = function(e) {
       warning(sprintf(
         "crew workers falling back to 1: %s. Every host past the first will sit idle.",
@@ -695,6 +704,5 @@ list(
   # which is enough to adjudicate and score the instrument that was already
   # drawn, but a NEW sample would need that fold definition rebuilding.
   tar_target(goldstandard_dir, "input/goldstandard", format = "file"),
-  tar_target(goldstandard, build_goldstandard(goldstandard_dir)),
-  NULL
+  tar_target(goldstandard, build_goldstandard(goldstandard_dir))
 )
