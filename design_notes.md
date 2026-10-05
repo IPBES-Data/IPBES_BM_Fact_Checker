@@ -14,6 +14,7 @@ proposed change, and what would settle it. Nothing here is decided.
 | 5. refutations do exist | **both** | the instrument is training's; the finding is about the corpus |
 | 6. NLI vs Jev as REFUTES filter | `factcheck` | with a knock-on for what training distils |
 | 7. would training the NLI fix it | `training` | |
+| 8. proposed target architecture | **both** | a proposal, not a decision |
 
 **Points 2, 3 and 5 are the training cycle, and they form a closed loop:** the
 judge produces labels, `nli_training_data` distils them, `nli_finetuned_model`
@@ -334,6 +335,73 @@ That inverts the economics at corpus scale, reuses the whole existing training
 chain for a teacher that demonstrably works, and needs no human labels to start
 — the human round would then validate the student rather than supply its
 training data.
+
+## 8. Proposed target architecture (contingent on the human round)
+
+Not a decision. Every number behind it comes from models judging models, with
+Jev and the review panel on one side and the NLI alone on the other.
+
+| stage | now | proposed |
+|---|---|---|
+| Phase 1 | zero-shot NLI on RunPod, ~$8 GPU for GA1 | Jev contradiction screen, ~$42 for GA1 (one question; ~$87 if SUPPORTS is screened too) |
+| routing | `uncertain_threshold` on NLI confidence | a Jev score cutoff, calibrated against human labels |
+| Phase 2 | gpt-4o-mini, quote + verbatim check | unchanged in shape — still the only stage producing an auditable quote — but see point 2 on the judge |
+| training | distil gpt-4o-mini's labels into a local NLI | **deferred**: distil *Jev* into a local model, if ever |
+| gold standard | validates the training labels | validates the **filter's candidates** |
+
+**The gold standard's role needs no code change.** `goldstandard` already gates
+the benchmark rather than `nli_training_data` — deliberately, since the sample is
+drawn from the fold that target defines. "Human labels validate, they do not
+train" is already how this is built.
+
+**Why distillation is DEFERRED rather than planned.** At ~$42 per full-corpus
+pass the economics do not favour a local student: `train_nli.py`,
+`build_nli_finetuned_model.R`, the benchmark scorer, three QA reports, 42 GB of
+checkpoints and 5-hour runs, to save roughly the cost of a sandwich per pass.
+The real argument is not cost but **independence** — `POST /api/alpha/decisions`
+is an unversioned alpha endpoint whose published limits "can change without
+notice", and a pipeline whose primary classifier is a third-party alpha API is
+fragile in a way a baked checkpoint is not. That is a reason to distil *when the
+dependency bites*, not now. Keep the chain, do not run it.
+
+**What this does NOT fix.** Point 2 is untouched: Phase 2 remains one judge that
+reproduces 53% of its own verdicts. Changing Phase 1 does not address it, and the
+ensemble proposal stands on its own.
+
+### 8a. A self-hostable model may remove the alpha-API dependency outright
+
+Partial result (2026-10-05, `scripts/compare_filter_models.R`,
+`input/ai_filter_comparison/`). Open-weight models scored on the same 179 probe
+rows against the same confirmed-refutation target, so the numbers sit beside
+Jev's and the NLI's directly:
+
+| model | n | AUC (≥2 of 3) | 95% CI | AUC (unanimous) | median score |
+|---|---:|---:|---|---:|---:|
+| `jev-1.13` (alpha API) | 103 | 0.737 | [0.63, 0.83] | 0.789 | 0.160 |
+| `llama-3.1-8b` (**one L4**) | 168 | **0.648** | [0.56, 0.73] | 0.652 | 0.800 |
+| `nli-zeroshot` (current) | 179 | 0.503 | [0.41, 0.59] | 0.422 | 0.621 |
+
+An 8B open-weight model gets most of the way to Jev and clears the NLI
+decisively — its interval lies entirely above the NLI's and overlaps Jev's.
+`gemma-3-12b`, `phi-4` and `qwen3-30b-a3b` are still running.
+
+**If this holds, it removes the only real argument for the distillation chain.**
+Point 8 defers distillation because the reason to want a local model is
+independence from an unversioned alpha endpoint, not cost. An off-the-shelf
+8–30B model serving the same question on the RunPod pool that already exists
+gives that independence with no training at all: pull weights, serve, done.
+
+**Caveats.** `llama-3.1-8b` is badly calibrated (median 0.800 against Jev's
+0.160) — survivable for a filter, since AUC needs only ranking and the cutoff is
+calibrated separately, but it is not a drop-in threshold. 11 of 179 rows failed
+to parse, and `gemma-3-12b` is failing at a far higher rate, so structured-output
+reliability is itself a selection criterion here. And the target remains
+LLM-derived, though none of these models was among the three that defined it.
+
+**Open within this proposal:** whether Jev also replaces the NLI for SUPPORTS
+(AUC 0.95 vs 0.38 says probably, but every SUPPORTS figure in the funnel reports
+would move), and whether a self-hostable open-weight model can match Jev closely
+enough to remove the alpha-API dependency without the distillation chain at all.
 
 ## Sequencing
 
