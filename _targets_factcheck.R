@@ -271,17 +271,46 @@ list(
   # score_one_claim()'s lock-per-host loop), not from an upfront size
   # estimate — genuine work-stealing instead of static LPT balancing.
 
-  # Target 2h0: Pool health check, once per pipeline build. Fails loudly if
-  # any host is unreachable, or hosts report different models.
+  # The model name the scored rows are stamped with.
+  #
+  # This REPLACED `nli_pool_health` on 2026-10-05. That target existed because
+  # the RunPod pool had to be checked before a run -- every host reachable, all
+  # reporting the same model, matching expect_model -- and it returned the common
+  # model name as a side effect, which is what downstream actually consumed.
+  #
+  # There is no pool to check with the jev backend, and no equivalent for an HTTP
+  # API: OpenRouter is a shared endpoint, there is nothing to be half-up. So the
+  # health check is no longer a pipeline stage, and what remains is the one thing
+  # scoring needs: a name for the nli_model column.
+  #
+  # check_nli_pool_health() is KEPT in R/ and is still worth running by hand
+  # before a RunPod-backed run -- it catches an unreachable host, a pool serving
+  # mixed models, and an expect_model mismatch, none of which this target does:
+  #
+  #   check_nli_pool_health(tar_read(nli_config), tar_read(nli_active))
+  #
+  # It is not wired in because the backend that needs it is on its way out, and a
+  # target that silently does nothing for the active backend is worse than an
+  # explicit call.
   tar_target(
-    nli_pool_health,
-    check_nli_pool_health(nli_config, nli_active)
+    nli_model,
+    {
+      m <- nli_config$model
+      if (is.null(m) || !nzchar(m)) {
+        stop(sprintf("nli.configs.%s has no model:", nli_active), call. = FALSE)
+      }
+      if (identical(nli_config$backend, "jev") && !nzchar(Sys.getenv("API_openrouter"))) {
+        stop(sprintf("nli.configs.%s uses backend jev but API_openrouter is not set", nli_active),
+             call. = FALSE)
+      }
+      m
+    }
   ),
 
   # ── SECOND approach (evidence-segmented) scoring chain ────────────────────
   # Reuses build_nli_claim_units() / score_one_claim() unchanged — only the
   # source path (nli_ready_evidence_parquet) and the scoring output_root
-  # (output/nli_scores_evidence) differ. Shares the same nli_pool_health and,
+  # (output/nli_scores_evidence) differ. Shares the same nli_model and,
   # via score_one_claim()'s default lock_dir, the same per-host locks, so the
   # two approaches never hit one host concurrently if run together.
   tar_target(
@@ -312,13 +341,13 @@ list(
     # history worth not disturbing. See R/score_one_claim_jev.R.
     if (identical(nli_config$backend, "jev")) {
       score_one_claim_jev(
-        nli_claim_units_evidence_flat, nli_config, nli_active, nli_pool_health,
+        nli_claim_units_evidence_flat, nli_config, nli_active, nli_model,
         output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity)),
         questions_file = jev_questions_file
       )
     } else {
       score_one_claim(
-        nli_claim_units_evidence_flat, nli_config, nli_active, nli_pool_health,
+        nli_claim_units_evidence_flat, nli_config, nli_active, nli_model,
         output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity))
       )
     },
@@ -555,13 +584,13 @@ list(
     # reviewers separate them by 49.
     if (identical(nli_config$backend, "jev")) {
       score_one_claim_jev(
-        nli_claim_units_evidence_keypaper_flat, nli_config, nli_active, nli_pool_health,
+        nli_claim_units_evidence_keypaper_flat, nli_config, nli_active, nli_model,
         output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity)),
         questions_file = jev_questions_file
       )
     } else {
       score_one_claim(
-        nli_claim_units_evidence_keypaper_flat, nli_config, nli_active, nli_pool_health,
+        nli_claim_units_evidence_keypaper_flat, nli_config, nli_active, nli_model,
         output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity))
       )
     },

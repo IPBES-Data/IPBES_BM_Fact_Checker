@@ -324,7 +324,8 @@ list(
   #
   # To revive: move this block into _targets_factcheck.R, which already has
   # every target it needs (assessment, key_messages_parquet,
-  # works_citing_parquet, max_length, nli_config, nli_pool_health).
+  # works_citing_parquet, max_length, nli_config, nli_model -- the last of
+  # these replaced nli_pool_health on 2026-10-05, see its comment there).
   # build_nli_claim_units() and score_one_claim() are shared with the evidence
   # chain and were never removed; only R/build_nli_ready_parquet.R is otherwise
   # orphaned source.
@@ -379,13 +380,13 @@ list(
   # # whose inputs haven't changed).
   # # Commented out: this per-sentence chain isn't consumed by the report
   # # (nli_overview_data reads nli_scores_by_claim_evidence only — see that
-  # # target's comment) and shares nli_config/nli_pool_health/score_one_claim
+  # # target's comment) and shares nli_config/nli_model/score_one_claim
   # # with the evidence chain, so a bare tar_make() would dispatch both against
   # # the same live RunPod pool. Uncomment only if you deliberately want the
   # # per-sentence approach scored too.
   # # tar_target(
   # #   nli_scores_by_claim,
-  # #   score_one_claim(nli_claim_units_flat, nli_config, nli_active, nli_pool_health),
+  # #   score_one_claim(nli_claim_units_flat, nli_config, nli_active, nli_model),
   # #   pattern = map(nli_claim_units_flat),
   # #   format = "file",
   # #   error = "continue"
