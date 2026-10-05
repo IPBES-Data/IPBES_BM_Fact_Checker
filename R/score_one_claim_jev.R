@@ -3,166 +3,79 @@
 # WHY THIS EXISTS. The zero-shot NLI was measured on 2026-10-05 against
 # refutations confirmed by three independent reviewers: AUC 0.50 for REFUTES and
 # 0.38 for SUPPORTS -- chance and below -- while Jev reached 0.737 [0.63, 0.84]
-# on the same rows, handicapped (the reviewers saw the cited quote, Jev did not).
-# Worse, the population the NLI routes on is DEPLETED of refutations: 0.058% of
-# its REFUTES bucket score high on an independent contradiction question against
-# 0.693% of the SUPPORTS-uncertain bucket it discards, so 97.7% of candidates lie
-# where Phase 2 never looks. See design_notes.md points 6 and 8.
+# on the same rows. See design_notes.md points 6 and 8.
 #
-# THE OUTPUT SCHEMA IS IDENTICAL to score_one_claim()'s, deliberately. Jev
-# answers typed binary questions, not a 3-way softmax, so three questions are
-# asked per pair and CROSS-NORMALISED into (p_supports, p_refutes, p_nei). That
-# is not a workaround -- it is exactly what the zero-shot head already does:
-# `passes: 3` runs one forward pass per reformulated hypothesis and
-# cross-normalises three entailment logits. Same operation, different model.
-#
-# Because the schema is unchanged, `uncertain_threshold`, the `nli_route=`
-# partitions, the funnel's three-level sieve, consolidate_nli_scores() and every
-# report downstream keep working untouched. Selecting it is a config edit:
-# `backend: jev` on an `nli.configs.<name>` entry, which also gives it its own
-# `nli_config=` output tree, so it scores BESIDE the NLI on identical rows
-# rather than instead of it. That matters -- the human review round has not
-# happened, every measurement above comes from models judging models, and
-# comparing the two on the same rows afterwards is the whole point of waiting.
+# THE OUTPUT SCHEMA IS IDENTICAL to score_one_claim()'s, so uncertain_threshold,
+# the nli_route= partitions, the funnel sieve, consolidate_nli_scores() and every
+# report downstream keep working untouched. Selecting it is a config edit --
+# `backend: jev` on an nli.configs.<name> entry -- which also gives it its own
+# nli_config= tree, so it scores BESIDE the NLI on identical rows rather than
+# instead of it. The human round has not happened, every measurement above comes
+# from models judging models, and comparing the two afterwards is the point of
+# waiting.
 #
 # WHAT IS DUPLICATED FROM score_one_claim(), and why. The resumability block
-# (consolidated ∪ scratch, delta on work_id, content guard, complete-row-set
-# scratch write) is reproduced rather than shared. Same reasoning
-# build_llm_verification_keypaper_parquet.R already documents for its own
-# duplication: score_one_claim() is delicate, carries a bug history worth not
-# disturbing, and is still the production path for every existing score. An
-# edit here cannot invalidate a single already-scored row there.
+# (consolidated U scratch, delta on work_id, content guard, complete-row-set
+# scratch write) is reproduced rather than shared -- the same reasoning
+# build_llm_verification_keypaper_parquet.R documents for its own duplication.
+# score_one_claim() is delicate, carries a bug history worth not disturbing, and
+# is still the production path for every existing score.
 #
-# WHAT IS NOT DUPLICATED. No host locking, no pool health, no crew sizing by
-# host count: there is no pod. Concurrency is httr2's, per request, so a single
-# target branch saturates the API on its own.
+# WHAT IS NOT DUPLICATED. No host locking, no pool health, no crew sizing by host
+# count: there is no pod.
 
 JEV_ENDPOINT <- "https://openrouter.ai/api/alpha/decisions"
 
-# The three questions live in input/prompts/jev_claim_questions.json, not here.
+# The question lives in input/prompts/jev_claim_questions.json, not here.
 #
-# Same convention as llm_verification_system.md and claim_completion_system.md:
-# a prompt is DATA, tracked as a format = "file" target, so editing it
-# invalidates what it produced. That is exactly right here -- different
-# questions give different scores, and a tree scored under two question sets
-# would be meaningless. The file carries its own rationale, including why
-# p_nei is derived from `addresses` rather than asked directly and why that
-# question is word-for-word the relevance screen's own.
-#
-# The slot ORDER is fixed by jev_normalise() below, not by the file: a new slot
-# would need code, so the file holds wording, not structure. Validated on read
-# rather than trusted, because a typo in a key here would otherwise surface as
-# an all-NA score column several hours into a paid run.
-jev_claim_questions <- function(path = "input/prompts/jev_claim_questions.json") {
-  if (!file.exists(path)) stop(sprintf("jev questions file not found: %s", path), call. = FALSE)
-  q <- jsonlite::read_json(path, simplifyVector = FALSE)$questions
-  want <- c("supports", "refutes", "addresses")
-  missing <- setdiff(want, names(q))
-  if (length(missing)) {
-    stop(sprintf("%s is missing question slot(s): %s", path, paste(missing, collapse = ", ")), call. = FALSE)
+# Same convention as llm_verification_system.md: a prompt is DATA, tracked as a
+# format = "file" target, so editing it invalidates what it produced. The file
+# carries its own rationale -- why Choice rather than three Nouls, and why the
+# item goes inside the question rather than in the shared state.
+jev_question_spec <- function(path = "input/prompts/jev_claim_questions.json") {
+  if (!file.exists(path)) stop(sprintf("jev question file not found: %s", path), call. = FALSE)
+  spec <- jsonlite::read_json(path, simplifyVector = FALSE)
+  q <- spec$question
+  if (!identical(q$type, "choice")) {
+    stop(sprintf("%s: question type must be 'choice', got '%s'", path, q$type %||% "NULL"), call. = FALSE)
   }
-  for (k in want) {
-    if (!identical(q[[k]]$type, "noul")) {
-      stop(sprintf("%s: question '%s' must have type 'noul', got '%s'", path, k, q[[k]]$type %||% "NULL"), call. = FALSE)
-    }
-    if (!nzchar(q[[k]]$instructions %||% "")) {
-      stop(sprintf("%s: question '%s' has no instructions", path, k), call. = FALSE)
-    }
-  }
-  q[want]
+  missing <- setdiff(c("SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO"), names(q$criteria))
+  if (length(missing)) stop(sprintf("%s: criteria missing %s", path, paste(missing, collapse = ", ")), call. = FALSE)
+  spec
 }
 
-# Cross-normalise three independent probabilities into a distribution.
+# ONE request carries the claim once in `state` and up to `papers_per_request`
+# questions, each with its OWN paper inline.
 #
-# `addresses` acts as a GATE on the two directional answers rather than as a
-# third competing option:
+# THE ITEM MUST BE IN THE QUESTION, NOT IN THE STATE. "Question IDs are for code
+# and are not sent to the model", so a question keyed by work_id against a state
+# holding many papers cannot say which paper it means, and the model answers
+# about the blob. Measured before this was understood: 40 papers in state
+# collapsed to 3 distinct answers, and a controlled triple returned
+# 0.750/0.750/0.750 on a supports question with the SUPPORTING paper scoring
+# 0.89 on refutes. With the item inline the effect disappears -- Spearman against
+# per-paper scoring is 0.91 at 10 per request, 0.85 at 20, 0.88 at 40, against a
+# 0.87 run-to-run baseline. Batch size is a throughput knob, not a quality one.
 #
-#   e_supports = supports x addresses
-#   e_refutes  = refutes  x addresses
-#   e_nei      = 1 - addresses x max(supports, refutes)
-#
-# then divide by the sum. The gate is what makes the triple behave sensibly in
-# the two cases that matter and that a naive 1-addresses formulation gets wrong:
-#
-#   addresses ~ 0                 -> both directional terms collapse, e_nei ~ 1.
-#                                    A paper that does not bear on the claim
-#                                    cannot support or contradict it. This is the
-#                                    topical-adjacency failure the whole Jev
-#                                    screen exists to catch.
-#   addresses ~ 1, neither fires  -> e_nei ~ 1 again. A RELEVANT paper with no
-#                                    directional finding is still NOT_ENOUGH_INFO.
-#                                    An earlier version of this function wrote
-#                                    p_nei = 1 - addresses and divided by the sum,
-#                                    which made exactly this case 0/0 and returned
-#                                    NA -- scoring a real and common outcome as
-#                                    "unscored". Caught before any paid run.
-#
-# The sum cannot reach zero: e_nei is 0 only when addresses x max(supports,
-# refutes) is 1, which forces one directional term to 1. So no epsilon guard is
-# needed and none is used -- NA here means the REQUEST failed, nothing else.
-jev_normalise <- function(supports, refutes, addresses) {
-  e_sup <- supports * addresses
-  e_ref <- refutes * addresses
-  e_nei <- 1 - addresses * pmax(supports, refutes)
-  m <- cbind(e_sup, e_ref, e_nei)
-  out <- m / rowSums(m)
-  colnames(out) <- c("p_supports", "p_refutes", "p_nei")
-  out
-}
-
-# ONE PAPER PER REQUEST, three requests (one per question type).
-#
-# This is the expensive choice and it is deliberate. The relevance screen next
-# door batches ~80 papers into one request against a shared `state`, and its own
-# comment records the measurement that justified it: $0.0000172/pair batched
-# against $0.0000377 per-pair, "answers correlate 0.904 with the per-pair run".
-#
-# That correlation is across claims. WITHIN a claim it does not hold, which is
-# the only thing a filter needs. Measured 2026-10-05 on 8 works of one GA1
-# claim, same question, same premises:
-#
-#   individually   0.01 0.05 0.03 0.04 0.03 0.03 0.01 0.05   -> 4 distinct
-#   batched        0.06 0.07 0.07 0.06 0.07 0.06 0.07 0.06   -> 2 distinct
-#
-# and a controlled triple (one paper that plainly supports a claim, one that
-# plainly refutes it, one about GPU kernels) came back 0.750 / 0.750 / 0.750 on
-# `supports` and 0.890 / 0.880 / 0.890 on `refutes` when batched -- the
-# supporting paper scored 0.89 for CONTRADICTS. Batched, the model answers about
-# the chunk, not the paper. A first-stage filter whose job is to RANK papers
-# within a claim cannot use that.
-#
-# Cost: ~$0.000113/pair (3 x $0.0000377), so ~$275 for GA1's 2.43M citing-work
-# pairs rather than the ~$120 the batched estimate implied, plus ~$3.30 for the
-# 29,511 key-paper pairs. `papers_per_request` is left as an argument so the
-# trade-off can be revisited with evidence rather than re-litigated from
-# memory; raising it above 1 reintroduces the compression above.
-jev_requests <- function(claim, chunk, model, api_key, qs, papers_per_request = 1L) {
-  grp <- ceiling(seq_len(nrow(chunk)) / max(1L, papers_per_request))
-  out <- list()
-  for (g in unique(grp)) {
-    part <- chunk[grp == g, , drop = FALSE]
-    state <- list(
-      description = "One assessment claim and the papers cited against it. Judge only from the papers.",
-      claim = claim,
-      papers = lapply(seq_len(nrow(part)), function(i) list(id = part$work_id[i], text = part$premise[i]))
-    )
-    for (slot in names(qs)) {
-      body <- list(model = model, state = state,
-                   questions = setNames(rep(list(qs[[slot]]), nrow(part)), part$work_id))
-      out[[length(out) + 1L]] <- list(
-        slot = slot, ids = part$work_id,
-        req = httr2::request(JEV_ENDPOINT) |>
-          httr2::req_auth_bearer_token(api_key) |>
-          httr2::req_body_json(body, auto_unbox = TRUE) |>
-          # No client-side rate limiter, same reasoning as the relevance screen:
-          # the published limits adjust dynamically and "can change without
-          # notice", so backoff finds the real ceiling.
-          httr2::req_retry(max_tries = 5) |>
-          httr2::req_timeout(120)
-      )
-    }
-  }
-  out
+# NOTE for build_llm_relevance_screen.R: it still batches the OLD way (papers in
+# state, questions keyed by work_id) and has the same defect -- 7,889 works under
+# one claim share 23 distinct values. Nothing has been filtered on those scores
+# (threshold is `~`), but they are not per-paper rankings.
+jev_request <- function(claim, part, spec, model, api_key) {
+  q <- spec$question
+  questions <- setNames(lapply(seq_len(nrow(part)), function(i) list(
+    type = "choice",
+    instructions = list(paper = part$premise[i], question = q$instructions_question),
+    criteria = q$criteria
+  )), part$work_id)
+  httr2::request(JEV_ENDPOINT) |>
+    httr2::req_auth_bearer_token(api_key) |>
+    httr2::req_body_json(list(model = model, state = list(claim = claim), questions = questions),
+                         auto_unbox = TRUE) |>
+    # No client-side rate limiter, same reasoning as the relevance screen: the
+    # published limits adjust dynamically and "can change without notice".
+    httr2::req_retry(max_tries = 5) |>
+    httr2::req_timeout(180)
 }
 
 score_one_claim_jev <- function(
@@ -173,9 +86,10 @@ score_one_claim_jev <- function(
   output_root = "output/nli_scores",
   questions_file = "input/prompts/jev_claim_questions.json",
   api_key = Sys.getenv("API_openrouter"),
-  max_active = 12L,
-  state_budget = 24000L,
-  papers_per_request = 1L
+  max_active = 100L,
+  # kept for signature stability; chunking by token budget is meaningless when
+  # each request carries exactly one premise.
+  papers_per_request = 20L
 ) {
   cfg <- if (is.null(nli_config)) list() else nli_config
   assessment_id <- claim_unit$assessment
@@ -250,39 +164,36 @@ score_one_claim_jev <- function(
                   nrow(cw), length(work_ids)))
 
   # ---- score ---------------------------------------------------------------
-  qs <- jev_claim_questions(questions_file)
-  # chunk_by_tokens() still bounds `state` for the batched path; at the default
-  # one-paper-per-request it is a no-op beyond ordering.
-  chunks <- chunk_by_tokens(cw, budget = state_budget)
-  plan <- unlist(lapply(chunks, function(ch)
-    jev_requests(claim_unit$claim, ch, model, api_key, qs, papers_per_request)), recursive = FALSE)
-  resps <- httr2::req_perform_parallel(lapply(plan, `[[`, "req"),
-                                       max_active = max_active, on_error = "continue")
+  spec <- jev_question_spec(questions_file)
+  parts <- split(cw, ceiling(seq_len(nrow(cw)) / max(1L, papers_per_request)))
+  resps <- httr2::req_perform_parallel(
+    lapply(parts, function(part) jev_request(claim_unit$claim, part, spec, model, api_key)),
+    max_active = max_active, on_error = "continue")
 
-  # A failed request yields NA for its (papers, question), not dropped rows: a
-  # pair silently missing would later read as "never scored" and be re-paid for,
-  # and NA is distinguishable from a real low score.
-  long <- dplyr::bind_rows(lapply(seq_along(plan), function(k) {
-    parsed <- tryCatch(httr2::resp_body_json(resps[[k]]), error = function(e) NULL)
-    ids <- plan[[k]]$ids
-    dplyr::tibble(work_id = ids, slot = plan[[k]]$slot,
-                  value = vapply(ids, function(w) {
-                    a <- parsed$answers[[w]]$noul
-                    if (is.null(a)) NA_real_ else as.numeric(a)
-                  }, numeric(1), USE.NAMES = FALSE))
-  }))
-  got <- long |>
-    tidyr::pivot_wider(names_from = slot, values_from = value) |>
-    dplyr::rename(q_sup = supports, q_ref = refutes, q_add = addresses)
+  # Choice returns the distribution and the confidence DIRECTLY, so there is
+  # nothing to cross-normalise -- unlike the zero-shot head, which needs three
+  # forward passes folded together. A failed request yields NA rows rather than
+  # dropped ones: a pair silently missing would later read as "never scored" and
+  # be re-paid for, and NA is distinguishable from a real low score.
+  got <- dplyr::bind_rows(Map(function(part, resp) {
+    parsed <- tryCatch(httr2::resp_body_json(resp), error = function(e) NULL)
+    num <- function(x) if (is.null(x)) NA_real_ else as.numeric(x)
+    v <- vapply(part$work_id, function(w) {
+      a <- parsed$answers[[w]]
+      c(num(a$probabilities$SUPPORTS), num(a$probabilities$REFUTES),
+        num(a$probabilities$NOT_ENOUGH_INFO), num(a$confidence))
+    }, numeric(4), USE.NAMES = FALSE)
+    dplyr::tibble(work_id = part$work_id, p_supports = v[1, ], p_refutes = v[2, ],
+                  p_nei = v[3, ], confidence = v[4, ])
+  }, parts, resps))
 
-  n_failed <- sum(is.na(got$q_sup))
-  if (n_failed) message(sprintf("[jev %s] claim_id=%s: %d of %d works unscored (chunk failures)",
+  n_failed <- sum(is.na(got$p_supports))
+  if (n_failed) message(sprintf("[jev %s] claim_id=%s: %d of %d works unscored (request failures)",
                                 assessment_id, this_claim_id, n_failed, nrow(got)))
 
-  probs <- jev_normalise(got$q_sup, got$q_ref, got$q_add)
   lvl <- c("SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO")
-  argmax <- apply(probs, 1L, function(r) if (all(is.na(r))) NA_integer_ else which.max(r))
-  confidence <- apply(probs, 1L, function(r) if (all(is.na(r))) NA_real_ else max(r, na.rm = TRUE))
+  argmax <- apply(as.matrix(got[, c("p_supports", "p_refutes", "p_nei")]), 1L,
+                  function(r) if (all(is.na(r))) NA_integer_ else which.max(r))
 
   out <- dplyr::tibble(
     nli_model       = nli_model,
@@ -291,11 +202,14 @@ score_one_claim_jev <- function(
     claim           = claim_unit$claim,
     work_id         = got$work_id,
     label           = lvl[argmax],
-    p_supports      = probs[, "p_supports"],
-    p_refutes       = probs[, "p_refutes"],
-    p_nei           = probs[, "p_nei"],
-    confidence      = confidence,
-    uncertain       = !is.na(confidence) & confidence < uncertain_threshold,
+    p_supports      = got$p_supports,
+    p_refutes       = got$p_refutes,
+    p_nei           = got$p_nei,
+    # Choice's own confidence, not max(p): "Choice/Score confidence summarizes
+    # distribution concentration", which is what uncertain_threshold has always
+    # meant here.
+    confidence      = got$confidence,
+    uncertain       = !is.na(got$confidence) & got$confidence < uncertain_threshold,
     claim_id        = this_claim_id,
     assessment      = assessment_id,
     km              = claim_unit$km,
