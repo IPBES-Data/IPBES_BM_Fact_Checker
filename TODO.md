@@ -1,137 +1,178 @@
 # TODOs
 
-## Active
+Reorganised 2026-10-05, on branch `Jev`, after the training project was retired.
+Items the retirement made moot are listed under *Closed by the redirection*
+rather than deleted, so it is clear they were considered rather than forgotten.
 
-### After the training run completes — not before
+The reasoning behind the redirection is in `design_notes.md`; the state before it
+is the `NLI_dirty` branch.
 
-Deferred 2026-09-18. The four-project split is finished and committed; these are
-the first-run consequences of it, all on the fact-checking side. **Nothing here
-should be started while a training run is in flight**, and none of it is urgent.
+---
 
-- [ ] **Run `factcheck`'s first pass — but establish the scoring delta first.**
-  The project has a fresh store, so `nli_ready_evidence_parquet` is outdated by
-  definition and `0bb6bb0` removed its early return. Scoped to `[GA1]` by
-  `fact_checking.assessments`, that is a **~12 GB** local cross-join rebuild
-  (not the 163 GB the whole `atomic_bm` tree would be: VA 61G, IAS 46G, BBA 39G,
-  GA1 12G, TCA 5.6G).
+## 1. Before the human review round — the only deadline here
 
-  Do it in two steps, because unlike the key-paper chain this one may genuinely
-  need to score:
+The reviews are being collected "beginning of next week" (said 2026-10-05). All
+three of these change the instrument the reviewers use, so they have to land
+first or the round measures the wrong thing.
 
-  ```r
-  Sys.setenv(TAR_PROJECT = "factcheck")
-  targets::tar_make(names = "nli_ready_evidence_parquet")   # local only, no NLI
-  ```
+- [ ] **Rebuild the REFUTES stratum from triple-positives.** The drawn sample
+  took all 568 of the judge's REFUTES verdicts, including the 303 where the NLI
+  disagreed. The 181 rows where judge + NLI + verbatim quote all agree are where
+  real refutations concentrate: 27% confirmed by ≥2 of 3 independent models,
+  against 1–3 per 200 in the current instrument. `design_notes.md` point 5.
+- [ ] **Show the cited quote in the instrument.** Reviewers currently see only
+  title + abstract and must rediscover the contradiction unaided, discarding the
+  sentence Phase 2 already found and verified. This is the single largest cause
+  of the near-zero REFUTES rate.
+- [ ] **Rule on partial contradictions in `REVIEWER_GUIDE.md`.** It makes
+  `NOT_ENOUGH_INFO` the safe default and says nothing about a result that
+  contradicts in one region, taxon, time period or scale. Eleven models all
+  defaulted to NEI; two humans will too. Also settle the SUPPORTS/NEI boundary —
+  41 of 52 model disagreements sat exactly there.
 
-  Then compare its distinct `(claim, work)` count against the **2,429,848** rows
-  already scored for GA1. `score_one_claim()` delta-dispatches on the work set,
-  and the snowball was re-run for all five assessments in `855dab2`, so the
-  citing-works corpus may well have grown since those rows were scored — exactly
-  the condition the `ddf55b3` fix exists to catch. A non-zero delta is real GPU
-  work on however many pods are up; decide the scope deliberately rather than
-  letting `tar_make()` fan out.
+## 2. Open from the Jev redirection
 
-  Note the cross-join rebuild calls `complete_bm_fragments()` (an OpenRouter
-  path) under `atomic_bm`. It is backed by the per-fragment cache in
-  `output/claim_completion/raw/` (1,655 fragments) and operates on BM text
-  identical to what the key-paper chain already replayed, so it should make zero
-  calls — but it is not structurally incapable of one.
+- [ ] **Score the 179 probe rows with the fine-tuned model.** Only 6 of 179
+  carry a `bge_m3_ft_ga1` score, so the question "did the fine-tune inherit the
+  judge's REFUTES errors?" is unanswered. Seconds of inference; the cost is one
+  pod. Closes `design_notes.md` point 7 with a measurement instead of an
+  argument.
+- [ ] **Three-question Jev into the existing schema.** Ask supports /
+  contradicts / bears-on-the-claim per pair and cross-normalise — structurally
+  identical to what `passes: 3` already does for the zero-shot head, so
+  `(p_supports, p_refutes, p_nei)` comes out unchanged and `uncertain_threshold`,
+  the `nli_route=` partitions and the funnel sieve all keep working. Write it
+  under its own `nli_config=` name so it sits beside the NLI on identical rows
+  and overwrites nothing. ~$120 for all of GA1.
+- [ ] **A gold-standard QA report.** Asked for on 2026-10-05 and not built: κ,
+  the R1↔R2 ceiling, adjudication counts and the CANNOT_JUDGE split exist only
+  as `build_goldstandard()` console output. New work, not a move.
+- [ ] **Repoint or retire `_QA_NLI_Benchmark_Report.qmd`.** Parked
+  (underscore-prefixed, so Quarto skips it). Its metrics are still wanted —
+  κ against human labels, bootstrap CIs, inverse-probability weighting — but its
+  subject is gone. Repointing means `build_nli_benchmark_metrics()` reads the
+  `nli_config=` score trees instead of `output/nli_training_finetuned/*/best`
+  (now in `deep_archive/`), turning the comparison into "which first-stage model
+  ranks the gold rows best". Note its `training_data_path` also points at
+  `output/nli_training/`, which moved to `deep_archive/`.
+- [ ] **Finish the self-hostable filter comparison.** Cancelled 2026-10-05 after
+  `gemma-3-12b` failed 26 of 39 attempts — any AUC from it would have been
+  computed on a biased surviving subset. `llama-3.1-8b` completed: AUC 0.648
+  [0.56, 0.73] against Jev's 0.737 and the NLI's 0.503. Generic instruct models
+  asked for a probability via structured output are a poor fit; the better
+  candidates are purpose-built fact-verification cross-encoders (MiniCheck,
+  VitaminC, Vectara HHEM) — small, deterministic, no parsing failures, native
+  score, and **three-way** so they drop straight into the existing schema. None
+  are on OpenRouter, so this needs a pod and the existing `nli-runpod` serving
+  code, which is also how they would really be deployed.
+- [ ] **Update `TD_NLI_LLM_two_phase.qmd` if Phase 1 changes.** It has no stale
+  references today — every target it names exists — but it describes Phase 1 as
+  the NLI throughout. Premature while that is still a proposal.
+- [ ] **An ensemble judge for Phase 2.** Independent of everything above and
+  unaffected by it: `gpt-4o-mini` reproduces only 53% of its own verdicts.
+  Three cheap models from different labs, majority vote, ≈ $56 for all of GA1
+  under zero-shot routing. `llm_verification:` is already a library of named
+  configs, so this is a new config beside the existing three.
+  `design_notes.md` point 2.
 
-- [ ] **Then Phase 2 for GA1**, separately and deliberately —
-  `llm_verification_parquet` spends real OpenRouter money and is *not* reached by
-  the `nli_scores_evidence_consolidated` stop point used above.
+## 3. Fact-checking pipeline — standing
 
-- [ ] **Decide what happens to ~151 GB of now-unmaintained `nli_ready_evidence`.**
-  `fact_checking.assessments: [GA1]` means VA, IAS, BBA and TCA's `atomic_bm`
-  cross-joins (61 + 46 + 39 + 5.6 GB) are no longer rebuilt by any project, and
-  nothing deletes them. Their *scored* output is small and unaffected
-  (`output/nli_scores_evidence/`), and reporting still renders it. Keep them if
-  those assessments are coming back into `fact_checking.assessments`; otherwise
-  this is the single largest reclaim in `output/`.
+- [ ] **Finish GA1 beyond KM C.** KM C. is scored under `bge_m3_ft_ga1`
+  (38 claims, 2,307,101 pairs, 2h54m on 5 L4 pods, ~$6). A., B. and D. are not:
+  9.9M + 2.8M + 3.0M pairs, ~$20 of GPU at the measured 55 pairs/s/pod. Do not
+  start before the redirection question is settled — scoring 15.7M more pairs
+  with a model measured at chance is the expensive version of being wrong.
+- [ ] **Phase 2 for GA1**, separately and deliberately —
+  `llm_verification_parquet` spends real OpenRouter money and is not reached by
+  the `nli_scores_evidence_consolidated` stop point.
+- [ ] **Decide what happens to ~151 GB of unmaintained `nli_ready_evidence`.**
+  `fact_checking` is scoped to `[GA1]`, so VA, IAS, BBA and TCA's `atomic_bm`
+  cross-joins (61 + 46 + 39 + 5.6 GB) are rebuilt by no project and deleted by
+  nothing. Their *scored* output is small and unaffected, and reporting still
+  renders it. The single largest reclaim in `output/`.
+- [ ] **The zero-shot backfill has never been run.** `score_one_claim()`'s delta
+  fix means the next `tar_make()` of `nli_scores_by_claim_evidence` picks up
+  every missing work: ~167M pairs for the three unscored assessments, plus the
+  GA1/IAS delta. Scope it deliberately rather than letting a bare `tar_make()`
+  fan out. Largely overtaken by the redirection, but the data is still missing.
+- [ ] **Re-enable or retire the two "Overlap of Papers after 2018" tables.**
+  Disabled 2026-09-18 after `build_overlap_after_2018_background_messages_table()`
+  crashed the machine: it collects doi/title/**abstract** for every post-2018
+  `(work × km × bm)` row *before* deduplicating — 25,717,725 rows, ~39 GB in one
+  `collect()`. The performance fix is straightforward (count BM-groups lazily in
+  Arrow, filter `n > 5`, fetch metadata for survivors only), but three content
+  questions come first: the two committed rds files disagree (6,727 vs 805,028
+  rows) although CLAUDE.md records that they group identically; an 805k-row DT
+  widget carrying abstracts in a 500px iframe is not browsable; and `n > 5` was
+  chosen when the corpus was a fraction of today's size.
+- [ ] **Content-hash-aware invalidation across the OpenAlex chain.** Two gaps,
+  both found by discussion rather than incident: nothing detects that OpenAlex's
+  own data changed server-side (a cleaned-up or newly-available abstract), and
+  even if fresh premise text reached `nli_ready_evidence_parquet`,
+  `score_one_claim()` resumes per *work* but never compares premise *content*,
+  so a changed abstract is silently kept at its old score. Today the only way to
+  pick up such an update is deleting `output/nli_scores_evidence/` and
+  re-running everything.
+- [ ] **`granularity: complete_bm` has never been run for real.** Implemented
+  and reported on, but needs a pod, a `complete_bm` config activated, and
+  `uncertain_threshold`/label calibration re-verified against the actual score
+  distribution (carried over from `deberta_zeroshot` as an unverified starting
+  point). Every `complete_bm` branch in the reporting layer is empty until then —
+  expected, not a bug.
+- [ ] Optional: replace truncation with abstract chunking for pairs where
+  `approx_tokens > max_length`. These are **not** skipped today — the server
+  truncates the abstract tail and scores them; chunking would be lossless. See
+  NEXT_STEPS.md.
+- [ ] Fix the `read_csv()` deprecation in SPARQL response parsing
+  (`refs_parquet`, `key_messages_parquet`): wrap literal CSV strings in `I()`.
+  readr 2.2.0+; becomes an error eventually.
+- [ ] Low value, noted because it was asked: parallelise `nli_bm_explorer_html`
+  (96.4 s across 15 branches). It runs on workers, unlike
+  `nli_scores_qa_figures`, so a controller in `reporting` would help.
+- [ ] Gaps: same pipeline, in CONF DATA (the one we have).
 
-- [ ] **Consider parallelising `nli_bm_explorer_html`.** Measured 96.4 s across 15
-  branches (43.8 / 22.0 / 21.0 / 9.4 s for the four with data). Unlike
-  `nli_scores_qa_figures` — which is pinned `deployment = "main"` and so would not
-  benefit — the explorer runs on workers, so a controller in the reporting project
-  would actually help. Low value; noted because it was asked.
+## 4. Closed by the redirection
 
-### Standing
+Not done — no longer wanted. Kept so it is clear they were considered.
 
-- [ ] **Re-enable (or retire) the two "Overlap of Papers after 2018" tables.** Disabled
-  2026-09-18 in `_targets_reporting.R` and `input/reports/IPBES_Fact_Checker.qmd` after
-  `build_overlap_after_2018_background_messages_table()` crashed the machine: it collects
-  doi/title/**abstract** for every post-2018 `(work × km × bm)` mapping row *before*
-  deduplicating — **25,717,725 rows, ~39 GB in one `collect()`**. Latent in the pipeline, not
-  caused by the project split: the committed output predates the snowball growing
-  `works_citing` to 36.8M mapping rows. The sibling `..._sub_messages_table` has the identical
-  shape minus `abstract`. `overlap_key_paper_table` is unaffected and still runs.
+- ~~Fine-tune the NLI model using BM citations as training data.~~ The arm was
+  built, run and retired: the model it improves is at or below chance at the job
+  (AUC 0.50 REFUTES / 0.38 SUPPORTS), and 97.7% of contradiction candidates lie
+  outside the label it routes on. `design_notes.md` points 3, 6, 7.
+- ~~Use `llm_agrees = FALSE` rows as training data for NLI fine-tuning.~~ Same
+  reason, and compounded: those rows are disagreements with a judge that
+  reproduces only 53% of its own verdicts.
+- ~~Curated test set, as a training artifact.~~ The gold standard survives and
+  is now *more* load-bearing — it is the only thing that can test the
+  redirection. But its purpose changed from "validate the training labels" to
+  "validate the filter's candidates".
+- ~~Merge phase: use `llm_label` where available, falling back to `nli_label`.~~
+  Still unwired, and now questionable in a different way: if Phase 1 changes
+  model, what `nli_label` means changes with it. Revisit after the human round.
 
-  The performance fix is straightforward (count BM-groups lazily in Arrow, filter `n > 5`, then
-  fetch metadata for the survivors only), but three content questions should be settled first:
-  the two committed rds files disagree (6,727 vs 805,028 rows) although CLAUDE.md records that
-  the two group *identically* — the pipeline has no sub-message level and "sub_messages" is a
-  legacy name, so one may simply be redundant; an 805k-row DT widget carrying abstracts in a
-  500px iframe is not browsable; and the `n > 5` threshold was chosen when the corpus was a
-  fraction of today's size.
+## 5. Done
 
-- [ ] Optional: replace truncation with abstract chunking for long `(premise, claim)` pairs in `nli_scores_by_claim`/`nli_scores_by_claim_evidence` (pairs where `approx_tokens > max_length`): split long premises into overlapping windows, score each chunk, aggregate with `max(p_supports)`. Currently these pairs are NOT skipped — the server truncates the abstract tail and scores them (see `R/score_one_claim.R`); chunking would be a lossless alternative. See NEXT_STEPS.md for design.
-
-- [ ] Fix `read_csv()` deprecation warning in SPARQL response parsing (`refs_parquet`, `key_messages_parquet`): wrap literal CSV strings in `I()` — readr 2.2.0+ deprecation, will become an error in a future version
-
-- [ ] Gaps: Same pipeline, in CONF DATA (the one we have)
-- [ ] Fine-tune NLI model using BM citations as training data — see [TD_NLI_training.qmd](TD_NLI_training.qmd)
-- [x] **FIXED — `score_one_claim()` now dispatches the per-claim delta, not all-or-nothing.** It diffs the claim's current `work_id` set against what is already scored (consolidated ∪ scratch) and sends only the missing works; an unchanged claim still skips with no HTTP. The old check skipped a claim entirely once it had ANY prior output, so every snowball re-run silently froze already-scored claims at their first-run coverage. **This had already materialised at scale** — measured 2026-09-18 on the live atomic_bm corpus:
-
-  | | claims | enumerated pairs | scored rows |
-  |---|---|---|---|
-  | GA1 | 229 | 17,979,812 | 2,429,848 |
-  | IAS | 494 | 67,814,074 | 686,020 |
-  | BBA / VA / TCA | 1,260 | 167,362,875 | 0 |
-
-  GA1 `A.`/`A2` `bm_description-05` specifically: 28,825 scored works against 257,708 present. **The backfill has not been run** — the fix makes the next `tar_make()` of `nli_scores_by_claim_evidence` pick up every missing work, which is real RunPod GPU time (~167M pairs for the three unscored assessments alone, plus the GA1/IAS delta). Scope it deliberately rather than letting a bare `tar_make()` fan out over all five assessments.
-
-- [ ] **Consider the granularity of update/invalidation across the whole OpenAlex-sourced chain** (`works_parquet`/`snowball_parquet`/`works_citing_parquet` → `nli_ready_evidence_parquet` → `nli_scores_by_claim_evidence`), not just the new-works case above. Two related but distinct gaps, both found by discussion rather than by a real incident yet: (a) nothing in the pipeline detects that OpenAlex's own data changed server-side (e.g. a cleaned-up or newly-available abstract for a work already fetched) — `works_parquet`/`snowball_parquet` are plain `format = "file"` targets with no live-staleness check, so a re-fetch only happens if their output is deleted/forced outdated by hand; (b) even if fresh premise text did flow through to `nli_ready_evidence_parquet`, `score_one_claim()`'s per-claim (not per-work, not content-hash-based) resumability check would still skip any already-scored claim outright, silently keeping stale premise text for the changed work. Net effect today: there is no cheap, targeted way to pick up an OpenAlex-side data update — getting it to actually take effect means manually deleting `output/nli_scores_evidence/` (and cascading `output/llm_candidate_scope/`/`output/llm_verification/`) and re-running the full ~3.5M-pair NLI scoring job, real RunPod GPU cost included, not an incremental rescore of just the affected claims/works. Worth designing a real content-hash-aware invalidation (e.g. hash each claim's premise set and compare against what was used last time) before this comes up as a real need rather than a hypothetical one.
-
-- [ ] `granularity: complete_bm` (NLI config option, `input/config.yaml`) and its `bge_m3_zeroshot` config are implemented but never run for real — needs (a) building/pushing `ghcr.io/rkrug/nli-runpod-bge-m3` (see `input/nli_pods_bge_m3.conf`), (b) provisioning at least one pod, (c) re-verifying `uncertain_threshold`/label calibration against the new model's actual score distribution (carried over from `deberta_zeroshot` as an unverified starting point), and (d) actually activating a `complete_bm` config and running `nli_scores_by_claim_evidence`/`llm_verification_parquet` against it. Real infrastructure/money decision, not automatic. See `TD_BM_NLI_approach.qmd` for the measured reduction numbers and the hypothesis-length/truncation caveat.
-- [ ] The reporting layer (`nli_overview_data`, `nli_bm_explorer_html`, the label funnel reports) now renders one output per (assessment, granularity) combination, but every `complete_bm` branch is empty until the above actually runs — expected, not a bug, but worth remembering when `tar_outdated()`/`tar_make()` output looks like it doubled in target count after this change.
-
-## Two-phase NLI → LLM pipeline
-
-See [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.qmd) for full design.
-Phase 2 (`llm_verification_parquet`) is implemented — remaining work is
-downstream consumption:
-
-- [ ] Run `llm_verification_parquet` against the new `SUPPORTS`+`certain` backlog (~52,061 pairs, ~$7.75 at `gpt-4o-mini` rates) added to `nli_labels` alongside the existing `REFUTES`+`certain` set — the `IPBES_SUPPORTS_Report_<id>.html` funnel reports render fine today but show an empty level 3 until this runs. Needs an explicit go-ahead, not automatic.
-- [ ] **Safety note**: `report_fact_checker` now transitively depends on `llm_verification_parquet` (via the label funnel reports folded into its dependency list), so a plain `tar_make()`/`tar_make(report_fact_checker)` will attempt to rebuild it — and therefore spend real OpenRouter money — whenever `llm_verification_config` is outdated (e.g. right now, from the `SUPPORTS` addition). Use `tar_make(names = ..., shortcut = TRUE)` to render against on-disk Phase 2 data without triggering a fresh run. See `TD_NLI_LLM_two_phase.qmd`'s "Where this sits in the pipeline" section.
-- [ ] Merge phase: use `llm_label` where available, fall back to `nli_label` — not yet wired into `nli_overview_data`/the report
-- [ ] **Three human-labelled artifacts, none of which exist** — see TD_NLI_training.qmd's
-      "Three human-labelled artifacts" section for what each measures and how to sample.
-      They are routinely conflated and are not substitutes for each other:
-  - [ ] **Gold standard** — adjudicate a stratified sample of EXISTING LLM verdicts.
-        Measures the judge, which is the ceiling on every benchmark number.
-        `output/tables/refutes_review.csv` is the first slice, already generated.
-  - [ ] **Curated test set** — `(claim, paper)` pairs judged INDEPENDENTLY of model
-        output. The only artifact that breaks the circularity of measuring agreement
-        with gpt-4o-mini. Usable for benchmark AND training, but not the same rows for
-        both; split on the same `(assessment, bm)` hash.
-  - [ ] **Threshold validation for the Jev screen** — judge pairs scored BELOW a
-        candidate threshold. `relevance_screen.threshold` stays `~` until this exists,
-        because a wrongly dropped pair is never reviewed and leaves no trace.
-  - [ ] Two reviewers on at least a subset, for inter-annotator agreement — without it
-        the other numbers are uninterpretable.
-- [ ] Use `llm_agrees = FALSE` rows as training data for NLI fine-tuning
-- [x] **DONE** — the hand-authored conceptual diagram's Phase 2 routing is current. `workflow_nli.mmd` no longer exists: it was re-cut into one file per targets project (`workflow_{main,factcheck,training,reporting}.mmd`), and `workflow_factcheck.mmd`'s Phase 2 node now states the real behaviour — routing by `nli_labels`/`nli_certainty` (REFUTES or SUPPORTS, certain only), every routed pair reviewed and tagged `direct_evidence_match` rather than filtered, verdicts demoted to NEI when the cited quote is not verbatim in the premise, and `nli_route=` per-row output partitioning.
-
-## Done
-
-- [x] NLI scoring pipeline (`nli_scores_by_claim` / `nli_scores_by_claim_evidence`) — flags SUPPORTS / REFUTES / NEI per citing work vs BM
-- [x] `truth` structured as JSON prompt with nested sub_messages and sources
-- [x] Use openrouter + ellmer as LLM backend
-- [x] Change local Fuseki server to per-assessment named graphs (one endpoint for all assessments)
-- [x] Users: GA2 Ch 1 authors, IPBES, other assessments
-- [x] one generation (CONF INTERPRET)
-- [x] Interactive per-BM NLI explorer widget in the report (`nli_bm_explorer_html`) — linked BM/confidence-threshold/label controls, stacked solid/hollow bars, drill-down table with clickable DOI links, and a CSV download button (up to 5,000 rows, tagged with Assessment + BM columns)
-- [x] Wire the report (`IPBES_Fact_Checker.qmd`) and its rendered artifacts (BM explorer, overlap tables, TD design docs) into `_targets.R` (`report_fact_checker`, `qmd_fact_checker`, `td_doc_html`) so `tar_make()` builds and renders everything, and copy heavy standalone HTML into `IPBES_Fact_Checker_files/` so the report distributes as just that one file + one directory
-- [x] Render the `TD_*.md` design documents as standalone styled HTML pages (`TD_<name>.qmd` wrappers + `td_doc_html` target), linked from the report's Methods section
-- [x] Combine each `TD_<name>.qmd` wrapper and its `TD_<name>.md` prose back into one self-contained `.qmd` file per doc; drop the `td_doc_md` target and the `{{< include >}}` indirection accordingly
-- [x] Implement Phase 2 LLM verification (`llm_verification_parquet`, `R/build_llm_verification_parquet.R`): routes NLI's `REFUTES`/`uncertain` pairs to `openai/gpt-4o-mini` via OpenRouter, architecture ported from the sibling `Categorisation_Literature` project's LLM epistemology classifier (resumable per-pair cache, verbatim-quote verification, retry + fail-loud on unparseable responses). Removed the superseded truth/citing-document LLM design it replaced (`R/build_prompts_truth_parquet.R`, `R/build_prompts_citing_parquet.R`, `R/build_alignement_scores_parquet.R`, `R/alignement_schema.R`, `R/build_alignement_parquet.R`, the `analysis:` config block) — see [TD_LLM_approach.qmd](TD_LLM_approach.qmd) for that record
+- [x] NLI scoring pipeline — SUPPORTS / REFUTES / NEI per citing work vs BM
+- [x] Two-phase NLI → LLM pipeline, Phase 2 implemented
+  (`llm_verification_parquet`), replacing the earlier truth/citing-document
+  design — see [TD_LLM_approach.qmd](input/reports/TD_LLM_approach.qmd)
+- [x] `score_one_claim()` dispatches the per-claim **delta**, not all-or-nothing.
+  The old check skipped a claim entirely once it had any prior output, so every
+  snowball re-run silently froze already-scored claims at first-run coverage.
+  Measured before the fix: GA1 `A.`/`A2` `bm_description-05` held 28,825 scored
+  works against 257,708 present.
+- [x] Four-project split, then three: `training` retired 2026-10-05, its
+  key-paper QA chain and gold standard moved into `factcheck`
+- [x] Interactive per-BM NLI explorer (`nli_bm_explorer_html`)
+- [x] Per-project workflow diagrams; `overview.mmd` rewritten 2026-10-05
+- [x] Pod lifecycle wrappers (`scripts/runpod/start_nli_pods.sh` /
+  `stop_nli_pods.sh`), with `-p/--purpose` and `expect_model` guards
+- [x] KM scoping and named `fact_checking` configs
+- [x] Jev recall probe — 18,577 pairs the NLI did *not* call REFUTES, screened
+  for contradictions. Answered the question it was set: the routed population is
+  depleted, not enriched.
+- [x] Reviewer-instrument pilot across 11 models + Jev + the zero-shot NLI
+  (`input/ai_goldstandard/`, `input/ai_goldstandard_refutes/`,
+  `input/ai_refutes_probe/`)
+- [x] Use OpenRouter + ellmer as the LLM backend
+- [x] Per-assessment named graphs in Fuseki (one endpoint for all assessments)
