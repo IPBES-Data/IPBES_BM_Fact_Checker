@@ -172,6 +172,11 @@ list(
     format = "file"
   ),
   tar_target(
+    jev_relevance_question_file,
+    "input/prompts/jev_relevance_question.json",
+    format = "file"
+  ),
+  tar_target(
     llm_verification_system_prompt_file,
     "input/prompts/llm_verification_system.md",
     format = "file"
@@ -474,6 +479,7 @@ list(
       ),
       keypaper = FALSE,
       model = relevance_config$model,
+      questions_file = jev_relevance_question_file,
       batch_size = relevance_config$batch_size
     ),
     pattern = map(assessment, nli_ready_evidence_parquet),
@@ -635,6 +641,7 @@ list(
       ),
       keypaper = TRUE,
       model = relevance_config$model,
+      questions_file = jev_relevance_question_file,
       batch_size = relevance_config$batch_size
     ),
     pattern = map(assessment, nli_ready_evidence_keypaper_parquet),

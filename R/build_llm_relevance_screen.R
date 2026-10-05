@@ -40,44 +40,42 @@ RELEVANCE_ENDPOINT <- "https://openrouter.ai/api/alpha/decisions"
 
 # Free-standing so a future screen can move to another model without touching
 # callers; the model id is recorded per row either way.
-# THE PAPER GOES IN THE QUESTION, NOT IN THE SHARED STATE.
+# The question lives in input/prompts/jev_relevance_question.json, not here.
 #
-# This was wrong until 2026-10-05 and the symptom was invisible: the papers sat
-# in `state` as a `papers: [{id, text}]` array and each question was keyed by
-# work_id, on the assumption that the key anchored the question to its paper.
-# It does not -- question ids are for code and are never sent to the model. So
-# the model saw one blob of ~80 abstracts and a question saying "does this paper
-# address the claim", with no way to tell which. It answered about the chunk.
+# Same convention as llm_verification_system.md and jev_claim_questions.json: a
+# prompt is DATA, tracked as a format = "file" target, so editing it invalidates
+# what it produced. The file carries its own rationale -- why a Noul rather than
+# Phase 1's Choice, why the paper goes inside the question rather than in the
+# shared state, and why the screen exists at all.
 #
-# Measured on the output this produced: 7,889 works under a single claim share
-# 23 distinct values (ratio 0.003), and a controlled triple -- one paper plainly
-# supporting a claim, one plainly refuting it, one about GPU kernels -- came back
-# 0.750 / 0.750 / 0.750. The file's own earlier note, "answers correlate 0.904
-# with the per-pair run", is true ACROSS claims and says nothing about ranking
-# WITHIN one, which is the only thing a screen is for.
-#
-# The documented pattern puts the item in each question's `instructions` and
-# keeps only shared context in `state`. Verified: Spearman against per-paper
-# scoring is 0.91 at 10 papers/request, 0.85 at 20, 0.88 at 40, against a 0.87
-# run-to-run baseline -- batch size becomes a throughput knob rather than a
-# quality one. Same shape R/score_one_claim_jev.R uses.
-RELEVANCE_PROMPT_VERSION <- 2L
+# `version` in that file is what makes the invalidation real: rows are stamped
+# with it and anything below the current value is discarded before the resume
+# diff. Resumability is keyed on the pair, so without that an edit would leave
+# every existing row looking done.
+jev_relevance_spec <- function(path = "input/prompts/jev_relevance_question.json") {
+  if (!file.exists(path)) stop(sprintf("relevance question file not found: %s", path), call. = FALSE)
+  spec <- jsonlite::read_json(path, simplifyVector = FALSE)
+  q <- spec$question
+  if (!identical(q$type, "noul")) {
+    stop(sprintf("%s: question type must be 'noul', got '%s'", path, q$type %||% "NULL"), call. = FALSE)
+  }
+  if (!nzchar(q$instructions_question %||% "")) {
+    stop(sprintf("%s: instructions_question is empty", path), call. = FALSE)
+  }
+  missing <- setdiff(c("true", "false"), names(q$criteria))
+  if (length(missing)) stop(sprintf("%s: criteria missing %s", path, paste(missing, collapse = ", ")), call. = FALSE)
+  v <- suppressWarnings(as.integer(spec$version))
+  if (is.na(v)) stop(sprintf("%s: version must be an integer", path), call. = FALSE)
+  spec$version <- v
+  spec
+}
 
-relevance_question <- function(premise) {
-  list(
-    type = "noul",
-    instructions = list(
-      paper = premise,
-      question = paste(
-        "Does this paper address the specific subject of the claim closely enough",
-        "that its findings bear on whether the claim is true?"
-      )
-    ),
-    criteria = list(
-      "true"  = "the paper studies the same phenomenon, taxa, driver or region the claim is about, and its findings speak to the claim",
-      "false" = "the paper is about a related but different topic, so its findings cannot settle the claim either way"
-    )
-  )
+# The paper goes INSIDE the question; only shared context stays in `state`.
+relevance_question <- function(premise, spec) {
+  q <- spec$question
+  list(type = "noul",
+       instructions = list(paper = premise, question = q$instructions_question),
+       criteria = q$criteria)
 }
 
 # Split a claim's works into requests by TOKEN BUDGET, not by a fixed count.
@@ -127,7 +125,7 @@ chunk_by_tokens <- function(works, budget = RELEVANCE_STATE_BUDGET) {
 # at the ~0.5-1 s each measured that is 3-5 HOURS sequentially for something
 # that should take minutes. Batching alone does not fix it; batching reduces
 # the NUMBER of requests, concurrency reduces the time spent blocked on each.
-score_one_claim_relevance <- function(claim, works, model, api_key,
+score_one_claim_relevance <- function(claim, works, model, api_key, spec,
                                       batch_size = NULL, max_active = 12L) {
   # batch_size is accepted and ignored, so existing callers keep working; the
   # token budget supersedes it. Chunking by count cannot respect a token limit.
@@ -139,7 +137,7 @@ score_one_claim_relevance <- function(claim, works, model, api_key,
       # Only SHARED context in state. The per-paper text lives in each
       # question -- see relevance_question() above for why.
       state = list(claim = claim),
-      questions = setNames(lapply(chunk$premise, relevance_question), chunk$work_id)
+      questions = setNames(lapply(chunk$premise, relevance_question, spec = spec), chunk$work_id)
     )
     httr2::request(RELEVANCE_ENDPOINT) |>
       httr2::req_auth_bearer_token(api_key) |>
@@ -165,7 +163,7 @@ score_one_claim_relevance <- function(claim, works, model, api_key,
       # re-paid for, and NA is distinguishable from a real low score.
       return(dplyr::tibble(
         work_id = chunk$work_id, addresses = NA_real_,
-        relevance_model = NA_character_, relevance_prompt_version = RELEVANCE_PROMPT_VERSION,
+        relevance_model = NA_character_, relevance_prompt_version = spec$version,
         relevance_cost = NA_real_
       ))
     }
@@ -176,7 +174,7 @@ score_one_claim_relevance <- function(claim, works, model, api_key,
         if (is.null(v)) NA_real_ else as.numeric(v)
       }, numeric(1)),
       relevance_model = parsed$model %||% model,
-      relevance_prompt_version = RELEVANCE_PROMPT_VERSION,
+      relevance_prompt_version = spec$version,
       # Per-pair share of the batch's cost, so summing the column gives the
       # true total whatever batch size was used.
       relevance_cost = (parsed$usage$cost %||% NA_real_) / nrow(chunk)
@@ -224,6 +222,7 @@ build_llm_relevance_screen <- function(
   # Those 399 are simply scored twice.
   keypaper,
   model = "typesafe/jev-1.13",
+  questions_file = "input/prompts/jev_relevance_question.json",
   output_root = "output/llm_relevance",
   api_key = Sys.getenv("API_openrouter"),
   batch_size = 20L,
@@ -285,6 +284,8 @@ build_llm_relevance_screen <- function(
   # "bm_description-01" repeat across every BM, so claim_id + work_id alone would
   # treat one BM's score as another's. Same bug class the Phase 2 cache key
   # already documents.
+  spec <- jev_relevance_spec(questions_file)
+
   existing <- NULL
   if (dir.exists(output_path) &&
       length(list.files(output_path, pattern = "[.]parquet$", recursive = TRUE))) {
@@ -303,11 +304,11 @@ build_llm_relevance_screen <- function(
   # column name, which is worse than having none.
   if (!is.null(existing) && nrow(existing)) {
     v <- if ("relevance_prompt_version" %in% names(existing)) existing$relevance_prompt_version else 1L
-    stale <- is.na(v) | v < RELEVANCE_PROMPT_VERSION
+    stale <- is.na(v) | v < spec$version
     if (any(stale)) {
       message(sprintf(
         "[relevance %s] discarding %d of %d rows scored under prompt version < %d -- they are per-chunk, not per-paper",
-        assessment_id, sum(stale), nrow(existing), RELEVANCE_PROMPT_VERSION
+        assessment_id, sum(stale), nrow(existing), spec$version
       ))
       existing <- existing[!stale, , drop = FALSE]
     }
@@ -329,7 +330,7 @@ build_llm_relevance_screen <- function(
   scored <- vector("list", length(claims))
   for (i in seq_along(claims)) {
     g <- claims[[i]]
-    r <- score_one_claim_relevance(g$claim[1], g, model, api_key, batch_size, max_active)
+    r <- score_one_claim_relevance(g$claim[1], g, model, api_key, spec, batch_size, max_active)
     scored[[i]] <- g |>
       dplyr::select(km, bm, claim_id, work_id) |>
       dplyr::left_join(r, by = "work_id")
