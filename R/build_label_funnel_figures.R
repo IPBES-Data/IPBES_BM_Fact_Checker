@@ -1,14 +1,14 @@
 # Figures for one assessment's label funnel (overall 3-level bar, per-BM
 # breakdown faceted by KM, and a normalized per-BM variant). Reads the rds
 # produced by build_label_funnel_data() rather than re-collecting the raw
-# parquet, same convention as build_nli_overview_figures().
+# parquet, same convention as build_claim_scores_overview_figures().
 build_label_funnel_figures <- function(label_funnel_data_path, output_root = "output/figures") {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(label_funnel_data_path)
   assessment_id <- x$assessment
   label_stem <- tolower(x$label)
   gran_suffix <- granularity_suffix(x$granularity %||% "naive_bm")
-  model_suffix <- nli_model_suffix(x$nli_active %||% "deberta_zeroshot")
+  model_suffix <- nli_model_suffix(x$scorer_name %||% "deberta_zeroshot")
   stem <- function(name) {
     file.path(output_root, sprintf("fig_%s_funnel_%s_%s%s%s.png", label_stem, name, assessment_id, model_suffix, gran_suffix))
   }

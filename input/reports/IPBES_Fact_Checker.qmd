@@ -381,7 +381,7 @@ nli_bm_explorer_paths <- copy_into_report_files(targets::tar_read(
 
 for (data_path in nli_overview_data_paths) {
   x <- readRDS(data_path)
-  nli_active_this <- x$nli_active %||% "deberta_zeroshot"
+  nli_active_this <- x$scorer_name %||% "deberta_zeroshot"
   gran_this <- x$granularity %||% "naive_bm"
   cat(sprintf("\n### %s (%s, %s)\n\n", x$assessment, nli_active_this, gran_this))
 
@@ -391,7 +391,7 @@ for (data_path in nli_overview_data_paths) {
   }
 
   # Exact suffix match (not a loose substring grepl) -- filenames now carry
-  # both a model suffix ("" for deberta_zeroshot, "_<nli_active>" otherwise)
+  # both a model suffix ("" for deberta_zeroshot, "_<scorer_name>" otherwise)
   # and a granularity suffix (always "_<granularity>", explicit for every
   # value including naive_bm), so a bare "_<assessment>\\.png$" anchor
   # would silently only ever match one branch and miss the others.
@@ -688,7 +688,7 @@ for (p in label_funnel_html_paths) {
 
 # QA Reports
 
-Per-assessment QA check for how `nli_ready_evidence_parquet` actually
+Per-assessment QA check for how `claim_work_pairs` actually
 split each Background Message into claims under the currently active
 `granularity` setting — not a scoring result. See the report's own
 Methodology section for details.

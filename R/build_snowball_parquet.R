@@ -59,7 +59,7 @@ build_snowball_parquet <- function(
   # Per-(km, bm) attribution is now derived downstream by joining the
   # unified edges/nodes tables against works_parquet's own (km, bm, id)
   # mapping -- see R/build_works_citing_parquet.R and
-  # R/build_nli_ready_evidence_keypaper_parquet.R.
+  # R/build_claim_work_pairs_keypaper.R.
   ids <- unique(works$w_id)
 
   if (length(ids)) {

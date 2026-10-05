@@ -7,7 +7,7 @@
 # -- if it doesn't, that's a signal something's off (segmentation, premise
 # cleaning, or the NLI model itself), not a normal finding to report on.
 #
-# Structurally this is build_nli_ready_evidence_parquet()'s twin -- same
+# Structurally this is build_claim_work_pairs()'s twin -- same
 # claims-building logic (calls that file's segment_bm_by_evidence()/
 # segment_bm_whole()/segment_bm_atomic()/complete_bm_fragments() directly;
 # R/*.R all share one sourced environment, so this is a normal function
@@ -17,8 +17,8 @@
 # works_citing_parquet) and so does the output_root, keeping this entirely
 # separate from the already-scored citing-works chain. Deliberately a
 # parallel file rather than a generalized/parameterized
-# build_nli_ready_evidence_parquet() -- editing that function's body would
-# mark the existing (real, already-scored) nli_ready_evidence_parquet
+# build_claim_work_pairs() -- editing that function's body would
+# mark the existing (real, already-scored) claim_work_pairs
 # target outdated for no functional reason; see build_llm_candidate_scope_parquet.R's
 # own comment for the same reasoning applied elsewhere in this project.
 #
@@ -31,13 +31,13 @@
 # `works_path` (works_parquet) supplies the (km, bm, id) seed mapping used
 # to split it back apart per (km, bm) below, the same join
 # build_works_citing_parquet() uses for its own edges/nodes attribution.
-build_nli_ready_evidence_keypaper_parquet <- function(
+build_claim_work_pairs_keypaper <- function(
   assessment,
   key_messages_parquet,
   works_path,
   snowball_path,
   workers = 1L,
-  output_root = "output/nli_ready_evidence_keypaper",
+  output_root = "output/claim_work_pairs_keypaper",
   granularity = "naive_bm",
   completion_model = NULL
 ) {
@@ -45,7 +45,7 @@ build_nli_ready_evidence_keypaper_parquet <- function(
   output_path <- file.path(output_root, paste0("assessment=", assessment_id))
 
   # NOTE: no "output already exists -- skip" guard here either, and for the
-  # same reason as build_nli_ready_evidence_parquet() -- see the longer note
+  # same reason as build_claim_work_pairs() -- see the longer note
   # at that function's top. In short: it silently swallowed real upstream
   # changes, and the LLM cost it protected is already covered by
   # complete_bm_fragments()' per-fragment cache.
@@ -63,7 +63,7 @@ build_nli_ready_evidence_keypaper_parquet <- function(
     }
   }
 
-  # ── 1. BM claims -- identical logic to build_nli_ready_evidence_parquet(),
+  # ── 1. BM claims -- identical logic to build_claim_work_pairs(),
   # calling its segmenters directly (see file header for why this block is
   # duplicated rather than the outer function being generalized). ─────────
   km_root <- unique(dirname(key_messages_parquet))[[1L]]

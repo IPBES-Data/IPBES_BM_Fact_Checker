@@ -3,23 +3,23 @@
 # silently dropped — that would leave its share of claims never attempted).
 # Stops (not warns) if hosts report different models: a pool scoring with
 # genuinely different models per host would silently corrupt result
-# provenance. Returns the common model name, used to stamp nli_model on
+# provenance. Returns the common model name, used to stamp scorer_model on
 # every scored row.
-check_nli_pool_health <- function(nli_config, nli_active) {
-  cfg <- if (is.null(nli_config)) list() else nli_config
+check_nli_pool_health <- function(scorer_config, scorer_name) {
+  cfg <- if (is.null(scorer_config)) list() else scorer_config
 
   # The jev backend has no pool: it scores through an HTTP API, not a fixed set
   # of hosts serving one checkpoint. There is nothing to health-check and
   # nothing to verify is homogeneous, so this returns the model name -- which
-  # is all the caller actually uses it for, stamping nli_model onto scored rows.
+  # is all the caller actually uses it for, stamping scorer_model onto scored rows.
   # It is NOT skipped silently: a missing API key is the equivalent failure and
   # is caught here, early and once, rather than per claim halfway into a run.
   if (identical(cfg$backend, "jev")) {
     model <- cfg$model %||% "typesafe/jev-1.13"
     if (!nzchar(Sys.getenv("API_openrouter"))) {
-      stop(sprintf("[NLI pool=%s] backend is jev but API_openrouter is not set", nli_active), call. = FALSE)
+      stop(sprintf("[NLI pool=%s] backend is jev but API_openrouter is not set", scorer_name), call. = FALSE)
     }
-    message(sprintf("[NLI pool=%s] backend=jev, model=%s -- no pod pool to check", nli_active, model))
+    message(sprintf("[NLI pool=%s] backend=jev, model=%s -- no pod pool to check", scorer_name, model))
     return(model)
   }
 
@@ -52,7 +52,7 @@ check_nli_pool_health <- function(nli_config, nli_active) {
   if (length(failed)) {
     stop(sprintf(
       "[NLI pool=%s] %d/%d host(s) failed health check:\n%s",
-      nli_active, length(failed), length(hosts),
+      scorer_name, length(failed), length(hosts),
       paste(sprintf("  - %s: %s",
                      vapply(failed, `[[`, character(1), "host"),
                      vapply(failed, `[[`, character(1), "error")),
@@ -64,7 +64,7 @@ check_nli_pool_health <- function(nli_config, nli_active) {
     h <- health_results[[k]]$health
     message(sprintf(
       "[NLI pool=%s] host %d/%d (%s): model=%s dtype=%s device=%s max_length=%s",
-      nli_active, k, length(hosts), hosts[[k]], h[["model"]] %||% "?",
+      scorer_name, k, length(hosts), hosts[[k]], h[["model"]] %||% "?",
       h[["dtype"]] %||% "?", h[["device"]] %||% "?",
       h[["max_length"]] %||% "(server default)"
     ))
@@ -76,7 +76,7 @@ check_nli_pool_health <- function(nli_config, nli_active) {
   if (length(unique(stats::na.omit(models_seen))) > 1L) {
     stop(sprintf(
       "[NLI pool=%s] hosts report different models — results would not be homogeneous: %s",
-      nli_active,
+      scorer_name,
       paste(sprintf("%s=%s", hosts, models_seen), collapse = ", ")
     ))
   }
@@ -88,7 +88,7 @@ check_nli_pool_health <- function(nli_config, nli_active) {
         !is.na(model_actual) && !identical(model_label, model_actual)) {
     warning(sprintf(
       "[NLI pool=%s] config model label '%s' != server model '%s' — recording server model",
-      nli_active, model_label, model_actual
+      scorer_name, model_label, model_actual
     ))
   }
 
@@ -96,12 +96,12 @@ check_nli_pool_health <- function(nli_config, nli_active) {
   # label and only warns. A fine-tuned model is served from a baked path
   # (/opt/models/...), so pointing the pool at the wrong image produces a pool
   # that answers every request perfectly well with a different model -- no error
-  # anywhere, just scores that silently are not what nli_config= says they are.
+  # anywhere, just scores that silently are not what scorer_config= says they are.
   expect <- cfg[["expect_model"]]
   if (!is.null(expect) && nzchar(expect) && !identical(as.character(expect), model_actual)) {
     stop(sprintf(
       "[NLI pool=%s] expect_model '%s' != server model '%s' -- refusing to score.",
-      nli_active, expect, model_actual
+      scorer_name, expect, model_actual
     ), call. = FALSE)
   }
 
@@ -123,7 +123,7 @@ check_nli_pool_health <- function(nli_config, nli_active) {
         !identical(as.integer(want_len), as.integer(served_len))) {
     warning(sprintf(
       "[NLI pool=%s] config max_length %s != server max_length %s -- the pods may have been launched with the wrong NLI_MAX_LENGTH.",
-      nli_active, want_len, served_len
+      scorer_name, want_len, served_len
     ), call. = FALSE)
   }
 

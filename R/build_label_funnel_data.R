@@ -13,7 +13,7 @@
 # sufficient_evidence == TRUE by construction -- a fourth level would always
 # be identical to the third, never narrowing anything further. Consumed by
 # build_label_funnel_figures()/build_label_funnel_tables() and by
-# IPBES_Label_Funnel_Report.qmd, mirroring build_nli_overview_data()'s
+# IPBES_Label_Funnel_Report.qmd, mirroring build_claim_scores_overview_data()'s
 # read-once-cache-everything shape so downstream targets never re-collect()
 # the raw parquet.
 build_label_funnel_data <- function(
@@ -31,7 +31,7 @@ build_label_funnel_data <- function(
   llm_verification_path,
   output_root = "output/tables",
   granularity = "naive_bm",
-  nli_active = "deberta_zeroshot"
+  scorer_name = "deberta_zeroshot"
 ) {
   assessment_id <- assessment$id
   label_stem <- tolower(target_label)
@@ -40,7 +40,7 @@ build_label_funnel_data <- function(
     output_root,
     sprintf(
       "%s_funnel_data_%s%s%s.rds", label_stem, assessment_id,
-      nli_model_suffix(nli_active), granularity_suffix(granularity)
+      nli_model_suffix(scorer_name), granularity_suffix(granularity)
     )
   )
 
@@ -48,7 +48,7 @@ build_label_funnel_data <- function(
     saveRDS(
       list(
         assessment = assessment_id, label = target_label, granularity = granularity,
-        nli_active = nli_active, empty = TRUE
+        scorer_name = scorer_name, empty = TRUE
       ),
       file = fn
     )
@@ -59,7 +59,7 @@ build_label_funnel_data <- function(
   # snowball has run; levels 2-3 require NLI scoring and Phase 2 LLM
   # verification, which may not have reached this assessment yet -- treat
   # either missing directory as "nothing to show" rather than erroring, same
-  # convention as build_nli_overview_data().
+  # convention as build_claim_scores_overview_data().
   if (!dir.exists(works_citing_path) || !dir.exists(works_citing_meta_path) ||
     !dir.exists(nli_scores_evidence_path) ||
     !dir.exists(llm_verification_path)) {
@@ -87,7 +87,7 @@ build_label_funnel_data <- function(
     dplyr::select(km, bm, work_id, claim_id, claim, nli_confidence, llm_agrees, quote, explanation) |>
     dplyr::collect()
 
-  # DOI lookup, same pattern as build_nli_overview_data.R: works_citing's id
+  # DOI lookup, same pattern as build_claim_scores_overview_data.R: works_citing's id
   # is the same "https://openalex.org/W..." string as work_id elsewhere; a
   # work can appear once per km/bm partition it's cited from, so collapse to
   # one row per work_id before joining to avoid fan-out.
@@ -143,7 +143,7 @@ build_label_funnel_data <- function(
       assessment = assessment_id,
       label = target_label,
       granularity = granularity,
-      nli_active = nli_active,
+      scorer_name = scorer_name,
       empty = FALSE,
       funnel_overall = funnel_overall,
       funnel_by_bm = funnel_by_bm,

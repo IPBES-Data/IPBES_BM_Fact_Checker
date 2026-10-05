@@ -1,7 +1,7 @@
 # QA data for Phase 1 (NLI scoring) — one assessment x granularity
-# combination, resolved to whichever nli_config actually produced that
+# combination, resolved to whichever scorer_config actually produced that
 # granularity's scores (see nli_config_for_granularity(), R/branch_helpers.R
-# -- nli_config passed in here is already resolved that way by the caller,
+# -- scorer_config passed in here is already resolved that way by the caller,
 # not assumed to be nli.active). Sibling to build_bm_split_highlighted.R
 # (which QAs the segmentation step); this QAs the scoring step itself.
 #
@@ -18,17 +18,17 @@
 # This is a QA/spot-check view, not a full corpus browser (that's what
 # nli_bm_explorer_html already is).
 #
-build_nli_scores_qa_data <- function(
+build_claim_scores_qa_data <- function(
   assessment,
   nli_scores_path,
   works_citing_path,
-  nli_config,
+  scorer_config,
   granularity,
   output_root = "output/tables",
   per_claim_cap = 50L,
   keypaper_scores_path = NULL,
-  nli_scores_keypaper_evidence = NULL, # unused -- establishes the DAG dependency on the key-paper scoring chain, same convention as build_llm_verification_parquet()'s own nli_scores_by_claim_evidence argument
-  uncertain_threshold = 0.60 # the RESOLVED granularity's own config value (see nli_config just above), passed in by the caller -- feeds the ternary figure's certain/uncertain boundary lines
+  claim_scores_keypaper = NULL, # unused -- establishes the DAG dependency on the key-paper scoring chain, same convention as build_llm_verification_parquet()'s own claim_scores_by_claim argument
+  uncertain_threshold = 0.60 # the RESOLVED granularity's own config value (see scorer_config just above), passed in by the caller -- feeds the ternary figure's certain/uncertain boundary lines
 ) {
   assessment_id <- assessment$id
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
@@ -37,16 +37,16 @@ build_nli_scores_qa_data <- function(
     output_root,
     sprintf(
       "nli_scores_qa_%s%s%s.rds",
-      assessment_id, nli_model_suffix(nli_config), granularity_suffix(granularity)
+      assessment_id, nli_model_suffix(scorer_config), granularity_suffix(granularity)
     )
   )
 
-  # Same reasoning as build_nli_overview_data.R/build_label_funnel_data.R:
+  # Same reasoning as build_claim_scores_overview_data.R/build_label_funnel_data.R:
   # not every (assessment, granularity) combination has been scored yet --
   # treat a missing directory as an empty result rather than erroring.
   if (!dir.exists(nli_scores_path)) {
     saveRDS(
-      list(assessment = assessment_id, granularity = granularity, nli_config = nli_config, empty = TRUE),
+      list(assessment = assessment_id, granularity = granularity, scorer_config = scorer_config, empty = TRUE),
       file = fn
     )
     return(fn)
@@ -61,7 +61,7 @@ build_nli_scores_qa_data <- function(
 
   if (!nrow(d)) {
     saveRDS(
-      list(assessment = assessment_id, granularity = granularity, nli_config = nli_config, empty = TRUE),
+      list(assessment = assessment_id, granularity = granularity, scorer_config = scorer_config, empty = TRUE),
       file = fn
     )
     return(fn)
@@ -70,7 +70,7 @@ build_nli_scores_qa_data <- function(
   # Confusion matrix: label x confidence-decile, on the FULL (uncapped)
   # data -- this must reflect the true distribution, not whatever survives
   # the per-claim cap below. cut() isn't Arrow-lazy-safe (same failure mode
-  # as sprintf() inside a lazy mutate() -- see R/find_orphaned_nli_scores.R),
+  # as sprintf() inside a lazy mutate() -- see R/find_orphaned_claim_scores.R),
   # so this runs on the already-collect()ed tibble.
   label_levels <- c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
   decile_levels <- sprintf("%.1f-%.1f", seq(0, 0.9, 0.1), seq(0.1, 1, 0.1))
@@ -91,7 +91,7 @@ build_nli_scores_qa_data <- function(
   # never crowds out every other claim's rows within the same BM. Keep the
   # highest-confidence rows first; carry the group's TRUE size as
   # n_total_claim so truncation is never silent (same ethos as
-  # build_nli_bm_explorer.R's table_row_cap/download_row_cap).
+  # build_claim_scores_bm_explorer.R's table_row_cap/download_row_cap).
   capped <- d |>
     dplyr::group_by(km, bm, claim_id) |>
     dplyr::mutate(n_total_claim = dplyr::n()) |>
@@ -103,7 +103,7 @@ build_nli_scores_qa_data <- function(
   # works_citing's own id/doi/title/abstract can repeat across the
   # (km, bm) partitions a work is cited from, so collapse to one row per id
   # first (picking any non-NA field), same defensive pattern
-  # build_nli_overview_data.R's doi_lookup already uses.
+  # build_claim_scores_overview_data.R's doi_lookup already uses.
   work_lookup <- arrow::open_dataset(works_citing_path) |>
     dplyr::select(work_id = id, doi, title, abstract) |>
     dplyr::filter(work_id %in% unique(capped$work_id)) |>
@@ -124,17 +124,17 @@ build_nli_scores_qa_data <- function(
   # QA_NLI_Scores_Report.qmd in its own fresh session that never sources
   # R/*.R (same reasoning IPBES_Label_Funnel_Report.qmd's setup chunk gives
   # for inlining gran_suffix()/nli_model_suffix() rather than sourcing
-  # R/branch_helpers.R there), so nli_scores_qa_datatable() must not be
+  # R/branch_helpers.R there), so claim_scores_qa_datatable() must not be
   # called from the qmd itself. A DT::datatable() object is a plain,
   # self-contained htmlwidget (no captured R closures) -- saveRDS()/
   # readRDS() then auto-printing it in any session with the DT package
   # installed renders identically, so caching the built widget here avoids
   # both the source() problem and duplicating this function's logic a
   # second time inline in the qmd.
-  widget <- nli_scores_qa_datatable(capped)
+  widget <- claim_scores_qa_datatable(capped)
 
   # % of rows actually won by each label -- for the ternary figure's corner
-  # labels (R/build_nli_scores_qa_figures.R). Computed here (label is already
+  # labels (R/build_claim_scores_qa_figures.R). Computed here (label is already
   # in `d`) rather than re-derived from probs there, so it can never drift
   # from the label column score_one_claim() itself assigned. `label_n`
   # (raw counts, same names) is kept alongside for the key-paper
@@ -153,7 +153,7 @@ build_nli_scores_qa_data <- function(
 
   # Key papers (the actual seed/reference works IPBES cites as evidence for
   # a BM, scored against that same BM's claim -- see
-  # R/build_nli_ready_evidence_keypaper_parquet.R) overlaid on the ternary
+  # R/build_claim_work_pairs_keypaper.R) overlaid on the ternary
   # figure as a QA sanity check: since a key paper IS the evidence a BM was
   # written from, it should overwhelmingly land in the SUPPORTS region.
   # Optional -- keypaper_scores_path won't exist until that (separate,
@@ -251,7 +251,7 @@ build_nli_scores_qa_data <- function(
     list(
       assessment     = assessment_id,
       granularity    = granularity,
-      nli_config     = nli_config,
+      scorer_config     = scorer_config,
       empty          = FALSE,
       n_total        = nrow(d),
       n_shown        = nrow(capped),
@@ -276,7 +276,7 @@ build_nli_scores_qa_data <- function(
   fn
 }
 
-# DT table for the claims x scores view. Called from build_nli_scores_qa_data()
+# DT table for the claims x scores view. Called from build_claim_scores_qa_data()
 # above (in the targets session, where this file is already sourced) -- the
 # resulting widget object is what gets cached, not called again later.
 #
@@ -285,7 +285,7 @@ build_nli_scores_qa_data <- function(
 # forward. Same column-curation reasoning too: filter = "top" puts a filter
 # widget on every displayed column, so only columns worth filtering/reading
 # per row are included.
-nli_scores_qa_datatable <- function(df) {
+claim_scores_qa_datatable <- function(df) {
   work_link <- function(work_id, doi) {
     id_short <- sub("^https://openalex\\.org/", "", work_id)
     if (!is.na(doi) && nzchar(doi)) {

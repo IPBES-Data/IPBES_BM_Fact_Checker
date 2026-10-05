@@ -8,8 +8,8 @@ assessment_ids <- function(config) {
 # colors, not just accessibility (the previous per-file muted-earth-tone
 # palette was hard to tell apart even for non-colorblind viewers). A single
 # shared definition, rather than one copy per figure file: before this,
-# build_nli_bm_explorer.R's own copy had already drifted to different hex
-# values than build_nli_overview_figures.R's, and
+# build_claim_scores_bm_explorer.R's own copy had already drifted to different hex
+# values than build_claim_scores_overview_figures.R's, and
 # build_label_funnel_figures.R hardcoded the REFUTES color as its funnel
 # bar's fill regardless of which label that funnel was actually built for
 # (so a SUPPORTS funnel report rendered its bar in the REFUTES color) --
@@ -55,13 +55,13 @@ granularity_suffix <- function(granularity) {
 
 # Same convention, for which NLI model (nli.active) produced the output:
 # "" for "deberta_zeroshot" (the original model every existing filename/link
-# was produced under), "_<nli_active>" for anything else (e.g.
+# was produced under), "_<scorer_name>" for anything else (e.g.
 # "_bge_m3_zeroshot"). Without this, switching nli.active and re-running
 # would silently overwrite another model's same-named report cache/HTML --
 # these reporting-layer filenames were only ever suffixed by granularity,
 # not by which model scored the data.
-nli_model_suffix <- function(nli_active) {
-  if (identical(nli_active, "deberta_zeroshot")) "" else paste0("_", nli_active)
+nli_model_suffix <- function(scorer_name) {
+  if (identical(scorer_name, "deberta_zeroshot")) "" else paste0("_", scorer_name)
 }
 
 # Resolves, for each value in `granularities`, the nli.configs.<name> entry
@@ -72,10 +72,10 @@ nli_model_suffix <- function(nli_active) {
 # their own dedicated config (bge_m3_zeroshot_naive_bm/_complete_bm/
 # _atomic_bm); without this, switching `active` makes the reporting layer
 # (nli_overview_data, the REFUTES/SUPPORTS funnel reports) look for a
-# not-currently-active granularity's data under the wrong nli_config=
+# not-currently-active granularity's data under the wrong scorer_config=
 # subdirectory and silently report it as unscored, even when real scored
 # data for that granularity sits on disk under its own config's name.
-# Falls back to `fallback` (nli_active) for any granularity with no config
+# Falls back to `fallback` (scorer_name) for any granularity with no config
 # declaring it, so an unmapped/legacy setup degrades to the old
 # single-config behaviour instead of erroring.
 nli_config_for_granularity <- function(nli_configs, granularities, fallback) {
@@ -91,7 +91,7 @@ nli_config_for_granularity <- function(nli_configs, granularities, fallback) {
     # each granularity had exactly one config. Three configs declare atomic_bm
     # (the zero-shot one that produced every existing score, the fine-tune, and
     # the jev backend), so a reordering of the yaml would silently repoint every
-    # atomic_bm report at a different nli_config= directory and make scored data
+    # atomic_bm report at a different scorer_config= directory and make scored data
     # look unscored -- the precise failure this helper exists to prevent.
     #
     # So it warns when a granularity is ambiguous, naming what it picked and
@@ -237,7 +237,7 @@ purpose_config <- function(cfg, purpose) {
 
   # Key Message scope. NULL (the key omitted) means every KM -- so an existing
   # config is unscoped and unchanged. Values cannot be validated here: KMs come
-  # from key_messages_parquet, a target, not from config. build_nli_claim_units()
+  # from key_messages_parquet, a target, not from config. build_claim_units()
   # does that, where the data is in hand.
   km <- p[["km"]]
   km <- if (is.null(km) || !length(km)) NULL else as.character(unlist(km, use.names = FALSE))

@@ -19,7 +19,7 @@
 # CREDENTIALS: API_openrouter only. Nothing here fetches from OpenAlex, so the
 # collection project's key and its rate-limit preflight are both absent.
 #
-# THE ONE-TIME MIGRATION COST: a fresh store makes nli_ready_evidence_parquet
+# THE ONE-TIME MIGRATION COST: a fresh store makes claim_work_pairs
 # outdated by definition, and 0bb6bb0 removed its early return, so the first
 # run rebuilds the 163 GB atomic_bm cross-join. Hours of local compute, no
 # money. The output already on disk is what every current score was computed
@@ -124,20 +124,20 @@ list(
   # Selections come from config.yaml's `fact_checking:` purpose block, not a
   # global `active:` -- see purpose_config() in R/branch_helpers.R for why.
   tar_target(purpose, purpose_config(yaml::read_yaml(config_file), "fact_checking")),
-  tar_target(nli_active, purpose$nli),
+  tar_target(scorer_name, purpose$nli),
   # NULL = every KM, which is the pre-existing behaviour. Validated against the
-  # assessment's real key messages inside build_nli_claim_units(), not here:
+  # assessment's real key messages inside build_claim_units(), not here:
   # KMs live in key_messages_parquet, so config cannot check them.
   tar_target(km_scope, purpose$km),
   tar_target(workers, yaml::read_yaml(config_file)[["workers"]]),
-  tar_target(nli_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]]),
+  tar_target(scorer_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[scorer_name]]),
   tar_target(
     granularity,
-    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["granularity"]] %||% "naive_bm"
+    yaml::read_yaml(config_file)[["nli"]][["configs"]][[scorer_name]][["granularity"]] %||% "naive_bm"
   ),
   tar_target(
     max_length,
-    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["max_length"]]
+    yaml::read_yaml(config_file)[["nli"]][["configs"]][[scorer_name]][["max_length"]]
   ),
   tar_target(claim_completion_model, purpose$claim_completion_model),
   # Scoped to fact_checking.assessments -- this is the expensive arm, so it is
@@ -235,13 +235,13 @@ list(
   # existing data was migrated under granularity=naive_bm/ rather than
   # recomputed) and complete_bm never collide. See NEXT_STEPS.md.
   tar_target(
-    nli_ready_evidence_parquet,
-    build_nli_ready_evidence_parquet(
+    claim_work_pairs,
+    build_claim_work_pairs(
       assessment,
       key_messages_parquet,
       works_citing_parquet,
       workers,
-      file.path("output/nli_ready_evidence", paste0("granularity=", granularity)),
+      file.path("output/claim_work_pairs", paste0("granularity=", granularity)),
       granularity,
       claim_completion_model
     ),
@@ -286,26 +286,26 @@ list(
   # There is no pool to check with the jev backend, and no equivalent for an HTTP
   # API: OpenRouter is a shared endpoint, there is nothing to be half-up. So the
   # health check is no longer a pipeline stage, and what remains is the one thing
-  # scoring needs: a name for the nli_model column.
+  # scoring needs: a name for the scorer_model column.
   #
   # check_nli_pool_health() is KEPT in R/ and is still worth running by hand
   # before a RunPod-backed run -- it catches an unreachable host, a pool serving
   # mixed models, and an expect_model mismatch, none of which this target does:
   #
-  #   check_nli_pool_health(tar_read(nli_config), tar_read(nli_active))
+  #   check_nli_pool_health(tar_read(scorer_config), tar_read(scorer_name))
   #
   # It is not wired in because the backend that needs it is on its way out, and a
   # target that silently does nothing for the active backend is worse than an
   # explicit call.
   tar_target(
-    nli_model,
+    scorer_model,
     {
-      m <- nli_config$model
+      m <- scorer_config$model
       if (is.null(m) || !nzchar(m)) {
-        stop(sprintf("nli.configs.%s has no model:", nli_active), call. = FALSE)
+        stop(sprintf("nli.configs.%s has no model:", scorer_name), call. = FALSE)
       }
-      if (identical(nli_config$backend, "jev") && !nzchar(Sys.getenv("API_openrouter"))) {
-        stop(sprintf("nli.configs.%s uses backend jev but API_openrouter is not set", nli_active),
+      if (identical(scorer_config$backend, "jev") && !nzchar(Sys.getenv("API_openrouter"))) {
+        stop(sprintf("nli.configs.%s uses backend jev but API_openrouter is not set", scorer_name),
              call. = FALSE)
       }
       m
@@ -313,66 +313,66 @@ list(
   ),
 
   # ── SECOND approach (evidence-segmented) scoring chain ────────────────────
-  # Reuses build_nli_claim_units() / score_one_claim() unchanged — only the
-  # source path (nli_ready_evidence_parquet) and the scoring output_root
-  # (output/nli_scores_evidence) differ. Shares the same nli_model and,
+  # Reuses build_claim_units() / score_one_claim() unchanged — only the
+  # source path (claim_work_pairs) and the scoring output_root
+  # (output/claim_scores) differ. Shares the same scorer_model and,
   # via score_one_claim()'s default lock_dir, the same per-host locks, so the
   # two approaches never hit one host concurrently if run together.
   tar_target(
-    nli_claim_units_evidence,
-    build_nli_claim_units(assessment, nli_ready_evidence_parquet, max_length, km_scope),
-    pattern = map(assessment, nli_ready_evidence_parquet),
+    claim_units,
+    build_claim_units(assessment, claim_work_pairs, max_length, km_scope),
+    pattern = map(assessment, claim_work_pairs),
     iteration = "list"
   ),
   tar_target(
-    nli_claim_units_evidence_flat,
-    unlist(nli_claim_units_evidence, recursive = FALSE),
+    claim_units_flat,
+    unlist(claim_units, recursive = FALSE),
     iteration = "list"
   ),
   # NOT format = "file": each branch returns a small record, not a path. The
   # scored rows go to a per-claim scratch file, and the branches all feed
-  # nli_scores_evidence_consolidated below, which merges them into one
+  # claim_scores_consolidated below, which merges them into one
   # parquet per (km, bm) and deletes the scratch. Returning the consolidated
   # path here instead would have every branch of a (km, bm) return the SAME
   # file, whose hash changes as sibling branches write — permanent
   # invalidation churn. See R/score_one_claim.R's header.
   tar_target(
-    nli_scores_by_claim_evidence,
+    claim_scores_by_claim,
     # BACKEND DISPATCH. `backend: jev` on the active nli config scores with
     # Jev's decisions API instead of the RunPod pool -- same output schema, its
-    # own nli_config= tree, so it scores BESIDE the NLI on identical rows rather
+    # own scorer_config= tree, so it scores BESIDE the NLI on identical rows rather
     # than instead of it. score_one_claim() itself is untouched, deliberately:
     # it is the production path for every existing score and carries a bug
     # history worth not disturbing. See R/score_one_claim_jev.R.
-    if (identical(nli_config$backend, "jev")) {
+    if (identical(scorer_config$backend, "jev")) {
       score_one_claim_jev(
-        nli_claim_units_evidence_flat, nli_config, nli_active, nli_model,
-        output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity)),
+        claim_units_flat, scorer_config, scorer_name, scorer_model,
+        output_root = file.path("output/claim_scores", paste0("granularity=", granularity)),
         questions_file = jev_questions_file
       )
     } else {
       score_one_claim(
-        nli_claim_units_evidence_flat, nli_config, nli_active, nli_model,
-        output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity))
+        claim_units_flat, scorer_config, scorer_name, scorer_model,
+        output_root = file.path("output/claim_scores", paste0("granularity=", granularity))
       )
     },
-    pattern = map(nli_claim_units_evidence_flat),
+    pattern = map(claim_units_flat),
     error = "continue"
   ),
-  # Merge this run's scratch files into one parquet per (nli_config,
+  # Merge this run's scratch files into one parquet per (scorer_config,
   # assessment, km, bm), and prune claims no longer present upstream. Depends
   # on the scoring branches AGGREGATED (no pattern =), so it runs once after
   # they all finish. Everything downstream reads this, not the scoring target,
   # so nothing can observe a half-merged tree.
   tar_target(
-    nli_scores_evidence_consolidated,
-    consolidate_nli_scores(
-      nli_scores_by_claim_evidence,
-      nli_claim_units_evidence_flat,
-      output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity)),
-      nli_active = nli_active,
+    claim_scores_consolidated,
+    consolidate_claim_scores(
+      claim_scores_by_claim,
+      claim_units_flat,
+      output_root = file.path("output/claim_scores", paste0("granularity=", granularity)),
+      scorer_name = scorer_name,
       # Scope the groups it visits. Without this it globs every
-      # assessment=*/km=*/bm=* under the nli_config= root and stops dead on any
+      # assessment=*/km=*/bm=* under the scorer_config= root and stops dead on any
       # group the current claim list no longer covers -- which is not a
       # hypothetical: assessment=IAS still holds 9 scored groups from before
       # the GA1 rescope. Out-of-scope groups are left untouched, not pruned.
@@ -391,15 +391,15 @@ list(
   # second branch still holds a valid lock on the now-unlinked original,
   # breaking the one-claim-per-host guarantee these locks exist for. So
   # cleanup only happens here, in a target that depends on the WHOLE
-  # nli_scores_by_claim_evidence pattern (referenced only to establish that
+  # claim_scores_by_claim pattern (referenced only to establish that
   # DAG dependency) -- targets doesn't run this until every branch has
   # actually returned (success or error = "continue" failure), so nothing
   # can still be waiting on a lock by the time it fires. Naturally
-  # self-limiting too: if nli_scores_by_claim_evidence is fully up to date
+  # self-limiting too: if claim_scores_by_claim is fully up to date
   # (nothing left to score), this target is too, and cleanup is skipped
   # rather than re-deleting an already-empty directory every tar_make().
-  tar_target(nli_host_locks_cleanup, {
-    nli_scores_by_claim_evidence
+  tar_target(scorer_host_locks_cleanup, {
+    claim_scores_by_claim
     lock_dir <- "output/nli_scores/.locks_temp"
     n <- length(list.files(lock_dir, pattern = "\\.lock$"))
     unlink(lock_dir, recursive = TRUE, force = TRUE)
@@ -419,14 +419,14 @@ list(
   # FALSE) sentinel for complete_bm, whose whole-field claims carry no
   # per-sub-claim evidence tokens. Reads only already-existing, unmodified
   # targets (key_messages_parquet, refs_parquet, works_parquet,
-  # snowball_parquet, nli_ready_evidence_parquet, claim_completion_model) —
+  # snowball_parquet, claim_work_pairs, claim_completion_model) —
   # adding it does not invalidate any of Phase 1's NLI chain or the
   # download/snowball steps upstream of it. Under granularity ==
   # "atomic_bm" it DOES make a real (normally cache-hit only) OpenRouter
   # call via claim_completion_model/complete_bm_fragments(), to recover the
   # same surviving-fragment order the real atomic_bm build produced (see
   # extract_claim_evidence_tokens_atomic()'s own header) — a real atomic_bm
-  # nli_ready_evidence_parquet build is a precondition for this to be
+  # claim_work_pairs build is a precondition for this to be
   # cheap. Always computed regardless of which llm_verification config is
   # active -- every config now reads its output to tag, not to filter.
   tar_target(
@@ -437,14 +437,14 @@ list(
       refs_parquet,
       works_parquet,
       snowball_parquet,
-      nli_ready_evidence_parquet,
+      claim_work_pairs,
       "output/llm_candidate_scope",
       granularity,
       claim_completion_model
     ),
     pattern = map(
       assessment, key_messages_parquet, refs_parquet, works_parquet,
-      snowball_parquet, nli_ready_evidence_parquet
+      snowball_parquet, claim_work_pairs
     ),
     format = "file"
   ),
@@ -456,7 +456,7 @@ list(
   # (ellmer's own parallel_chat_structured concurrency is enough here — no
   # crew/file-lock dispatch needed, since OpenRouter is a shared endpoint,
   # not a fixed host pool to load-balance across like the NLI RunPod pool).
-  # nli_scores_by_claim_evidence is passed only to establish the DAG
+  # claim_scores_by_claim is passed only to establish the DAG
   # ---- relevance screen ----------------------------------------------------
   # Screens only the ROUTED subset -- what cfg$nli_labels/nli_certainty select,
   # currently 190,759 of GA1's 2.43M pairs. That is the cheap placement (~$3),
@@ -471,9 +471,9 @@ list(
     build_llm_relevance_screen(
       assessment,
       pairs = select_llm_verification_candidates(
-        file.path("output/nli_scores_evidence", paste0("granularity=", granularity),
-                  paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)),
-        nli_ready_evidence_parquet,
+        file.path("output/claim_scores", paste0("granularity=", granularity),
+                  paste0("scorer_config=", scorer_name), paste0("assessment=", assessment$id)),
+        claim_work_pairs,
         nli_labels = llm_verification_config$nli_labels,
         nli_certainty = llm_verification_config$nli_certainty
       ),
@@ -482,7 +482,7 @@ list(
       questions_file = jev_relevance_question_file,
       batch_size = relevance_config$batch_size
     ),
-    pattern = map(assessment, nli_ready_evidence_parquet),
+    pattern = map(assessment, claim_work_pairs),
     format = "file", deployment = "main"
   ),
 
@@ -491,19 +491,19 @@ list(
     llm_verification_parquet,
     build_llm_verification_parquet(
       assessment,
-      nli_ready_evidence_parquet,
-      nli_active,
+      claim_work_pairs,
+      scorer_name,
       llm_verification_active,
       llm_verification_config,
       llm_verification_system_prompt_file,
       llm_verification_user_prompt_file,
       llm_candidate_scope_parquet,
       granularity,
-      nli_scores_evidence_consolidated,
+      claim_scores_consolidated,
       relevance_path = relevance_screen,
       relevance_threshold = relevance_config$threshold
     ),
-    pattern = map(assessment, nli_ready_evidence_parquet, llm_candidate_scope_parquet, relevance_screen),
+    pattern = map(assessment, claim_work_pairs, llm_candidate_scope_parquet, relevance_screen),
     format = "file",
     # select_llm_verification_candidates() collect()s both the routed NLI
     # scores AND the full nli_ready_evidence premise table (title+abstract
@@ -527,8 +527,8 @@ list(
   # training set's positive class came from.
   #
   # DELIBERATELY SEPARATE from the citing-works chain beside it: its own
-  # premise root (output/nli_ready_evidence_keypaper/), its own scores root
-  # (output/nli_scores_evidence_keypaper/), its own Phase 2 output
+  # premise root (output/claim_work_pairs_keypaper/), its own scores root
+  # (output/claim_scores_keypaper/), its own Phase 2 output
   # (scores_keypaper/) and its own relevance partition (keypaper=true). The two
   # score DIFFERENT pairs and must be runnable, re-runnable and deletable
   # independently.
@@ -541,18 +541,18 @@ list(
   # Scores the actual seed/reference papers IPBES cites as evidence for a BM
   # (relation == "keypaper" in the snowball nodes) against their OWN BM's claim
   # text. Mirrors the citing-works chain exactly -- same
-  # build_nli_claim_units()/score_one_claim() reused unchanged -- with only the
+  # build_claim_units()/score_one_claim() reused unchanged -- with only the
   # premise source and the output roots differing, so it can never collide with
   # or invalidate that chain.
   tar_target(
-    nli_ready_evidence_keypaper_parquet,
-    build_nli_ready_evidence_keypaper_parquet(
+    claim_work_pairs_keypaper,
+    build_claim_work_pairs_keypaper(
       assessment,
       key_messages_parquet,
       works_parquet,
       snowball_parquet,
       workers,
-      file.path("output/nli_ready_evidence_keypaper", paste0("granularity=", granularity)),
+      file.path("output/claim_work_pairs_keypaper", paste0("granularity=", granularity)),
       granularity,
       claim_completion_model
     ),
@@ -562,7 +562,7 @@ list(
     garbage_collection = TRUE
   ),
   tar_target(
-    nli_claim_units_evidence_keypaper,
+    claim_units_keypaper,
     # km_scope applies here too, which it did NOT when this chain lived in the
     # training project -- that block had no km: field, so there was nothing to
     # thread. Moving it into factcheck without this made the two chains
@@ -570,46 +570,46 @@ list(
     # and silently scored every key paper of every KM. Cheap (29,511 pairs for
     # all of GA1) but wrong, and wrong in the direction that is hard to notice,
     # since the extra rows look like legitimate output.
-    build_nli_claim_units(assessment, nli_ready_evidence_keypaper_parquet, max_length, km_scope),
-    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
+    build_claim_units(assessment, claim_work_pairs_keypaper, max_length, km_scope),
+    pattern = map(assessment, claim_work_pairs_keypaper),
     iteration = "list"
   ),
   tar_target(
-    nli_claim_units_evidence_keypaper_flat,
-    unlist(nli_claim_units_evidence_keypaper, recursive = FALSE),
+    claim_units_keypaper_flat,
+    unlist(claim_units_keypaper, recursive = FALSE),
     iteration = "list"
   ),
   # Same scratch-then-consolidate split as the citing-works chain.
   tar_target(
-    nli_scores_keypaper_evidence,
+    claim_scores_keypaper,
     # Same backend dispatch as the citing-works chain above. The key-paper
     # corpus is 29,511 pairs against 2.43M, so it costs ~$1.50 at jev rates --
     # and it is the control: key papers ARE the evidence a BM was written from,
     # so a first-stage model that cannot separate them from citing works is
     # telling you something. The NLI separates the two by 9 points where the
     # reviewers separate them by 49.
-    if (identical(nli_config$backend, "jev")) {
+    if (identical(scorer_config$backend, "jev")) {
       score_one_claim_jev(
-        nli_claim_units_evidence_keypaper_flat, nli_config, nli_active, nli_model,
-        output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity)),
+        claim_units_keypaper_flat, scorer_config, scorer_name, scorer_model,
+        output_root = file.path("output/claim_scores_keypaper", paste0("granularity=", granularity)),
         questions_file = jev_questions_file
       )
     } else {
       score_one_claim(
-        nli_claim_units_evidence_keypaper_flat, nli_config, nli_active, nli_model,
-        output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity))
+        claim_units_keypaper_flat, scorer_config, scorer_name, scorer_model,
+        output_root = file.path("output/claim_scores_keypaper", paste0("granularity=", granularity))
       )
     },
-    pattern = map(nli_claim_units_evidence_keypaper_flat),
+    pattern = map(claim_units_keypaper_flat),
     error = "continue"
   ),
   tar_target(
-    nli_scores_keypaper_evidence_consolidated,
-    consolidate_nli_scores(
-      nli_scores_keypaper_evidence,
-      nli_claim_units_evidence_keypaper_flat,
-      output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity)),
-      nli_active = nli_active
+    claim_scores_keypaper_consolidated,
+    consolidate_claim_scores(
+      claim_scores_keypaper,
+      claim_units_keypaper_flat,
+      output_root = file.path("output/claim_scores_keypaper", paste0("granularity=", granularity)),
+      scorer_name = scorer_name
     ),
     format = "file",
     deployment = "main"
@@ -634,9 +634,9 @@ list(
     build_llm_relevance_screen(
       assessment,
       pairs = select_llm_verification_candidates(
-        file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity),
-                  paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)),
-        nli_ready_evidence_keypaper_parquet,
+        file.path("output/claim_scores_keypaper", paste0("granularity=", granularity),
+                  paste0("scorer_config=", scorer_name), paste0("assessment=", assessment$id)),
+        claim_work_pairs_keypaper,
         nli_labels = NULL, nli_certainty = NULL
       ),
       keypaper = TRUE,
@@ -644,7 +644,7 @@ list(
       questions_file = jev_relevance_question_file,
       batch_size = relevance_config$batch_size
     ),
-    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
+    pattern = map(assessment, claim_work_pairs_keypaper),
     format = "file", deployment = "main"
   ),
 
@@ -657,21 +657,21 @@ list(
     llm_verification_keypaper_parquet,
     build_llm_verification_keypaper_parquet(
       assessment,
-      nli_ready_evidence_keypaper_parquet,
+      claim_work_pairs_keypaper,
       file.path(
-        "output/nli_scores_evidence_keypaper", paste0("granularity=", granularity),
-        paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)
+        "output/claim_scores_keypaper", paste0("granularity=", granularity),
+        paste0("scorer_config=", scorer_name), paste0("assessment=", assessment$id)
       ),
-      nli_active,
+      scorer_name,
       llm_verification_active,
       llm_verification_config,
       llm_verification_system_prompt_file,
       llm_verification_user_prompt_file,
-      nli_scores_keypaper_evidence_consolidated,
+      claim_scores_keypaper_consolidated,
       relevance_path = relevance_screen_keypaper,
       relevance_threshold = relevance_config$threshold
     ),
-    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
+    pattern = map(assessment, claim_work_pairs_keypaper),
     format = "file",
     deployment = "main",
     garbage_collection = TRUE

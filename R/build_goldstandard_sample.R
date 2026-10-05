@@ -1,7 +1,7 @@
 # Draws the human-review sample and writes the blinded reviewer instruments.
 #
 # NO TARGET -- run by hand, same discipline as R/migrate_nli_scores_consolidate.R
-# and R/find_orphaned_nli_scores.R, and for a sharper reason than either: a
+# and R/find_orphaned_claim_scores.R, and for a sharper reason than either: a
 # target re-runs whenever anything upstream changes, which here would regenerate
 # the instruments underneath whatever a reviewer had already filled in. The
 # instruments need to be FROZEN once drawn, and a file in a tracked directory is
@@ -40,7 +40,7 @@ build_goldstandard_sample <- function(
   assessments = NULL,
   reviewers = c("R1", "R2"),
   granularity = NULL,
-  nli_config = NULL,
+  scorer_config = NULL,
   training_root = "output/nli_training",
   output_dir = "input/goldstandard",
   config_file = "input/config.yaml",
@@ -73,11 +73,11 @@ build_goldstandard_sample <- function(
   if (is.null(granularity)) {
     granularity <- cfg[["nli"]][["configs"]][[cfg[["training"]][["nli"]]]][["granularity"]]
   }
-  if (is.null(nli_config)) nli_config <- cfg[["training"]][["nli"]]
+  if (is.null(scorer_config)) scorer_config <- cfg[["training"]][["nli"]]
   if (is.null(assessments)) assessments <- unlist(cfg[["training"]][["assessments"]], use.names = FALSE)
 
   root <- file.path(
-    training_root, paste0("granularity=", granularity), paste0("nli_config=", nli_config)
+    training_root, paste0("granularity=", granularity), paste0("scorer_config=", scorer_config)
   )
   if (!dir.exists(root)) {
     stop(sprintf(
@@ -163,7 +163,7 @@ build_goldstandard_sample <- function(
       sample_df |> dplyr::select(dplyr::any_of(c(
         "id", "assessment", "km", "bm", "work_id", "stratum", "p_include",
         "label", "source", "keypaper", "nli_label", "nli_confidence",
-        "llm_config", "nli_config", "quote"
+        "llm_config", "scorer_config", "quote"
       ))),
       manifest_path, row.names = FALSE, na = ""
     )

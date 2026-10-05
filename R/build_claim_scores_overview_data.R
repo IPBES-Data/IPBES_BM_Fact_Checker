@@ -1,13 +1,13 @@
 # Derived summary tables for one assessment's NLI scores (label distribution,
-# confidence, alignment), consumed by build_nli_overview_figures() and by
+# confidence, alignment), consumed by build_claim_scores_overview_figures() and by
 # IPBES_Fact_Checker.qmd's "NLI Alignment Scores" section. Reads the whole
 # per-assessment scored-output directory once and caches every summary table
 # needed downstream in a single rds, so neither the figures target nor the
 # report re-collect() the (potentially large) raw dataset repeatedly.
-build_nli_overview_data <- function(
+build_claim_scores_overview_data <- function(
   assessment,
   nli_scores_path,
-  nli_active,
+  scorer_name,
   works_citing_path,
   output_root = "output/tables",
   nli_scores_by_claim = NULL, # unused — establishes the DAG dependency on scoring
@@ -19,7 +19,7 @@ build_nli_overview_data <- function(
     output_root,
     paste0(
       "nli_overview_data_", assessment_id,
-      nli_model_suffix(nli_active), granularity_suffix(granularity), ".rds"
+      nli_model_suffix(scorer_name), granularity_suffix(granularity), ".rds"
     )
   )
 
@@ -29,7 +29,7 @@ build_nli_overview_data <- function(
   # than erroring, so one un-scored combination doesn't break the whole target.
   if (!dir.exists(nli_scores_path)) {
     saveRDS(
-      list(assessment = assessment_id, nli_active = nli_active, granularity = granularity, empty = TRUE),
+      list(assessment = assessment_id, scorer_name = scorer_name, granularity = granularity, empty = TRUE),
       file = fn
     )
     return(fn)
@@ -55,7 +55,7 @@ build_nli_overview_data <- function(
 
   if (!nrow(d)) {
     saveRDS(
-      list(assessment = assessment_id, nli_active = nli_active, granularity = granularity, empty = TRUE),
+      list(assessment = assessment_id, scorer_name = scorer_name, granularity = granularity, empty = TRUE),
       file = fn
     )
     return(fn)
@@ -116,7 +116,7 @@ build_nli_overview_data <- function(
   saveRDS(
     list(
       assessment    = assessment_id,
-      nli_active    = nli_active,
+      scorer_name    = scorer_name,
       granularity   = granularity,
       empty         = FALSE,
       n_total       = nrow(d),

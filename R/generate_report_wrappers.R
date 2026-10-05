@@ -64,7 +64,7 @@ report_wrapper_marker <- "<!-- GENERATED FILE -- edit config.yaml `reports:` ins
 report_wrapper_spec <- function() {
   list(
     IPBES_Label_Funnel_Report = list(
-      dims = c("assessment", "granularity", "label", "nli_config"),
+      dims = c("assessment", "granularity", "label", "scorer_config"),
       # Only this wrapper's own label's targets, not both.
       deps = function(p) {
         stem <- tolower(p$label)
@@ -79,13 +79,13 @@ report_wrapper_spec <- function() {
           assessment_id = p$assessment,
           label = p$label,
           granularity = p$granularity,
-          nli_active = p$nli_config
+          scorer_name = p$scorer_config
         )
       },
       name = function(p) {
         paste0(
           "IPBES_", p$label, "_Report_", p$assessment,
-          nli_model_suffix(p$nli_config), granularity_suffix(p$granularity)
+          nli_model_suffix(p$scorer_config), granularity_suffix(p$granularity)
         )
       }
     ),
@@ -103,7 +103,7 @@ report_wrapper_spec <- function() {
       }
     ),
     QA_NLI_Scores_Report = list(
-      dims = c("assessment", "granularity", "nli_config"),
+      dims = c("assessment", "granularity", "scorer_config"),
       deps = function(p) {
         c(
           nli_scores_qa_data = "nli_scores_qa_data",
@@ -114,13 +114,13 @@ report_wrapper_spec <- function() {
         list(
           assessment_id = p$assessment,
           granularity = p$granularity,
-          nli_config = p$nli_config
+          scorer_config = p$scorer_config
         )
       },
       name = function(p) {
         paste0(
           "QA_NLI_Scores_Report_", p$assessment,
-          nli_model_suffix(p$nli_config), granularity_suffix(p$granularity)
+          nli_model_suffix(p$scorer_config), granularity_suffix(p$granularity)
         )
       }
     ),
@@ -296,16 +296,16 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
     data.frame(.dummy = NA)
   }
 
-  # nli_config last: when not pinned it is DERIVED per granularity via
+  # scorer_config last: when not pinned it is DERIVED per granularity via
   # nli_config_for_granularity(), which is the safe default -- naming the
   # wrong config silently makes already-scored data look unscored.
-  if ("nli_config" %in% dims) {
-    pinned <- unlist(entry[["nli_config"]])
+  if ("scorer_config" %in% dims) {
+    pinned <- unlist(entry[["scorer_config"]])
     if (!is.null(pinned) && length(pinned)) {
       unknown <- setdiff(pinned, names(nli_configs))
       if (length(unknown)) {
         stop(sprintf(
-          "reports: entry '%s' names unknown nli_config(s): %s (known: %s)",
+          "reports: entry '%s' names unknown scorer_config(s): %s (known: %s)",
           qmd_name, paste(unknown, collapse = ", "),
           paste(names(nli_configs), collapse = ", ")
         ), call. = FALSE)
@@ -319,12 +319,12 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
           if (!nrow(rows)) {
             return(NULL)
           }
-          rows$nli_config <- cf
+          rows$scorer_config <- cf
           rows
         }))
         if (is.null(keep) || !nrow(keep)) {
           stop(sprintf(
-            "reports: entry '%s' pins nli_config(s) %s, but none of them declares any of the requested granularities (%s)",
+            "reports: entry '%s' pins scorer_config(s) %s, but none of them declares any of the requested granularities (%s)",
             qmd_name, paste(pinned, collapse = ", "),
             paste(grid$granularity, collapse = ", ")
           ), call. = FALSE)
@@ -332,18 +332,18 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
         grid <- keep
       } else {
         grid <- expand.grid(
-          c(as.list(grid), list(nli_config = pinned)),
+          c(as.list(grid), list(scorer_config = pinned)),
           stringsAsFactors = FALSE, KEEP.OUT.ATTRS = FALSE
         )
       }
     } else {
       if (!"granularity" %in% names(grid)) {
         stop(sprintf(
-          "reports: entry '%s' needs an explicit `nli_config:` (it has no granularity to derive one from)",
+          "reports: entry '%s' needs an explicit `scorer_config:` (it has no granularity to derive one from)",
           qmd_name
         ), call. = FALSE)
       }
-      grid$nli_config <- nli_config_for_granularity(
+      grid$scorer_config <- nli_config_for_granularity(
         nli_configs, grid$granularity, purpose_config(cfg, "fact_checking")$nli
       )
     }

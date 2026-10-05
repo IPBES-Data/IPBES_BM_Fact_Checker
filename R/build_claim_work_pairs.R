@@ -5,14 +5,14 @@
 # in every respect except how a BM's text is cut into claims:
 #
 #   build_nli_ready_parquet()          -> one claim per SENTENCE
-#   build_nli_ready_evidence_parquet() -> one claim per EVIDENCE-DELIMITED
+#   build_claim_work_pairs() -> one claim per EVIDENCE-DELIMITED
 #                                         segment (this file)
 #
 # Both write the identical column schema (km, bm, sentence_number, claim,
 # sentence_source, work_id, premise, abstract_tokens, sentence_tokens,
 # approx_tokens, assessment) so the SAME downstream targets
-# (build_nli_claim_units / score_one_claim) consume either one unchanged —
-# only the output_root differs (output/nli_ready_evidence vs output/nli_ready).
+# (build_claim_units / score_one_claim) consume either one unchanged —
+# only the output_root differs (output/claim_work_pairs vs output/nli_ready).
 #
 # The existing sentence-based builder is deliberately left untouched so its
 # already-materialised target output and hash are not invalidated.
@@ -278,12 +278,12 @@ segment_bm_atomic <- function(text) {
   dplyr::tibble(claim = claims[keep], confidence = confidence[keep])
 }
 
-build_nli_ready_evidence_parquet <- function(
+build_claim_work_pairs <- function(
   assessment,
   key_messages_parquet,
   works_citing_parquet,
   workers = 1L,
-  output_root = "output/nli_ready_evidence",
+  output_root = "output/claim_work_pairs",
   granularity = "naive_bm",
   completion_model = NULL
 ) {

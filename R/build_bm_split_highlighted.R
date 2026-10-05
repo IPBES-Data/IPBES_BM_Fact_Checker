@@ -1,4 +1,4 @@
-# QA view for how nli_ready_evidence_parquet actually split each BM into
+# QA view for how claim_work_pairs actually split each BM into
 # claims -- for every (km, bm, sentence_source), the full original
 # bm_description/bm_label text with each claim's source span
 # colour-highlighted inline, followed by an indented, colour-matched list
@@ -8,7 +8,7 @@
 # to see a BM's full text and its claims together, or which part of the
 # text a claim came from.
 #
-# Reads nli_ready_evidence_parquet's ACTUAL on-disk claim/confidence output
+# Reads claim_work_pairs's ACTUAL on-disk claim/confidence output
 # (distinct()-ed back down to one row per claim) -- same as the DT version
 # did -- so the claim text/confidence shown can never drift from what
 # actually got scored.
@@ -24,7 +24,7 @@
 # text is what the list below shows.
 #
 # For naive_bm/complete_bm, segment_bm_by_evidence()/segment_bm_whole()
-# (R/build_nli_ready_evidence_parquet.R) are deliberately NOT called here
+# (R/build_claim_work_pairs.R) are deliberately NOT called here
 # to recover the raw span -- small `*_raw()` siblings below duplicate only
 # their splitting step instead (same reasoning
 # build_llm_candidate_scope_parquet.R's extract_claim_evidence_tokens()
@@ -345,7 +345,7 @@ build_bm_field_html <- function(text, raw_segments, claims_sub, field_label) {
 
 build_bm_split_highlighted <- function(
   assessment,
-  nli_ready_evidence_parquet,
+  claim_work_pairs,
   key_messages_parquet,
   granularity,
   output_root = "output/tables",
@@ -356,7 +356,7 @@ build_bm_split_highlighted <- function(
   gran_suffix <- paste0("_", granularity)
 
   # Only needed for atomic_bm's real-completion alignment (see file
-  # header) -- lazy, same pattern build_nli_ready_evidence_parquet() uses
+  # header) -- lazy, same pattern build_claim_work_pairs() uses
   # for its own api_key fetch, so naive_bm/complete_bm callers stay free
   # of any keyring dependency.
   completion_cfg <- NULL
@@ -371,7 +371,7 @@ build_bm_split_highlighted <- function(
   # confidence into an always-present column (NA where absent/not
   # applicable) so downstream HTML-building code doesn't need to branch on
   # whether the column exists.
-  ds <- arrow::open_dataset(nli_ready_evidence_parquet)
+  ds <- arrow::open_dataset(claim_work_pairs)
   base_cols <- c("km", "bm", "sentence_source", "sentence_number", "claim")
   cols <- if ("confidence" %in% names(ds)) c(base_cols, "confidence") else base_cols
 

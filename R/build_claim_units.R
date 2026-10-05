@@ -12,11 +12,11 @@
 # scoring branches, fewer consolidated rows, and fewer candidates reaching the
 # relevance screen and Phase 2.
 #
-# Deliberately NOT applied further upstream: output/nli_ready_evidence/ carries
-# no nli_config= level, so the cross-join is shared by every config, and
-# build_nli_ready_evidence_parquet() unlink()s the whole assessment= subtree
+# Deliberately NOT applied further upstream: output/claim_work_pairs/ carries
+# no scorer_config= level, so the cross-join is shared by every config, and
+# build_claim_work_pairs() unlink()s the whole assessment= subtree
 # before writing -- filtering there would delete out-of-scope premises outright.
-build_nli_claim_units <- function(assessment, nli_ready_path, max_length, km = NULL) {
+build_claim_units <- function(assessment, nli_ready_path, max_length, km = NULL) {
   assessment_id <- assessment$id
   filter_limit <- if (!is.null(max_length)) as.integer(max_length) else 512L
 
@@ -39,7 +39,7 @@ build_nli_claim_units <- function(assessment, nli_ready_path, max_length, km = N
     missing <- setdiff(km, available)
     if (length(missing)) {
       stop(sprintf(
-        "build_nli_claim_units(%s): km scope names %s, which %s not exist in this assessment. Available: %s",
+        "build_claim_units(%s): km scope names %s, which %s not exist in this assessment. Available: %s",
         assessment_id, paste(sQuote(missing), collapse = ", "),
         if (length(missing) == 1L) "does" else "do",
         paste(available, collapse = ", ")

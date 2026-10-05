@@ -6,10 +6,10 @@
 # on the same rows. See design_notes.md points 6 and 8.
 #
 # THE OUTPUT SCHEMA IS IDENTICAL to score_one_claim()'s, so uncertain_threshold,
-# the nli_route= partitions, the funnel sieve, consolidate_nli_scores() and every
+# the nli_route= partitions, the funnel sieve, consolidate_claim_scores() and every
 # report downstream keep working untouched. Selecting it is a config edit --
 # `backend: jev` on an nli.configs.<name> entry -- which also gives it its own
-# nli_config= tree, so it scores BESIDE the NLI on identical rows rather than
+# scorer_config= tree, so it scores BESIDE the NLI on identical rows rather than
 # instead of it. The human round has not happened, every measurement above comes
 # from models judging models, and comparing the two afterwards is the point of
 # waiting.
@@ -80,10 +80,10 @@ jev_request <- function(claim, part, spec, model, api_key) {
 
 score_one_claim_jev <- function(
   claim_unit,
-  nli_config,
-  nli_active,
-  nli_model,
-  output_root = "output/nli_scores",
+  scorer_config,
+  scorer_name,
+  scorer_model,
+  output_root = "output/claim_scores",
   questions_file = "input/prompts/jev_claim_questions.json",
   api_key = Sys.getenv("API_openrouter"),
   max_active = 100L,
@@ -91,22 +91,22 @@ score_one_claim_jev <- function(
   # each request carries exactly one premise.
   papers_per_request = 20L
 ) {
-  cfg <- if (is.null(nli_config)) list() else nli_config
+  cfg <- if (is.null(scorer_config)) list() else scorer_config
   assessment_id <- claim_unit$assessment
   this_claim_id <- claim_unit$claim_id
   model <- cfg$model %||% "typesafe/jev-1.13"
   uncertain_threshold <- as.numeric(cfg$uncertain_threshold %||% 0.60)
 
-  output_path <- file.path(output_root, paste0("nli_config=", nli_active),
+  output_path <- file.path(output_root, paste0("scorer_config=", scorer_name),
                            paste0("assessment=", assessment_id))
   bm_dir <- file.path(output_path, paste0("km=", claim_unit$km), paste0("bm=", claim_unit$bm))
-  scratch_dir <- file.path(output_root, ".scratch", paste0("nli_config=", nli_active),
+  scratch_dir <- file.path(output_root, ".scratch", paste0("scorer_config=", scorer_name),
                            paste0("assessment=", assessment_id),
                            paste0("km=", claim_unit$km), paste0("bm=", claim_unit$bm))
   scratch_file <- file.path(scratch_dir, paste0(this_claim_id, ".parquet"))
 
   record <- function(status, n_rows = 0L, n_new = 0L) {
-    list(nli_config = nli_active, assessment = assessment_id,
+    list(scorer_config = scorer_name, assessment = assessment_id,
          km = claim_unit$km, bm = claim_unit$bm, claim_id = this_claim_id,
          claim = claim_unit$claim, scratch_file = scratch_file,
          status = status, n_rows = as.integer(n_rows), n_new = as.integer(n_new))
@@ -134,7 +134,7 @@ score_one_claim_jev <- function(
     }
   }
   if (!is.null(cached) && nrow(cached)) {
-    bad_model <- !all(cached$nli_model == nli_model, na.rm = TRUE)
+    bad_model <- !all(cached$scorer_model == scorer_model, na.rm = TRUE)
     bad_claim <- "claim" %in% names(cached) && !all(cached$claim == claim_unit$claim, na.rm = TRUE)
     if (bad_model || bad_claim) {
       message(sprintf("[jev %s] claim_id=%s: cache discarded (%s changed) -- full rescore",
@@ -196,7 +196,7 @@ score_one_claim_jev <- function(
                   function(r) if (all(is.na(r))) NA_integer_ else which.max(r))
 
   out <- dplyr::tibble(
-    nli_model       = nli_model,
+    scorer_model       = scorer_model,
     sentence_number = claim_unit$sentence_number,
     sentence_source = claim_unit$sentence_source,
     claim           = claim_unit$claim,
@@ -217,7 +217,7 @@ score_one_claim_jev <- function(
   )
 
   # The scratch file must carry the claim's COMPLETE row set:
-  # consolidate_nli_scores() supersedes every row whose claim_id appears in
+  # consolidate_claim_scores() supersedes every row whose claim_id appears in
   # scratch, so writing only the delta would delete the rows it was meant to
   # extend. Same rule as score_one_claim().
   final <- if (is.null(cached) || !nrow(cached)) out else

@@ -107,7 +107,7 @@ list(
   # one, because build_pipeline_mmd() renders whatever DAG it is run inside:
   # moved to reporting during the split, it silently regenerated
   # pipeline_nli.mmd as a picture of the 52-target REPORTING graph --
-  # snowball_parquet and nli_scores_by_claim_evidence vanished, while
+  # snowball_parquet and claim_scores_by_claim vanished, while
   # works_citing_parquet and llm_verification_parquet survived only as the
   # input stubs the reporting project declares. Caught by reading the diff.
   #
@@ -143,7 +143,7 @@ list(
   # Config — split into fine-grained targets so unrelated changes don't cascade
   tar_target(config_file, "input/config.yaml", format = "file"),
   # Fine-grained config targets: each reads only its own section from config_file.
-  # This means changing e.g. nli.host only invalidates nli_config (and thus
+  # This means changing e.g. nli.host only invalidates scorer_config (and thus
   # nli_scores_parquet), not sparql_url, assessments_list, or any upstream target.
   tar_target(sparql_url, yaml::read_yaml(config_file)[["sparql_url"]]),
   tar_target(
@@ -324,9 +324,9 @@ list(
   #
   # To revive: move this block into _targets_factcheck.R, which already has
   # every target it needs (assessment, key_messages_parquet,
-  # works_citing_parquet, max_length, nli_config, nli_model -- the last of
+  # works_citing_parquet, max_length, scorer_config, scorer_model -- the last of
   # these replaced nli_pool_health on 2026-10-05, see its comment there).
-  # build_nli_claim_units() and score_one_claim() are shared with the evidence
+  # build_claim_units() and score_one_claim() are shared with the evidence
   # chain and were never removed; only R/build_nli_ready_parquet.R is otherwise
   # orphaned source.
   # ---------------------------------------------------------------------------
@@ -362,7 +362,7 @@ list(
   # # Target 2h1: Claim-units to score, per assessment.
   # tar_target(
   # nli_claim_units,
-  # build_nli_claim_units(assessment, nli_ready_parquet, max_length),
+  # build_claim_units(assessment, nli_ready_parquet, max_length),
   # pattern = map(assessment, nli_ready_parquet),
   # iteration = "list"
   # ),
@@ -379,14 +379,14 @@ list(
   # # claims (plus targets' own branch caching skips already-succeeded ones
   # # whose inputs haven't changed).
   # # Commented out: this per-sentence chain isn't consumed by the report
-  # # (nli_overview_data reads nli_scores_by_claim_evidence only — see that
-  # # target's comment) and shares nli_config/nli_model/score_one_claim
+  # # (nli_overview_data reads claim_scores_by_claim only — see that
+  # # target's comment) and shares scorer_config/scorer_model/score_one_claim
   # # with the evidence chain, so a bare tar_make() would dispatch both against
   # # the same live RunPod pool. Uncomment only if you deliberately want the
   # # per-sentence approach scored too.
   # # tar_target(
   # #   nli_scores_by_claim,
-  # #   score_one_claim(nli_claim_units_flat, nli_config, nli_active, nli_model),
+  # #   score_one_claim(nli_claim_units_flat, scorer_config, scorer_name, scorer_model),
   # #   pattern = map(nli_claim_units_flat),
   # #   format = "file",
   # #   error = "continue"

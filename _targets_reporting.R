@@ -64,7 +64,7 @@ generate_report_wrappers("input/config.yaml")
 # what lets tar_quarto() keep deriving their dependency edges automatically.
 #
 # Two inputs are deliberately NOT tracked, and passed as plain path strings
-# instead: output/nli_ready_evidence (140 GB) and output/nli_training_finetuned
+# instead: output/claim_work_pairs (140 GB) and output/nli_training_finetuned
 # (42 GB). format = "file" hashes what it is given, and hashing those on every
 # check would make this project -- whose whole appeal is being fast and free --
 # slower than the scoring it reports on. The cost is that a re-segmentation or
@@ -81,7 +81,7 @@ list(
   # depicts whichever project happens to own the target. That is not
   # hypothetical: while these targets lived here during the split,
   # pipeline_nli.mmd was quietly regenerated as the 52-target REPORTING graph --
-  # snowball_parquet and nli_scores_by_claim_evidence gone, works_citing_parquet
+  # snowball_parquet and claim_scores_by_claim gone, works_citing_parquet
   # surviving only as the input stub this project declares. The per-project .mmd
   # files can be combined into one overview here later; for now each is honest
   # about what it shows.
@@ -119,12 +119,12 @@ list(
   # block, not merely ignored: there is no longer a second selection to diverge
   # from.
   tar_target(purpose_fc, purpose_config(yaml::read_yaml(config_file), "fact_checking")),
-  tar_target(nli_active, purpose_fc$nli),
-  tar_target(nli_configs_all, yaml::read_yaml(config_file)[["nli"]][["configs"]]),
-  tar_target(nli_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]]),
+  tar_target(scorer_name, purpose_fc$nli),
+  tar_target(scorer_configs_all, yaml::read_yaml(config_file)[["nli"]][["configs"]]),
+  tar_target(scorer_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[scorer_name]]),
   tar_target(
     granularity,
-    yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]][["granularity"]] %||% "naive_bm"
+    yaml::read_yaml(config_file)[["nli"]][["configs"]][[scorer_name]][["granularity"]] %||% "naive_bm"
   ),
   # Fixed literal, not read from config: this layer renders ALL three
   # granularities even though only one is ever "active" for scoring, so a
@@ -187,8 +187,8 @@ list(
   # change to the scores now invalidates the reports through content hashing,
   # rather than through a dependency edge someone had to remember to draw.
   tar_target(
-    nli_scores_evidence_consolidated,
-    "output/nli_scores_evidence", format = "file"
+    claim_scores_consolidated,
+    "output/claim_scores", format = "file"
   ),
   # UNTRACKED on purpose, and NOT format = "file".
   #
@@ -216,9 +216,9 @@ list(
   # UNTRACKED on purpose (140 GB) -- see the preamble. Branched per assessment
   # so bm_split_report_highlighted's `pattern = map(...)` is unchanged.
   tar_target(
-    nli_ready_evidence_parquet,
+    claim_work_pairs,
     file.path(
-      "output/nli_ready_evidence", paste0("granularity=", granularity),
+      "output/claim_work_pairs", paste0("granularity=", granularity),
       paste0("assessment=", assessment$id)
     ),
     pattern = map(assessment)
@@ -228,12 +228,12 @@ list(
   # These moved out of the training project with the chain that writes them.
   # The paths are unchanged, so nothing on disk had to move.
   tar_target(
-    nli_scores_keypaper_evidence_consolidated,
-    "output/nli_scores_evidence_keypaper", format = "file"
+    claim_scores_keypaper_consolidated,
+    "output/claim_scores_keypaper", format = "file"
   ),
   tar_target(
-    nli_scores_keypaper_evidence,
-    "output/nli_scores_evidence_keypaper", format = "file"
+    claim_scores_keypaper,
+    "output/claim_scores_keypaper", format = "file"
   ),
   # UNTRACKED on purpose, and NOT format = "file".
   #
@@ -315,12 +315,12 @@ list(
   #   build_overlap_after_2018_background_messages_table(works_citing_parquet, 2018, "output/tables"),
   #   format = "file"
   # ),
-  # QA report: how nli_ready_evidence_parquet actually split each BM into
+  # QA report: how claim_work_pairs actually split each BM into
   # claims, one assessment's worth of colour-highlighted-original-text +
   # itemised-claim-list HTML per branch, reflecting whichever granularity
   # is currently active (naive_bm/atomic_bm show the extracted confidence
   # column; complete_bm gracefully has none). Deliberately downstream of
-  # nli_ready_evidence_parquet itself (reads its real on-disk output,
+  # claim_work_pairs itself (reads its real on-disk output,
   # distinct()-ed back to one row per claim) rather than a separate
   # pre-scoring computation, so it can never drift from what was actually
   # produced. Not a TD_ design doc -- a QA artifact, same self-contained
@@ -329,19 +329,19 @@ list(
     bm_split_report_highlighted,
     build_bm_split_highlighted(
       assessment,
-      nli_ready_evidence_parquet,
+      claim_work_pairs,
       key_messages_parquet,
       granularity,
       "output/tables",
       claim_completion_model
     ),
-    pattern = map(assessment, nli_ready_evidence_parquet, key_messages_parquet),
+    pattern = map(assessment, claim_work_pairs, key_messages_parquet),
     format = "file"
   ),
   # Target 2h4: NLI overview data — per-assessment label/confidence/alignment
   # summary tables, for the report and its BM explorer. Deliberately wired to
-  # the EVIDENCE-segmentation scoring chain (nli_scores_by_claim_evidence /
-  # output/nli_scores_evidence), not the original per-sentence one
+  # the EVIDENCE-segmentation scoring chain (claim_scores_by_claim /
+  # output/claim_scores), not the original per-sentence one
   # (nli_scores_by_claim / output/nli_scores): the two scoring targets share
   # score_one_claim(), so any change to that file marks BOTH outdated
   # regardless of which approach is actually being run, and the per-sentence
@@ -351,23 +351,23 @@ list(
   # the same host pool as a live evidence scoring run — see git history for
   # the incident this comment is warning about. Reads directly from the
   # on-disk output path rather than individual per-claim file paths;
-  # nli_scores_by_claim_evidence is listed as an argument purely to
+  # claim_scores_by_claim is listed as an argument purely to
   # establish the DAG dependency (so this target waits for evidence scoring
   # and invalidates when its output changes).
   tar_target(
     nli_overview_data,
-    build_nli_overview_data(
+    build_claim_scores_overview_data(
       assessment,
       file.path(
-        "output/nli_scores_evidence",
+        "output/claim_scores",
         paste0("granularity=", nli_granularities),
-        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
+        paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
         paste0("assessment=", assessment$id)
       ),
-      nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active),
+      nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name),
       works_citing_meta_paths(works_citing_parquet),
       "output/tables",
-      nli_scores_evidence_consolidated,
+      claim_scores_consolidated,
       nli_granularities
     ),
     pattern = cross(map(assessment, works_citing_parquet), nli_granularities),
@@ -393,28 +393,28 @@ list(
   # each granularity is normally scored under its own dedicated config).
   tar_target(
     nli_scores_qa_data,
-    build_nli_scores_qa_data(
+    build_claim_scores_qa_data(
       assessment,
       file.path(
-        "output/nli_scores_evidence",
+        "output/claim_scores",
         paste0("granularity=", nli_granularities),
-        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
+        paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
         paste0("assessment=", assessment$id)
       ),
       works_citing_meta_paths(works_citing_parquet),
-      nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active),
+      nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name),
       nli_granularities,
       "output/tables",
       per_claim_cap = 50L,
-      # Same granularity/nli_config resolution as the main nli_scores_path
+      # Same granularity/scorer_config resolution as the main nli_scores_path
       # above, pointed at the SEPARATE key-paper scoring chain instead --
       # empty/absent until that (RunPod-calling) chain has actually been
-      # run; build_nli_scores_qa_data() degrades to "no overlay" rather
+      # run; build_claim_scores_qa_data() degrades to "no overlay" rather
       # than erroring.
       keypaper_scores_path = file.path(
-        "output/nli_scores_evidence_keypaper",
+        "output/claim_scores_keypaper",
         paste0("granularity=", nli_granularities),
-        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
+        paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
         paste0("assessment=", assessment$id)
       ),
       # Bare reference -- establishes the DAG dependency only, so the
@@ -423,13 +423,13 @@ list(
       # CONSOLIDATED target, not the per-claim scoring branches: this reads
       # the scored data off disk, so it must not start until the scratch
       # files have been merged.
-      nli_scores_keypaper_evidence = nli_scores_keypaper_evidence_consolidated,
+      claim_scores_keypaper = claim_scores_keypaper_consolidated,
       # Resolved granularity's OWN uncertain_threshold -- not nli.active's --
       # same fine-grained-config reasoning as nli_config_for_granularity()
       # itself. Falls back to 0.60 (score_one_claim()'s own default) if the
       # resolved config doesn't set one. Feeds the ternary figure's
       # certain/uncertain boundary lines.
-      uncertain_threshold = nli_configs_all[[nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)]][["uncertain_threshold"]] %||% 0.60
+      uncertain_threshold = scorer_configs_all[[nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)]][["uncertain_threshold"]] %||% 0.60
     ),
     pattern = cross(map(assessment, works_citing_parquet), nli_granularities),
     format = "file",
@@ -444,7 +444,7 @@ list(
   # replotting doesn't require recollecting the raw scored table.
   tar_target(
     nli_scores_qa_figures,
-    build_nli_scores_qa_figures(nli_scores_qa_data, "output/figures"),
+    build_claim_scores_qa_figures(nli_scores_qa_data, "output/figures"),
     pattern = map(nli_scores_qa_data),
     format = "file"
   ),
@@ -453,7 +453,7 @@ list(
   # active-granularity, NOT cross()'d over nli_granularities like
   # nli_scores_qa_data is — llm_verification_parquet only ever reflects
   # whichever granularity is currently active (single active
-  # nli_ready_evidence_parquet/nli_active, pattern = map(assessment, ...),
+  # claim_work_pairs/scorer_name, pattern = map(assessment, ...),
   # no cross()), so there is nothing to cross here either. See
   # R/build_llm_verification_qa_data.R.
   tar_target(
@@ -463,7 +463,7 @@ list(
       llm_verification_parquet,
       works_citing_meta_paths(works_citing_parquet),
       llm_verification_active,
-      nli_active,
+      scorer_name,
       "output/tables",
       per_claim_cap = 50L,
       llm_verification_keypaper_path = llm_verification_keypaper_parquet,
@@ -496,7 +496,7 @@ list(
   # confidence density, alignment density, per assessment.
   tar_target(
     nli_overview_figures,
-    build_nli_overview_figures(nli_overview_data, "output/figures"),
+    build_claim_scores_overview_figures(nli_overview_data, "output/figures"),
     pattern = map(nli_overview_data),
     format = "file"
   ),
@@ -506,10 +506,10 @@ list(
   # self-contained standalone HTML file (embedded via <iframe> in the report)
   # rather than printed in-place, since Quarto's HTML format does not
   # propagate htmlwidget JS dependencies out of a manually cat()-ed
-  # knit_print() call inside a results:asis loop — see R/build_nli_bm_explorer.R.
+  # knit_print() call inside a results:asis loop — see R/build_claim_scores_bm_explorer.R.
   tar_target(
     nli_bm_explorer_html,
-    save_nli_bm_explorer(nli_overview_data, "output/tables"),
+    save_claim_scores_bm_explorer(nli_overview_data, "output/tables"),
     pattern = map(nli_overview_data),
     format = "file"
   ),
@@ -518,7 +518,7 @@ list(
   # -> LLM-confirmed <label>, each a subset of the previous. Pure local
   # arrow/dplyr over already-scored parquet (no network/GPU calls); reads
   # llm_verification_parquet only as an already-built dependency, same
-  # DAG-dependency-only convention as nli_scores_by_claim_evidence elsewhere.
+  # DAG-dependency-only convention as claim_scores_by_claim elsewhere.
   # One shared build_label_funnel_*() implementation, called once per label,
   # rather than two near-identical copies. See R/build_label_funnel_data.R
   # and IPBES_Label_Funnel_Report.qmd.
@@ -527,9 +527,9 @@ list(
   # so naive_bm/complete_bm/atomic_bm each get their own funnel view,
   # regardless of which one is actually active in nli.active -- a
   # combination with no scored data yet renders the existing empty state.
-  # The nli_config used to locate (and label) each granularity's data is
+  # The scorer_config used to locate (and label) each granularity's data is
   # resolved per-branch via nli_config_for_granularity() (R/branch_helpers.R)
-  # -- NOT nli_active directly -- since each granularity is normally scored
+  # -- NOT scorer_name directly -- since each granularity is normally scored
   # under its own dedicated config (bge_m3_zeroshot_naive_bm/_complete_bm/
   # _atomic_bm); substituting the single globally active config name for
   # every branch would make an already-scored, non-active granularity look
@@ -542,15 +542,15 @@ list(
       works_citing_map_paths(works_citing_parquet),
       works_citing_meta_paths(works_citing_parquet),
       file.path(
-        "output/nli_scores_evidence",
+        "output/claim_scores",
         paste0("granularity=", nli_granularities),
-        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
+        paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
         paste0("assessment=", assessment$id)
       ),
       llm_verification_parquet,
       "output/tables",
       nli_granularities,
-      nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)
+      nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)
     ),
     pattern = cross(map(assessment, works_citing_parquet, llm_verification_parquet), nli_granularities),
     format = "file",
@@ -567,15 +567,15 @@ list(
       works_citing_map_paths(works_citing_parquet),
       works_citing_meta_paths(works_citing_parquet),
       file.path(
-        "output/nli_scores_evidence",
+        "output/claim_scores",
         paste0("granularity=", nli_granularities),
-        paste0("nli_config=", nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)),
+        paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
         paste0("assessment=", assessment$id)
       ),
       llm_verification_parquet,
       "output/tables",
       nli_granularities,
-      nli_config_for_granularity(nli_configs_all, nli_granularities, nli_active)
+      nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)
     ),
     pattern = cross(map(assessment, works_citing_parquet, llm_verification_parquet), nli_granularities),
     format = "file",
@@ -684,7 +684,7 @@ list(
   #   tar_make(names = "report")
   #     Full dependency check. Correct, and what you want when the pipeline is
   #     current -- but it walks the ENTIRE upstream, so it will rebuild
-  #     nli_scores_by_claim_evidence (RunPod GPU) and llm_verification_parquet
+  #     claim_scores_by_claim (RunPod GPU) and llm_verification_parquet
   #     (OpenRouter spend) if those are outdated.
   #
   #   tar_make(names = c("reports_project", "report_fact_checker",

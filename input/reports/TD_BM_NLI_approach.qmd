@@ -114,7 +114,7 @@ early). Do not truncate mid-sentence.
 
 ## Claim Granularity: `naive_bm` vs. `complete_bm` (see also `atomic_bm` below)
 
-The implemented pipeline (`R/build_nli_ready_evidence_parquet.R`) doesn't
+The implemented pipeline (`R/build_claim_work_pairs.R`) doesn't
 score a whole BM against a paper in one pair — it first cuts each BM's
 `bm_description`/`bm_label` into smaller claims. `input/config.yaml`'s
 per-NLI-config `granularity` field picks how:
@@ -225,7 +225,7 @@ pattern in 13/88 BMs (~15%) — a real, non-rare construct.
 
 **`atomic_bm` fixes this by splitting at *every* evidence brace**, not
 just sentence-terminal ones (`segment_bm_atomic()`,
-`R/build_nli_ready_evidence_parquet.R`) — each evidence reference becomes
+`R/build_claim_work_pairs.R`) — each evidence reference becomes
 its own candidate claim. This routinely produces grammatically elliptical
 fragments ("can help to regulate disease and the immune system" has no
 subject of its own), so a second pass, `complete_bm_fragments()`
@@ -271,7 +271,7 @@ original BM field with each resulting claim's source span
 colour-highlighted inline, followed by the claims themselves as a
 colour-matched list (and, where applicable, its extracted confidence
 qualifier) — generated directly from
-`nli_ready_evidence_parquet`'s own real output, so it can never drift from
+`claim_work_pairs`'s own real output, so it can never drift from
 what was actually produced. Meant to be reviewed by eye before committing
 to a real scoring run under a new granularity, the same role
 `QA_BM_Split_Report`-style validation played during this design's own

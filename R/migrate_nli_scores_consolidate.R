@@ -1,8 +1,8 @@
 # ONE-TIME migration: collapse Phase 1's per-claim_id partition directories
-# into one consolidated parquet per (nli_config, assessment, km, bm) group.
+# into one consolidated parquet per (scorer_config, assessment, km, bm) group.
 #
 # Deliberately NOT wired into _targets.R — it rewrites and moves real scored
-# data, the same reason find_orphaned_nli_scores.R is a hand-run utility. Run
+# data, the same reason find_orphaned_claim_scores.R is a hand-run utility. Run
 # it from an interactive R session.
 #
 # WHY IT MUST RUN BEFORE THE NEW score_one_claim() CODE IS USED: the new
@@ -132,9 +132,9 @@ migrate_nli_scores_consolidate <- function(
   invisible(out)
 }
 
-# Every (granularity, nli_config) combination of both Phase 1 chains, resolving
+# Every (granularity, scorer_config) combination of both Phase 1 chains, resolving
 # each granularity's own config via nli_config_for_granularity() rather than
-# assuming nli.active — same reasoning as find_orphaned_nli_scores_all().
+# assuming nli.active — same reasoning as find_orphaned_claim_scores_all().
 migrate_nli_scores_consolidate_all <- function(
   config_path = "input/config.yaml",
   nli_granularities = c("naive_bm", "complete_bm", "atomic_bm"),
@@ -142,8 +142,8 @@ migrate_nli_scores_consolidate_all <- function(
   dry_run = TRUE
 ) {
   cfg <- yaml::read_yaml(config_path)
-  nli_active <- purpose_config(cfg, "fact_checking")$nli
-  nli_configs_all <- cfg[["nli"]][["configs"]]
+  scorer_name <- purpose_config(cfg, "fact_checking")$nli
+  scorer_configs_all <- cfg[["nli"]][["configs"]]
 
   combos <- expand.grid(
     root = roots, granularity = nli_granularities, stringsAsFactors = FALSE
@@ -151,16 +151,16 @@ migrate_nli_scores_consolidate_all <- function(
 
   res <- lapply(seq_len(nrow(combos)), function(i) {
     granularity <- combos$granularity[[i]]
-    nli_config_name <- nli_config_for_granularity(nli_configs_all, granularity, nli_active)
+    nli_config_name <- nli_config_for_granularity(scorer_configs_all, granularity, scorer_name)
     scores_root <- file.path(
       combos$root[[i]], paste0("granularity=", granularity),
-      paste0("nli_config=", nli_config_name)
+      paste0("scorer_config=", nli_config_name)
     )
     out <- migrate_nli_scores_consolidate(scores_root, dry_run = dry_run)
     if (nrow(out)) {
       out$root <- combos$root[[i]]
       out$granularity <- granularity
-      out$nli_config <- nli_config_name
+      out$scorer_config <- nli_config_name
     }
     out
   })

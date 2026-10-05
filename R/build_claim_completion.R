@@ -1,6 +1,6 @@
 # LLM-based completion of elliptical `atomic_bm` fragments.
 #
-# segment_bm_atomic() (R/build_nli_ready_evidence_parquet.R) splits a BM
+# segment_bm_atomic() (R/build_claim_work_pairs.R) splits a BM
 # field at EVERY evidence brace, which routinely produces fragments that
 # only make grammatical sense as a continuation of an earlier fragment
 # (e.g. "can help to regulate disease and the immune system" has no
@@ -83,7 +83,7 @@ claim_completion_is_faithful <- function(completed, source_fragments_text) {
 # segment_bm_atomic()) -> a tibble of completion results, one row per
 # fragment: original_fragment, needs_completion, completed_claim,
 # faithfulness_flagged, explanation. Callers building claim text
-# (build_nli_ready_evidence_parquet()) use $completed_claim; the
+# (build_claim_work_pairs()) use $completed_claim; the
 # atomic_bm validation report (Atomic_BM_Split_Report.qmd) uses every
 # column.
 #

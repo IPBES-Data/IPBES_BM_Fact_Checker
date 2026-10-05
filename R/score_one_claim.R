@@ -8,8 +8,8 @@
 # REMOTE host a given claim uses.
 #
 # Output layout: each claim writes its rows to its OWN scratch file, and a
-# separate consolidation pass (consolidate_nli_scores(),
-# R/consolidate_nli_scores.R) merges every scratch file of a (km, bm) group
+# separate consolidation pass (consolidate_claim_scores(),
+# R/consolidate_claim_scores.R) merges every scratch file of a (km, bm) group
 # into that group's single consolidated parquet once per run. `claim_id` is
 # therefore a plain COLUMN here, not a partition level: partitioning down to
 # claim_id produced ~1,276 files averaging 6 KB for the keypaper chain alone,
@@ -45,13 +45,13 @@
 # hash of the claim text, so the SAME claim_id can end up holding different
 # text across runs (a re-segmented boundary, a re-completed atomic_bm
 # fragment, ...). The cached output stores the exact claim text it was scored
-# against (the `claim` column) and the model that produced it (`nli_model`);
+# against (the `claim` column) and the model that produced it (`scorer_model`);
 # either differing from the current one forces a full rescore of the claim
 # rather than a delta, so scores for stale text — or two models' scores merged
 # under one claim — can never be served.
 #
 # The scratch file this writes therefore holds the claim's COMPLETE row set,
-# cached rows included, because consolidate_nli_scores() supersedes every
+# cached rows included, because consolidate_claim_scores() supersedes every
 # existing row whose claim_id appears in scratch.
 #
 # Un-migrated-state guard: a (km, bm) holding legacy `claim_id=*/` partition
@@ -68,25 +68,25 @@
 # tar_make() only retries the failed claims.
 score_one_claim <- function(
   claim_unit,
-  nli_config,
-  nli_active,
-  nli_model,
+  scorer_config,
+  scorer_name,
+  scorer_model,
   lock_dir = "output/nli_scores/.locks_temp",
-  output_root = "output/nli_scores"
+  output_root = "output/claim_scores"
 ) {
-  cfg <- if (is.null(nli_config)) list() else nli_config
+  cfg <- if (is.null(scorer_config)) list() else scorer_config
   assessment_id <- claim_unit$assessment
 
   this_claim_id <- claim_unit$claim_id
 
   output_path <- file.path(
-    output_root, paste0("nli_config=", nli_active), paste0("assessment=", assessment_id)
+    output_root, paste0("scorer_config=", scorer_name), paste0("assessment=", assessment_id)
   )
   bm_dir <- file.path(
     output_path, paste0("km=", claim_unit$km), paste0("bm=", claim_unit$bm)
   )
   scratch_dir <- file.path(
-    output_root, ".scratch", paste0("nli_config=", nli_active),
+    output_root, ".scratch", paste0("scorer_config=", scorer_name),
     paste0("assessment=", assessment_id),
     paste0("km=", claim_unit$km), paste0("bm=", claim_unit$bm)
   )
@@ -103,12 +103,12 @@ score_one_claim <- function(
   # legible from tar_read() alone -- "skipped" with n_rows > 0 and n_new == 0
   # is a genuine no-op, whereas the old all-or-nothing skip looked identical
   # whether it had passed over 0 new works or 228,883. Nothing downstream
-  # destructures this list (consolidate_nli_scores() rescans the disk and
+  # destructures this list (consolidate_claim_scores() rescans the disk and
   # never reads status/n_rows), so the extra field is safe to add.
   as_count <- function(x) if (length(x) != 1L || is.na(x)) 0L else as.integer(x)
   record <- function(status, n_rows = 0L, n_new = 0L) {
     list(
-      nli_config = nli_active, assessment = assessment_id,
+      scorer_config = scorer_name, assessment = assessment_id,
       km = claim_unit$km, bm = claim_unit$bm, claim_id = this_claim_id,
       claim = claim_unit$claim, scratch_file = scratch_file,
       status = status,
@@ -151,8 +151,8 @@ score_one_claim <- function(
   # between scoring and consolidation would otherwise re-score the same delta
   # again. Scratch is the newer of the two and wins on any work_id in both.
   #
-  # nli_config/assessment/km/bm are re-stamped as constants rather than read
-  # back: consolidate_nli_scores() strips them (they live in the consolidated
+  # scorer_config/assessment/km/bm are re-stamped as constants rather than read
+  # back: consolidate_claim_scores() strips them (they live in the consolidated
   # file's own Hive path) and open_dataset() on explicit file paths does not
   # infer them again, while the scratch schema does carry them. Re-stamping
   # makes both sources schema-identical to `out` below, and they are constants
@@ -161,7 +161,7 @@ score_one_claim <- function(
     if (is.null(df) || !nrow(df)) {
       return(NULL)
     }
-    df$nli_config <- nli_active
+    df$scorer_config <- scorer_name
     df$assessment <- assessment_id
     df$km <- claim_unit$km
     df$bm <- claim_unit$bm
@@ -210,10 +210,10 @@ score_one_claim <- function(
     reason <- NULL
     if (!identical(cached$claim[[1L]], claim_unit$claim)) {
       reason <- "cached claim text differs from the current one"
-    } else if (!is.null(nli_model) && !all(cached$nli_model == nli_model)) {
+    } else if (!is.null(scorer_model) && !all(cached$scorer_model == scorer_model)) {
       reason <- sprintf(
         "cached rows were scored by a different model (%s, now %s)",
-        paste(unique(cached$nli_model), collapse = "/"), nli_model
+        paste(unique(cached$scorer_model), collapse = "/"), scorer_model
       )
     }
     if (!is.null(reason)) {
@@ -444,8 +444,8 @@ score_one_claim <- function(
   })
 
   out <- dplyr::tibble(
-    nli_config      = nli_active,
-    nli_model       = nli_model,
+    scorer_config      = scorer_name,
+    scorer_model       = scorer_model,
     assessment      = assessment_id,
     km              = claim_unit$km,
     bm              = claim_unit$bm,
@@ -463,14 +463,14 @@ score_one_claim <- function(
   )
 
   # The scratch file must carry this claim's COMPLETE row set, not just the
-  # rows scored above: consolidate_nli_scores() supersedes every existing row
+  # rows scored above: consolidate_claim_scores() supersedes every existing row
   # whose claim_id appears in scratch
   #   old <- old[!(old$claim_id %in% unique(new$claim_id)), ]
   # so writing only the delta would DELETE the previously-scored rows it was
   # meant to extend. Carrying them forward here keeps that merge rule -- and
   # its orphan-pruning guards -- untouched.
   #
-  # Cached rows keep their own nli_model: they really were scored by it, and
+  # Cached rows keep their own scorer_model: they really were scored by it, and
   # the guard above has already established it matches the current one (any
   # mismatch discarded the cache and forced a full rescore instead).
   final <- if (is.null(cached)) {
@@ -479,8 +479,8 @@ score_one_claim <- function(
     dplyr::bind_rows(cached, out) |> dplyr::select(dplyr::all_of(names(out)))
   }
 
-  # Scratch write only — consolidate_nli_scores() merges this into the (km,
-  # bm) group's single parquet and deletes the scratch file. nli_config /
+  # Scratch write only — consolidate_claim_scores() merges this into the (km,
+  # bm) group's single parquet and deletes the scratch file. scorer_config /
   # assessment / km / bm stay in the frame here purely so a stray scratch
   # file is self-describing if a run dies mid-way; consolidation drops them
   # again, since they live in the consolidated file's own Hive path.

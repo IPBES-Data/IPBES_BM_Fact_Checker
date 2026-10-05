@@ -55,9 +55,9 @@
 # fighting over/resetting each other.
 #
 # `raw` is the per-row (km, bm, work_id, doi, label, confidence, alignment)
-# data frame already produced by build_nli_overview_data() (its $raw
+# data frame already produced by build_claim_scores_overview_data() (its $raw
 # element) — no new target/data source required.
-build_nli_bm_explorer <- function(raw, assessment_id) {
+build_claim_scores_bm_explorer <- function(raw, assessment_id) {
   # Shared across every NLI-label figure -- see R/branch_helpers.R.
   label_levels <- nli_label_levels
   label_colors <- nli_label_colors
@@ -630,14 +630,14 @@ build_nli_bm_explorer <- function(raw, assessment_id) {
 # cat()-ed knit_print() call, so the widget rendered as an empty div with no
 # chart. saveWidget(selfcontained = TRUE) sidesteps that entirely by bundling
 # the JS inline in its own standalone page.
-save_nli_bm_explorer <- function(nli_overview_data_path, output_root = "output/tables") {
+save_claim_scores_bm_explorer <- function(nli_overview_data_path, output_root = "output/tables") {
   x <- readRDS(nli_overview_data_path)
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   fn <- file.path(
     output_root,
     paste0(
       "nli_bm_explorer_", x$assessment,
-      nli_model_suffix(x$nli_active %||% "deberta_zeroshot"),
+      nli_model_suffix(x$scorer_name %||% "deberta_zeroshot"),
       granularity_suffix(x$granularity %||% "naive_bm"), ".html"
     )
   )
@@ -650,7 +650,7 @@ save_nli_bm_explorer <- function(nli_overview_data_path, output_root = "output/t
     return(fn)
   }
 
-  fig <- build_nli_bm_explorer(x$raw, x$assessment)
+  fig <- build_claim_scores_bm_explorer(x$raw, x$assessment)
   htmlwidgets::saveWidget(fig, file = fn, selfcontained = TRUE)
   fn
 }

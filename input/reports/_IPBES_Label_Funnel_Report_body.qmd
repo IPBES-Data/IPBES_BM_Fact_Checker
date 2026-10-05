@@ -29,7 +29,7 @@ library(ggplot2)
 # calls), so a one-line inline copy is more consistent than introducing
 # that pattern here.
 gran_suffix <- paste0("_", params$granularity)
-model_suffix <- if (identical(params$nli_active, "deberta_zeroshot")) "" else paste0("_", params$nli_active)
+model_suffix <- if (identical(params$scorer_name, "deberta_zeroshot")) "" else paste0("_", params$scorer_name)
 # file.path("output/reports", ...) rather than a bare name: the qmd source
 # lives in input/reports/, but the rendered .html gets moved to
 # output/reports/ by the _targets.R target after this chunk runs (Quarto
@@ -122,7 +122,7 @@ it judges the evidence insufficient, so an LLM verdict of `r params$label`
 already *implies* sufficient evidence — a separate level here would always
 contain exactly the same works as level 3.
 
-**NLI model: `r params$nli_active`.** Level 2/3 counts below reflect
+**NLI model: `r params$scorer_name`.** Level 2/3 counts below reflect
 whichever model `input/config.yaml`'s `fact_checking.nli` selected when this
 report was rendered — different models are not directly comparable
 work-for-work either, since each has its own score distribution and

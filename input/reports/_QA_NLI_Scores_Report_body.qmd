@@ -15,16 +15,16 @@ library(dplyr)
 library(DT)
 
 # No report_files_dir/copy_into_report_files() here, and no source()ing of
-# R/build_nli_scores_qa_data.R either -- quarto::quarto_render() runs this
+# R/build_claim_scores_qa_data.R either -- quarto::quarto_render() runs this
 # file in its own fresh session that never sources R/*.R (same reasoning
 # IPBES_Label_Funnel_Report.qmd's setup chunk gives for inlining
 # gran_suffix()/nli_model_suffix() rather than sourcing R/branch_helpers.R
 # there). The DT widget itself was already built and cached by
-# build_nli_scores_qa_data(), so this chunk only needs to read it back and
+# build_claim_scores_qa_data(), so this chunk only needs to read it back and
 # print it -- library(DT) above is what lets the cached htmlwidget object
 # render correctly once reloaded.
 gran_suffix <- paste0("_", params$granularity)
-model_suffix <- if (identical(params$nli_config, "deberta_zeroshot")) "" else paste0("_", params$nli_config)
+model_suffix <- if (identical(params$scorer_config, "deberta_zeroshot")) "" else paste0("_", params$scorer_config)
 
 expected_name <- function(ext) {
   sprintf(
@@ -54,7 +54,7 @@ x <- if (length(data_path) == 1L) readRDS(data_path) else list(empty = TRUE)
 # that path-resolution step entirely, and needs no sidecar directory for a
 # single PNG.
 #
-# Matches build_nli_scores_qa_figures.R's own sprintf() pattern exactly
+# Matches build_claim_scores_qa_figures.R's own sprintf() pattern exactly
 # ("nli_scores_qa_ternary_<id><suffixes>.png").
 expected_ternary_name <- function() {
   sprintf(
@@ -66,7 +66,7 @@ ternary_path <- report_deps$nli_scores_qa_figures |>
   (\(x) x[basename(x) == expected_ternary_name()])()
 ```
 
-# `r params$assessment_id` -- granularity: `r params$granularity` -- nli_config: `r params$nli_config`
+# `r params$assessment_id` -- granularity: `r params$granularity` -- scorer_config: `r params$scorer_config`
 
 ## Methodology
 
@@ -150,7 +150,7 @@ by the p-value from a two-proportion test (key-paper share vs. full-corpus
 share for that corner) — a small p-value means the key-paper share is
 genuinely different from the full-corpus one, not just sampling noise from
 the much smaller key-paper count. This overlay comes from a separate
-scoring pass (`nli_scores_keypaper_evidence`) that now runs automatically
+scoring pass (`claim_scores_keypaper`) that now runs automatically
 alongside the main citing-works scoring — it's absent here only on a cold
 first build, before that chain has produced anything yet.
 

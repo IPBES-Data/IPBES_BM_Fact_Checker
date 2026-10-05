@@ -117,8 +117,8 @@ build_llm_verification_chat <- function(cfg, system_prompt, api_key) {
 # partitions by the row's own outcome, not by the filter that let it through.
 #
 # nli_scores_path is the on-disk output directory for ONE assessment (same
-# path construction as build_nli_overview_data.R); nli_ready_path is the
-# per-assessment nli_ready_evidence_parquet value, which carries `premise`
+# path construction as build_claim_scores_overview_data.R); nli_ready_path is the
+# per-assessment claim_work_pairs value, which carries `premise`
 # (cleaned title + abstract) -- score_one_claim() does not store premise text
 # in its output, only work_id, so the two are joined back here.
 select_llm_verification_candidates <- function(nli_scores_path, nli_ready_path,
@@ -185,7 +185,7 @@ select_llm_verification_candidates <- function(nli_scores_path, nli_ready_path,
   # Both `scored` and `premises` can carry duplicate (km, bm, sentence_number,
   # sentence_source, work_id) rows for a small number of BMs -- confirmed on
   # the real corpus: 6,277 duplicated (km, bm, work_id) keys (2.2%) in
-  # nli_ready_evidence_parquet, concentrated in 4 BMs, most likely inherited
+  # claim_work_pairs, concentrated in 4 BMs, most likely inherited
   # from works_citing_parquet's own snowball edges (a work cited under more
   # than one edge_type). score_one_claim() propagates the same duplication
   # into nli_scores_evidence, since it scores every row of its input
@@ -336,14 +336,14 @@ quote_is_verbatim <- function(quote, source_text) {
 build_llm_verification_parquet <- function(
   assessment,
   nli_ready_path,
-  nli_active,
+  scorer_name,
   llm_active,
   cfg,
   system_prompt_file,
   user_prompt_file,
   llm_candidate_scope_path,
   granularity,
-  nli_scores_by_claim_evidence = NULL, # unused -- establishes the DAG dependency on Phase 1 scoring
+  claim_scores_by_claim = NULL, # unused -- establishes the DAG dependency on Phase 1 scoring
   # Relevance screen (R/build_llm_relevance_screen.R). BOTH default to NULL,
   # i.e. no filtering: the threshold stays unset until validated against human
   # labels, because a wrongly dropped pair is never reviewed and leaves no trace.
@@ -356,7 +356,7 @@ build_llm_verification_parquet <- function(
 
   # llm_config in the output path/columns is the SELECTED config's NAME
   # (e.g. "openrouter_cheap"), distinct from llm_model (the actual model
-  # string) -- same distinction nli_config/nli_model make for Phase 1. Keeping
+  # string) -- same distinction scorer_config/scorer_model make for Phase 1. Keeping
   # each named config's output on its own path means switching `active` in
   # input/config.yaml, or running two configs side by side for comparison,
   # never overwrites another config's already-scored rows. `nli_route` (e.g.
@@ -370,20 +370,20 @@ build_llm_verification_parquet <- function(
     paste0("assessment=", assessment_id)
   )
 
-  # Same reasoning as build_nli_overview_data.R: this path is reconstructed
-  # rather than taken from nli_scores_by_claim_evidence's own (per-claim,
+  # Same reasoning as build_claim_scores_overview_data.R: this path is reconstructed
+  # rather than taken from claim_scores_by_claim's own (per-claim,
   # not per-assessment) branch values, which come from the dynamic scoring
   # chain and can't be sliced by assessment directly. MUST include
-  # granularity=<g>/ ahead of nli_config=<cfg>/ -- confirmed directly against
-  # the real on-disk layout (output/nli_scores_evidence/granularity=<g>/
-  # nli_config=<cfg>/assessment=<id>/); omitting it made dir.exists() fail
+  # granularity=<g>/ ahead of scorer_config=<cfg>/ -- confirmed directly against
+  # the real on-disk layout (output/claim_scores/granularity=<g>/
+  # scorer_config=<cfg>/assessment=<id>/); omitting it made dir.exists() fail
   # silently inside select_llm_verification_candidates(), which returns an
   # empty tibble rather than erroring -- this function had apparently never
   # been run for real before that was caught (output/llm_verification/raw
   # and scores/ didn't exist on disk until then).
   nli_scores_path <- file.path(
-    "output/nli_scores_evidence", paste0("granularity=", granularity),
-    paste0("nli_config=", nli_active), paste0("assessment=", assessment_id)
+    "output/claim_scores", paste0("granularity=", granularity),
+    paste0("scorer_config=", scorer_name), paste0("assessment=", assessment_id)
   )
 
   candidates <- select_llm_verification_candidates(
@@ -651,12 +651,12 @@ build_llm_verification_parquet <- function(
   # tag_direct_evidence_match() above -- both carried through the
   # inner_join with verdicts above.
   out$llm_model <- cfg$model
-  out$nli_config <- nli_active
+  out$scorer_config <- scorer_name
   out$assessment <- assessment_id
 
   out <- out |>
     dplyr::select(
-      llm_config, nli_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
+      llm_config, scorer_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
       nli_label, uncertain, nli_confidence, p_supports, p_refutes, p_nei,
       direct_evidence_match,
       llm_model, llm_label, llm_agrees, sufficient_evidence,

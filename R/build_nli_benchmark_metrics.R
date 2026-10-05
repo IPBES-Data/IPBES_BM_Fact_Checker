@@ -1,6 +1,6 @@
 # Benchmark metrics across every scored model (TD_NLI_training.qmd).
 #
-# Sibling to the other QA data builders (build_nli_scores_qa_data.R,
+# Sibling to the other QA data builders (build_claim_scores_qa_data.R,
 # build_llm_verification_qa_data.R): reads what is already on disk, computes
 # everything the report needs, and caches ONE rds -- the qmd renders in a fresh
 # session that never sources R/*.R, so nothing here can be deferred to it.
@@ -64,7 +64,7 @@ prf_boot <- function(truth, pred, labels, B = 1000L, seed = 1L) {
 build_nli_benchmark_metrics <- function(
   score_paths,
   training_data_path = "output/nli_training",
-  nli_active = NULL,
+  scorer_name = NULL,
   benchmark_config = NULL,
   # The human labels, as returned by build_goldstandard(). REQUIRED: without
   # them every table below measures agreement with gpt-4o-mini, and a model that
@@ -171,7 +171,7 @@ build_nli_benchmark_metrics <- function(
   if (!n_gold_matched) {
     stop(
       "build_nli_benchmark_metrics: none of the gold standard's ids appear in the benchmark scores. ",
-      "The gold sample must be drawn from the SAME (granularity, nli_config, split) slot the ",
+      "The gold sample must be drawn from the SAME (granularity, scorer_config, split) slot the ",
       "benchmark scores -- see R/build_goldstandard_sample.R."
     )
   }
@@ -372,7 +372,7 @@ build_nli_benchmark_metrics <- function(
   # yields few huge unbalanced components, trading a small measurable bias for
   # a large unmeasurable one. So it is quantified instead.
   pool <- arrow::open_dataset(training_data_path) |> dplyr::collect()
-  if (!is.null(nli_active)) pool <- pool |> dplyr::filter(nli_config == nli_active)
+  if (!is.null(scorer_name)) pool <- pool |> dplyr::filter(scorer_config == scorer_name)
 
   # Leakage is now checked across THREE folds, not two -- `monitor` matters as
   # much as `holdout`: it is what the fine-tune selects its best checkpoint on,
@@ -411,7 +411,7 @@ build_nli_benchmark_metrics <- function(
 
   out <- list(
     generated_at = Sys.time(),
-    nli_config = nli_active,
+    scorer_config = scorer_name,
     fold = fold_summary,
     models = meta,
     per_class = per_class,

@@ -1,9 +1,9 @@
 # Ternary (p_supports, p_refutes, p_nei) density figure for
-# build_nli_scores_qa_data()'s output, as a static PNG. Reads the rds
-# produced by build_nli_scores_qa_data() rather than re-collecting the raw
+# build_claim_scores_qa_data()'s output, as a static PNG. Reads the rds
+# produced by build_claim_scores_qa_data() rather than re-collecting the raw
 # parquet -- same convention as
-# build_nli_overview_figures.R/build_label_funnel_figures.R.
-build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "output/figures") {
+# build_claim_scores_overview_figures.R/build_label_funnel_figures.R.
+build_claim_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "output/figures") {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(nli_scores_qa_data_path)
 
@@ -15,12 +15,12 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
     output_root,
     sprintf(
       "nli_scores_qa_ternary_%s%s%s.png",
-      x$assessment, nli_model_suffix(x$nli_config), granularity_suffix(x$granularity)
+      x$assessment, nli_model_suffix(x$scorer_config), granularity_suffix(x$granularity)
     )
   )
   ggplot2::ggsave(
     fn_ternary,
-    nli_scores_qa_ternary_plot(
+    claim_scores_qa_ternary_plot(
       x$probs, x$label_pct, x$keypaper_points, x$keypaper_label_pct,
       x$keypaper_label_pvalue, x$uncertain_threshold %||% 0.60
     ),
@@ -55,11 +55,11 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
 #   visually misleading -- they'd look like they're delineating something
 #   when they're entirely inside one region.
 # - Each corner label carries the real % of rows actually won by that
-#   label (from `label_pct`, computed in build_nli_scores_qa_data() from
+#   label (from `label_pct`, computed in build_claim_scores_qa_data() from
 #   the same `label` column score_one_claim() assigned -- not re-derived
 #   here from the probabilities, so it can't drift from the real label).
 # - `keypaper_points` (optional, NULL until the separate key-paper scoring
-#   chain -- R/build_nli_ready_evidence_keypaper_parquet.R -- has actually
+#   chain -- R/build_claim_work_pairs_keypaper.R -- has actually
 #   been run) overlays the seed/reference papers a BM was written FROM,
 #   scored against their own BM's claim: a QA sanity check, since these
 #   should overwhelmingly land in the SUPPORTS region. Small white-filled,
@@ -72,7 +72,7 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
 #   (12.3%) [8.0%]"), so the two can be compared at a glance.
 # - `keypaper_label_pvalue` (optional, same availability) adds the p-value
 #   from a two-proportion test (key-paper share vs. full-corpus share for
-#   that label, stats::prop.test() in build_nli_scores_qa_data.R) right
+#   that label, stats::prop.test() in build_claim_scores_qa_data.R) right
 #   after the key-paper %, so a reader can tell whether a visually
 #   different bracketed share is actually statistically distinguishable
 #   from the full-corpus one or could plausibly be the same underlying rate
@@ -92,7 +92,7 @@ build_nli_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "
 #   corner regions beyond this boundary are "certain" (that label's own
 #   probability cleared the bar); the hexagonal middle region is
 #   "uncertain" regardless of which label technically won there.
-nli_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL, keypaper_label_pct = NULL, keypaper_label_pvalue = NULL, uncertain_threshold = 0.60) {
+claim_scores_qa_ternary_plot <- function(probs, label_pct, keypaper_points = NULL, keypaper_label_pct = NULL, keypaper_label_pvalue = NULL, uncertain_threshold = 0.60) {
   s3 <- sqrt(3)
   # Barycentric -> Cartesian. Vertices: NOT_ENOUGH_INFO=(0,0) bottom-left,
   # REFUTES=(1,0) bottom-right, SUPPORTS=(0.5, sqrt(3)/2) top.

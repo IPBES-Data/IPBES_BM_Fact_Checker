@@ -1,6 +1,6 @@
 # Two static PNGs for build_llm_verification_qa_data()'s output -- QA
 # figures for Phase 2 (LLM verification), sibling to
-# R/build_nli_scores_qa_figures.R (Phase 1's ternary QA figure). A literal
+# R/build_claim_scores_qa_figures.R (Phase 1's ternary QA figure). A literal
 # ternary plot was considered and rejected for Phase 2: the LLM emits one
 # categorical verdict, not a 3-part probability composition, so a simplex
 # density would really just be NLI's own chart wearing a Phase-2 label.
@@ -8,7 +8,7 @@
 # (llm_agrees, llm_label, nli_label, nli_confidence), each carrying a
 # key-paper overlay analogous to Phase 1's ternary keypaper overlay -- same
 # validation message, more honest chart form. Deliberately does NOT modify
-# R/build_nli_scores_qa_figures.R or nli_scores_qa_ternary_plot() -- same
+# R/build_claim_scores_qa_figures.R or claim_scores_qa_ternary_plot() -- same
 # "duplicate, don't call" discipline protecting Phase-1-adjacent
 # (explicitly locked) code from unrelated invalidation.
 build_llm_verification_qa_figures <- function(llm_verification_qa_data_path, output_root = "output/figures") {

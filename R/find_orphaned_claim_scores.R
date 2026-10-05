@@ -2,8 +2,8 @@
 # _targets.R as a target.
 #
 # Orphaned claims (a since-changed segmentation boundary, a renumbered
-# sentence, ...) are now pruned automatically by consolidate_nli_scores()
-# (R/consolidate_nli_scores.R), which drops rows whose claim_id is absent from
+# sentence, ...) are now pruned automatically by consolidate_claim_scores()
+# (R/consolidate_claim_scores.R), which drops rows whose claim_id is absent from
 # the current claim list each time it rewrites a (km, bm) group. This utility
 # is what you run BEFORE that, to see what would go — in particular when
 # consolidation refuses to prune (empty upstream claim list, or a prune
@@ -18,12 +18,12 @@
 # rather than a partition directory, so the on-disk side is read from the
 # dataset itself instead of parsed out of directory names.
 
-# One (assessment, granularity, nli_config) combination. nli_ready_path and
+# One (assessment, granularity, scorer_config) combination. nli_ready_path and
 # nli_scores_path are the same assessment-scoped directories the pipeline
-# itself uses (see nli_ready_evidence_parquet / nli_scores_by_claim_evidence
+# itself uses (see claim_work_pairs / claim_scores_by_claim
 # in _targets.R) — pass them in already resolved, same convention as the
 # rest of R/build_*.R.
-find_orphaned_nli_scores <- function(nli_ready_path, nli_scores_path) {
+find_orphaned_claim_scores <- function(nli_ready_path, nli_scores_path) {
   empty <- dplyr::tibble(
     km = character(), bm = character(), claim_id = character()
   )
@@ -35,7 +35,7 @@ find_orphaned_nli_scores <- function(nli_ready_path, nli_scores_path) {
   # sprintf() isn't supported inside an Arrow-lazy dplyr::mutate() -- collect
   # the (already small) distinct km/bm/sentence_source/sentence_number keys
   # first, then derive claim_id in plain R, same formula as
-  # build_nli_claim_units() (R/build_nli_claim_units.R).
+  # build_claim_units() (R/build_claim_units.R).
   expected <- arrow::open_dataset(nli_ready_path) |>
     dplyr::distinct(km, bm, sentence_source, sentence_number) |>
     dplyr::collect() |>
@@ -76,7 +76,7 @@ find_orphaned_nli_scores <- function(nli_ready_path, nli_scores_path) {
     }
     message(
       "[NLI orphan-check] these are pruned automatically the next time ",
-      "consolidate_nli_scores() rewrites their (km, bm) group."
+      "consolidate_claim_scores() rewrites their (km, bm) group."
     )
   } else {
     message(sprintf(
@@ -88,23 +88,23 @@ find_orphaned_nli_scores <- function(nli_ready_path, nli_scores_path) {
   orphaned
 }
 
-# Convenience wrapper: runs find_orphaned_nli_scores() across every
+# Convenience wrapper: runs find_orphaned_claim_scores() across every
 # (assessment x granularity) combination this project tracks, resolving
-# each granularity's own nli_config via nli_config_for_granularity()
+# each granularity's own scorer_config via nli_config_for_granularity()
 # (R/branch_helpers.R) rather than assuming nli.active — same reasoning as
 # the nli_overview_data/refutes_funnel_data/supports_funnel_data fix: each
 # granularity is normally scored under its OWN dedicated config, not
 # whichever one happens to be active right now. Read-only: removal is
-# consolidate_nli_scores()'s job now, guarded by its own emptiness and
+# consolidate_claim_scores()'s job now, guarded by its own emptiness and
 # max_prune_fraction checks.
-find_orphaned_nli_scores_all <- function(
+find_orphaned_claim_scores_all <- function(
   config_path = "input/config.yaml",
   nli_granularities = c("naive_bm", "complete_bm", "atomic_bm")
 ) {
   cfg <- yaml::read_yaml(config_path)
   assessment_ids <- vapply(cfg[["assessments"]], `[[`, character(1), "id")
-  nli_active <- purpose_config(cfg, "fact_checking")$nli
-  nli_configs_all <- cfg[["nli"]][["configs"]]
+  scorer_name <- purpose_config(cfg, "fact_checking")$nli
+  scorer_configs_all <- cfg[["nli"]][["configs"]]
 
   combos <- expand.grid(
     assessment_id = assessment_ids,
@@ -115,22 +115,22 @@ find_orphaned_nli_scores_all <- function(
   results <- lapply(seq_len(nrow(combos)), function(i) {
     assessment_id <- combos$assessment_id[[i]]
     granularity   <- combos$granularity[[i]]
-    nli_config_name <- nli_config_for_granularity(nli_configs_all, granularity, nli_active)
+    nli_config_name <- nli_config_for_granularity(scorer_configs_all, granularity, scorer_name)
 
     nli_ready_path <- file.path(
-      "output/nli_ready_evidence", paste0("granularity=", granularity),
+      "output/claim_work_pairs", paste0("granularity=", granularity),
       paste0("assessment=", assessment_id)
     )
     nli_scores_path <- file.path(
-      "output/nli_scores_evidence", paste0("granularity=", granularity),
-      paste0("nli_config=", nli_config_name), paste0("assessment=", assessment_id)
+      "output/claim_scores", paste0("granularity=", granularity),
+      paste0("scorer_config=", nli_config_name), paste0("assessment=", assessment_id)
     )
 
-    out <- find_orphaned_nli_scores(nli_ready_path, nli_scores_path)
+    out <- find_orphaned_claim_scores(nli_ready_path, nli_scores_path)
     if (nrow(out)) {
       out$assessment  <- assessment_id
       out$granularity <- granularity
-      out$nli_config  <- nli_config_name
+      out$scorer_config  <- nli_config_name
     }
     out
   })

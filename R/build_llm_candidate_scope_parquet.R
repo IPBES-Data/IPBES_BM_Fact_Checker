@@ -21,17 +21,17 @@
 #
 # Deliberately reads ONLY already-existing, unmodified targets
 # (key_messages_parquet, refs_parquet, works_parquet, the snowball edges
-# dataset, nli_ready_evidence_parquet) and writes to its own new output root.
+# dataset, claim_work_pairs) and writes to its own new output root.
 # Nothing here edits or invalidates download_works.R, build_snowball_parquet.R,
-# build_works_citing_parquet.R, build_nli_ready_evidence_parquet.R, or the NLI
+# build_works_citing_parquet.R, build_claim_work_pairs.R, or the NLI
 # scoring chain -- `targets` invalidation only flows forward from something
 # that actually changes, and none of those files or their targets change.
 #
 # In particular, this file does NOT call or edit
-# segment_bm_by_evidence() (R/build_nli_ready_evidence_parquet.R): `targets`
+# segment_bm_by_evidence() (R/build_claim_work_pairs.R): `targets`
 # hashes function BODIES as dependencies, so even a behavior-preserving edit
-# there would mark nli_ready_evidence_parquet -- and everything downstream of
-# it, including nli_scores_by_claim_evidence -- outdated. Instead,
+# there would mark claim_work_pairs -- and everything downstream of
+# it, including claim_scores_by_claim -- outdated. Instead,
 # extract_claim_evidence_tokens() below duplicates the small amount of
 # sentence-splitting/terminal-brace/buffer logic needed, byte-for-byte, so
 # segment boundaries (and therefore claim_id numbering) land on the exact
@@ -97,10 +97,10 @@ extract_claim_evidence_tokens <- function(text) {
 
 # Atomic-BM counterpart of extract_claim_evidence_tokens() above, for
 # nli_granularity == "atomic_bm". Deliberately duplicates
-# segment_bm_atomic()'s splitting logic (R/build_nli_ready_evidence_parquet.R)
+# segment_bm_atomic()'s splitting logic (R/build_claim_work_pairs.R)
 # for the same reason the naive-bm extractor above duplicates
 # segment_bm_by_evidence() rather than calling it (see file header) --
-# editing the original would otherwise mark nli_ready_evidence_parquet, and
+# editing the original would otherwise mark claim_work_pairs, and
 # everything downstream of it, outdated for no functional reason.
 #
 # Unlike naive_bm, atomic_bm's real claim_id/sentence_number assignment
@@ -108,7 +108,7 @@ extract_claim_evidence_tokens <- function(text) {
 # be dropped (never reordered) when the faithfulness check rejects a
 # completion. So this function re-runs completion itself, relying on its
 # resumable per-fragment cache (output/claim_completion/raw/) to recover the
-# same surviving-fragment order/count the real nli_ready_evidence_parquet
+# same surviving-fragment order/count the real claim_work_pairs
 # build produced (seq_len(nrow(completed)) there matches seq_along() of this
 # function's return value here). That cache should always hit in practice --
 # a real atomic_bm build having already been run is a precondition for this
@@ -119,7 +119,7 @@ extract_claim_evidence_tokens <- function(text) {
 # bm_align_surviving_indices() (R/build_bm_split_highlighted.R) is called
 # directly, not duplicated -- it is a generic alignment helper, not one of
 # the three segmenters this file avoids calling, and it isn't part of
-# nli_ready_evidence_parquet's own build path, so depending on it here
+# claim_work_pairs's own build path, so depending on it here
 # doesn't risk spurious invalidation of that expensively-scored target.
 extract_claim_evidence_tokens_atomic <- function(text, completion_cfg, completion_api_key) {
   if (is.na(text) || !nzchar(text)) {
@@ -224,9 +224,9 @@ build_llm_candidate_scope_parquet <- function(
   refs_parquet,
   works_parquet,
   snowball_parquet, # unused directly -- edges path reconstructed below (same
-                     # convention as build_nli_overview_data.R's nli_scores_path);
+                     # convention as build_claim_scores_overview_data.R's nli_scores_path);
                      # establishes the DAG dependency only.
-  nli_ready_evidence_parquet,
+  claim_work_pairs,
   output_root = "output/llm_candidate_scope",
   nli_granularity = "naive_bm",
   completion_model = NULL
@@ -260,8 +260,8 @@ build_llm_candidate_scope_parquet <- function(
 
   # atomic_bm's claim_id/sentence_number depends on completion (see
   # extract_claim_evidence_tokens_atomic()'s header) -- needs the same
-  # completion_cfg/api_key setup build_nli_ready_evidence_parquet.R and
-  # build_nli_ready_evidence_keypaper_parquet.R already use for their own
+  # completion_cfg/api_key setup build_claim_work_pairs.R and
+  # build_claim_work_pairs_keypaper.R already use for their own
   # atomic_bm passes.
   completion_cfg <- NULL
   completion_api_key <- NULL
@@ -397,9 +397,9 @@ build_llm_candidate_scope_parquet <- function(
     return(empty_result("no citing work traced back to an in-scope seed work"))
   }
 
-  # ---- 6. non-fatal drift check against nli_ready_evidence_parquet's own claim_ids
+  # ---- 6. non-fatal drift check against claim_work_pairs's own claim_ids
   actual_claim_ids <- tryCatch(
-    arrow::open_dataset(nli_ready_evidence_parquet) |>
+    arrow::open_dataset(claim_work_pairs) |>
       dplyr::select(claim_id) |>
       dplyr::distinct() |>
       dplyr::collect() |>
@@ -410,14 +410,14 @@ build_llm_candidate_scope_parquet <- function(
     drifted <- setdiff(unique(claim_tokens$claim_id), actual_claim_ids)
     if (length(drifted)) {
       real_segmenter <- if (identical(nli_granularity, "atomic_bm")) {
-        "segment_bm_atomic() (+ complete_bm_fragments()) in R/build_nli_ready_evidence_parquet.R / R/build_claim_completion.R"
+        "segment_bm_atomic() (+ complete_bm_fragments()) in R/build_claim_work_pairs.R / R/build_claim_completion.R"
       } else {
-        "segment_bm_by_evidence() in R/build_nli_ready_evidence_parquet.R"
+        "segment_bm_by_evidence() in R/build_claim_work_pairs.R"
       }
       warning(sprintf(
         paste(
           "[LLM scope %s] %d evidence-derived claim_id(s) (e.g. %s) do not appear in",
-          "nli_ready_evidence_parquet -- extract_claim_evidence_tokens%s() in",
+          "claim_work_pairs -- extract_claim_evidence_tokens%s() in",
           "R/build_llm_candidate_scope_parquet.R may have drifted out of sync with",
           "%s."
         ),

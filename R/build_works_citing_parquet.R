@@ -19,7 +19,7 @@
 #
 # The mapping keeps the original output/works_citing/assessment/km/bm path
 # and partitioning on purpose: consumers that walk those directories
-# (build_nli_ready_parquet.R, build_nli_ready_evidence_parquet.R) and
+# (build_nli_ready_parquet.R, build_claim_work_pairs.R) and
 # build_label_funnel_data.R's select(km, bm, work_id = id) keep working
 # against the same layout.
 #

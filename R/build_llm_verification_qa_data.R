@@ -1,11 +1,11 @@
 # QA data for Phase 2 (LLM verification) -- one assessment x llm_config
-# combination. Sibling to R/build_nli_scores_qa_data.R (which QAs Phase 1
+# combination. Sibling to R/build_claim_scores_qa_data.R (which QAs Phase 1
 # scoring); this QAs Phase 2's independent LLM review of NLI-flagged pairs.
 #
 # Single-active-granularity, NOT cross()'d over nli_granularities like
 # nli_scores_qa_data is -- llm_verification_parquet only ever reflects
 # whichever granularity is CURRENTLY active (it reads via the single active
-# nli_ready_evidence_parquet/nli_active, pattern = map(assessment, ...), no
+# claim_work_pairs/scorer_name, pattern = map(assessment, ...), no
 # cross()), so there is nothing to cross here either.
 #
 # llm_verification_parquet's own output already carries everything needed
@@ -21,7 +21,7 @@ build_llm_verification_qa_data <- function(
   llm_verification_path,
   works_citing_path,
   llm_active,
-  nli_active,
+  scorer_name,
   output_root = "output/tables",
   per_claim_cap = 50L,
   llm_verification_keypaper_path = NULL,
@@ -43,7 +43,7 @@ build_llm_verification_qa_data <- function(
 
   if (!has_data(llm_verification_path)) {
     saveRDS(
-      list(assessment = assessment_id, llm_active = llm_active, nli_active = nli_active, empty = TRUE),
+      list(assessment = assessment_id, llm_active = llm_active, scorer_name = scorer_name, empty = TRUE),
       file = fn
     )
     return(fn)
@@ -60,7 +60,7 @@ build_llm_verification_qa_data <- function(
 
   if (!nrow(d)) {
     saveRDS(
-      list(assessment = assessment_id, llm_active = llm_active, nli_active = nli_active, empty = TRUE),
+      list(assessment = assessment_id, llm_active = llm_active, scorer_name = scorer_name, empty = TRUE),
       file = fn
     )
     return(fn)
@@ -189,7 +189,7 @@ build_llm_verification_qa_data <- function(
     list(
       assessment = assessment_id,
       llm_active = llm_active,
-      nli_active = nli_active,
+      scorer_name = scorer_name,
       empty = FALSE,
       n_total = n_total,
       n_shown = nrow(capped),
@@ -219,7 +219,7 @@ build_llm_verification_qa_data <- function(
 # DT table for the claims x scores view. Called from
 # build_llm_verification_qa_data() above (in the targets session, where
 # this file is already sourced) -- the resulting widget object is what gets
-# cached, not called again later, same reasoning nli_scores_qa_datatable()
+# cached, not called again later, same reasoning claim_scores_qa_datatable()
 # already documents (quarto::quarto_render() runs the qmd in a fresh
 # session that never sources R/*.R).
 llm_verification_qa_datatable <- function(df) {

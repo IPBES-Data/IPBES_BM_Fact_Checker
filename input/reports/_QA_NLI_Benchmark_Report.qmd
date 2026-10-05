@@ -13,7 +13,7 @@ zero-shot baseline, and both are gone (design_notes.md points 3, 7).
 
 To revive it, build_nli_benchmark_metrics() needs repointing from
 `output/nli_training_finetuned/*/best` (now in deep_archive/) to the
-`nli_config=` score trees that already exist on disk -- the comparison becomes
+`scorer_config=` score trees that already exist on disk -- the comparison becomes
 "which first-stage model ranks the gold rows best", which is exactly the open
 question in design_notes.md point 8. Its `training_data_path` argument also
 points at output/nli_training/, which moved to deep_archive/ with the rest; the

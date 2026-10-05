@@ -1,14 +1,14 @@
 # How much NLI scoring is actually outstanding, per assessment and per claim.
 #
 # Read-only and free: no RunPod pool, no API keys, no pipeline run. It compares
-# the claim list's own `n_pairs` (what nli_ready_evidence_parquet currently
+# the claim list's own `n_pairs` (what claim_work_pairs currently
 # holds for each claim) against the row count already in nli_scores_evidence.
 # Nothing else in the pipeline answers this question -- score_one_claim() only
-# ever inspects the one claim it was handed, and find_orphaned_nli_scores()
+# ever inspects the one claim it was handed, and find_orphaned_claim_scores()
 # looks the other way (scored claims with no upstream), so a claim that is
 # scored but INCOMPLETE is invisible to both.
 #
-# Deliberately not wired into _targets.R, same as find_orphaned_nli_scores():
+# Deliberately not wired into _targets.R, same as find_orphaned_claim_scores():
 # it is an operator report, not a pipeline input, and the number it prints is
 # a spend decision rather than a build artifact.
 #
@@ -19,7 +19,7 @@
 # what the next run will therefore cost. Run it after any snowball/works
 # re-fetch, and before starting the pool.
 #
-#   source("R/report_nli_backlog.R"); nli_backlog_report()
+#   source("R/report_claim_scores_backlog.R"); nli_backlog_report()
 #
 # `pairs_per_sec` is per pod -- the measured 33.6 for bge-m3 at batch_size 64
 # on one L4 (see input/config.yaml). `n_pods` defaults to the host count of the
@@ -27,8 +27,8 @@
 nli_backlog_report <- function(
   granularity = "atomic_bm",
   nli_config_name = NULL,
-  claim_units_object = "_targets/objects/nli_claim_units_evidence_flat",
-  scores_root = "output/nli_scores_evidence",
+  claim_units_object = "_targets/objects/claim_units_flat",
+  scores_root = "output/claim_scores",
   config_file = "input/config.yaml",
   pairs_per_sec = 33.6,
   n_pods = NULL,
@@ -52,7 +52,7 @@ nli_backlog_report <- function(
   units <- readRDS(claim_units_object)
   root <- file.path(
     scores_root, paste0("granularity=", granularity),
-    paste0("nli_config=", nli_config_name)
+    paste0("scorer_config=", nli_config_name)
   )
 
   enum <- dplyr::tibble(
@@ -100,14 +100,14 @@ nli_backlog_report <- function(
   pool_days <- total_todo / (pairs_per_sec * n_pods) / 86400
 
   message(sprintf(
-    "[NLI backlog] granularity=%s nli_config=%s -- %s pair(s) outstanding across %d claim(s); ~%.1f day(s) on %d pod(s)",
+    "[NLI backlog] granularity=%s scorer_config=%s -- %s pair(s) outstanding across %d claim(s); ~%.1f day(s) on %d pod(s)",
     granularity, nli_config_name, format(round(total_todo), big.mark = ","),
     sum(cmp$n_todo > 0), pool_days, n_pods
   ))
 
   list(
     granularity   = granularity,
-    nli_config    = nli_config_name,
+    scorer_config    = nli_config_name,
     by_assessment = by_assessment,
     by_claim      = dplyr::arrange(cmp, dplyr::desc(n_todo)),
     largest_partial = cmp |>

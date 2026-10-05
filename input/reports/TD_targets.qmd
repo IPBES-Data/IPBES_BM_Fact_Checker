@@ -16,8 +16,8 @@ format:
 This document describes the `targets` pipeline for the IPBES BM Fact Checker project.
 
 **Note: this document predates the reporting/explorer layer and is stale in
-that respect** — it does not describe the `nli_ready_evidence_parquet` →
-`nli_claim_units_evidence` → `nli_scores_by_claim_evidence` chain, or the
+that respect** — it does not describe the `claim_work_pairs` →
+`claim_units` → `claim_scores_by_claim` chain, or the
 downstream `nli_overview_data`, `nli_overview_figures`, `nli_bm_explorer_html`,
 `reports_project`, and `report_fact_checker` targets, all of which exist and run
 today. See `_targets.R` and [CLAUDE.md](CLAUDE.md)'s R-files table for the
@@ -27,7 +27,7 @@ current, authoritative target list.
 
 The pipeline fetches IPBES assessment data from the [IPBES Linked Open Data (LOD)](https://github.com/IPBES-Data/IPBES_LOD) repository in RDF/Turtle format, queries the assessments via SPARQL, and produces per-assessment Parquet datasets for refs, sections, key-messages, Zotero items, OpenAlex works, snowball results, and NLI alignment scores.
 
-The **active scoring approach** is NLI (`nli_scores_by_claim` / `nli_scores_by_claim_evidence`): each citing work is classified as SUPPORTS / REFUTES / NOT_ENOUGH_INFO against its partition's Background Message using a zero-shot `bge-m3-zeroshot-v2.0-c` NLI model served on RunPod (see [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/) and [TD_BM_NLI_approach.qmd](TD_BM_NLI_approach.html)) — `deberta-v3-large-zeroshot-v2.0` was the original model, now retired.
+The **active scoring approach** is NLI (`nli_scores_by_claim` / `claim_scores_by_claim`): each citing work is classified as SUPPORTS / REFUTES / NOT_ENOUGH_INFO against its partition's Background Message using a zero-shot `bge-m3-zeroshot-v2.0-c` NLI model served on RunPod (see [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/) and [TD_BM_NLI_approach.qmd](TD_BM_NLI_approach.html)) — `deberta-v3-large-zeroshot-v2.0` was the original model, now retired.
 
 **Phase 2 LLM verification** (`llm_verification_parquet`) reviews whichever slice of NLI scores each config's `nli_labels`/`nli_certainty` fields select (currently `REFUTES` + `SUPPORTS`, both `certain`, on every shipped config — ~79k of 3.5M scored pairs), one `ellmer::chat_openrouter()` call per `(claim, work)` pair — every routed pair is reviewed, none filtered, but each is tagged `direct_evidence_match` by `llm_candidate_scope_parquet` (via IPBES's own sub-chapter evidence references; a former `subset: "default"` candidate-narrowing filter was retired here since it only reduced routed pairs by ~14%, not worth the lost review coverage) — see [TD_NLI_LLM_two_phase.qmd](TD_NLI_LLM_two_phase.html) for the design and [R/build_llm_verification_parquet.R](R/build_llm_verification_parquet.R)/[R/build_llm_candidate_scope_parquet.R](R/build_llm_candidate_scope_parquet.R) for the implementation. The earlier truth/citing-document LLM design it replaced (`prompts_truth_parquet` → `prompts_citing_parquet` → `alignement_scores_parquet`) has been removed; see [TD_LLM_approach.qmd](TD_LLM_approach.html) for that record.
 
@@ -124,7 +124,7 @@ can be run, re-run or deleted without touching the other.
 
 Sharing a DAG meant sharing failure modes that had nothing to do with each
 other. Two concrete consequences, both since removed: `nli_scores_qa_data` took
-`nli_scores_keypaper_evidence` as a **bare, never-read argument** purely so the
+`claim_scores_keypaper` as a **bare, never-read argument** purely so the
 training chain would run during a fact-checking build — one line that made
 `tar_make(report_fact_checker)` dispatch key-paper GPU work; and rendering a
 report could spend money, because `report_fact_checker` transitively depended on
@@ -172,7 +172,7 @@ reason to take the risk.
 ### Cross-project contracts
 
 Consumers cut at the **small consolidated outputs**, never the large
-intermediates: `nli_scores_evidence_consolidated` is ~300 MB where
+intermediates: `claim_scores_consolidated` is ~300 MB where
 `nli_ready_evidence` is 140 GB, and `format = "file"` hashes what it is given.
 
 A **manifest** — a small file of paths, row counts and a digest, tracked instead
@@ -208,7 +208,7 @@ because `_direct_label_order()` matches by name against the model's own
 `id2label` and `train_nli.py` writes exactly those three (the current
 `["supports", "refutes", "is not relevant to"]` would fail every request with a
 400); and a **full rescore**, since scored output is partitioned by
-`nli_config=<name>` and nothing carries over.
+`scorer_config=<name>` and nothing carries over.
 
 ### What the split made worse
 
@@ -234,7 +234,7 @@ diagrams below.
      resource resolution, which looks next to the .qmd -- it then leaves
      the path unembedded and unrewritten rather than erroring, so every
      diagram here was a broken link in the rendered html despite
-     embed-resources: true. Same trap R/build_nli_scores_qa_figures.R
+     embed-resources: true. Same trap R/build_claim_scores_qa_figures.R
      documents and sidesteps with xfun::base64_uri(). -->
 
 #### `main` — collection
@@ -285,8 +285,8 @@ per-project pictures above show where the cuts fall.
 config_file (file)
     ├── sparql_url                              ← SPARQL backend string
     ├── purpose                                 ← this project's block (fact_checking: / training:)
-    ├── nli_active                              ← selected NLI profile name
-    ├── nli_config                              ← resolved NLI profile (host, model, etc.)
+    ├── scorer_name                              ← selected NLI profile name
+    ├── scorer_config                              ← resolved NLI profile (host, model, etc.)
     ├── assessments_list
     │       └── assessment (list, branched)
     │               ├── ttl_path (file)                    ← Target 1
@@ -298,7 +298,7 @@ config_file (file)
     │               ├── works_parquet (file)               ← Target 2d
     │               ├── snowball_parquet (file)            ← Target 2e
     │               └── works_citing_parquet (file)        ← Target 2f
-    └── nli_config ─────────────────────────────────────────┐
+    └── scorer_config ─────────────────────────────────────────┐
         assessment ─────────────────────────────────────────┤
         key_messages_parquet ───────────────────────────────┤→ nli_scores_parquet ← Target 2g
         works_citing_parquet ───────────────────────────────┘
@@ -312,29 +312,29 @@ key_messages_parquet ───────────────────�
 refs_parquet ──────────────────────────────────┤→ llm_candidate_scope_parquet ← Target 2h4a
 works_parquet ─────────────────────────────────┤
 snowball_parquet ──────────────────────────────┤
-nli_ready_evidence_parquet ────────────────────┘
+claim_work_pairs ────────────────────┘
 
-nli_active ──────────────────────────────────┐
+scorer_name ──────────────────────────────────┐
 assessment ──────────────────────────────────┤
-nli_ready_evidence_parquet ──────────────────┤
+claim_work_pairs ──────────────────┤
 llm_verification_active ─────────────────────┤→ llm_verification_parquet ← Target 2h4b
 llm_verification_config ─────────────────────┤
 llm_verification_system_prompt_file ─────────┤
 llm_verification_user_prompt_file ───────────┤
 llm_candidate_scope_parquet ──────────────────┤
-nli_scores_by_claim_evidence (DAG dep only) ──┘
+claim_scores_by_claim (DAG dep only) ──┘
 
-config_file ── llm_verification_active ── llm_verification_config   (mirrors nli_active → nli_config)
+config_file ── llm_verification_active ── llm_verification_config   (mirrors scorer_name → scorer_config)
 ```
 
 `llm_candidate_scope_parquet` reads only already-existing, unmodified
 targets (`key_messages_parquet`, `refs_parquet`, `works_parquet`,
-`snowball_parquet`, `claim_completion_model`, plus `nli_ready_evidence_parquet`
+`snowball_parquet`, `claim_completion_model`, plus `claim_work_pairs`
 for a drift sanity check) — adding it does not invalidate Phase 1's NLI
 chain or any download/snowball step upstream of it. Under
 `naive_bm`/`complete_bm` it makes no network/API calls of its own; under
 `atomic_bm` it re-runs `complete_bm_fragments()` (normally a cache-hit
-against the completion cache a real atomic_bm `nli_ready_evidence_parquet`
+against the completion cache a real atomic_bm `claim_work_pairs`
 build already populated) to recover claim alignment. It always runs
 regardless of which `llm_verification` config is active, since every
 config's output now carries the `direct_evidence_match` tag it produces.
@@ -417,8 +417,8 @@ cascades.
 |---|---|---|
 | `sparql_url` | `sparql_url` | All SPARQL build targets |
 | `assessments` | `assessments_list` → `assessment` | Assessment branches and their outputs |
-| `fact_checking.*` / `training.*` | `purpose` (per project) → `nli_active`, `llm_verification_active`, `claim_completion_model`, `assessments_list` | that project's chain only |
-| `nli.configs.<selected>.*` | `nli_config` | the NLI scoring chain of whichever project selected it |
+| `fact_checking.*` / `training.*` | `purpose` (per project) → `scorer_name`, `llm_verification_active`, `claim_completion_model`, `assessments_list` | that project's chain only |
+| `nli.configs.<selected>.*` | `scorer_config` | the NLI scoring chain of whichever project selected it |
 | `llm_verification.configs.<selected>.*` | `llm_verification_config` | that project's LLM verification target only |
 
 Note `config_file` is a `format = "file"` target over the **whole** YAML, so any
@@ -649,7 +649,7 @@ Same columns as snowball nodes minus `relation` (always `citing` in this dataset
 
 ## Target 2g: `nli_scores_parquet` — NLI Alignment Scores
 
-**Source:** `R/build_nli_scores_parquet.R` → `build_nli_scores_parquet(assessment, key_messages_parquet, works_citing_parquet, nli_config, nli_active, "output/nli_scores")`
+**Source:** `R/build_nli_scores_parquet.R` → `build_nli_scores_parquet(assessment, key_messages_parquet, works_citing_parquet, scorer_config, scorer_name, "output/nli_scores")`
 
 For each `(assessment, km, bm)` partition in `works_citing_parquet`:
 
@@ -658,7 +658,7 @@ For each `(assessment, km, bm)` partition in `works_citing_parquet`:
 3. POSTs batches to the zero-shot NLI server (see [external/runpod/docker/nli-runpod/](external/runpod/docker/nli-runpod/)).
 4. Stores the full probability distribution (`p_supports`, `p_refutes`, `p_nei`) plus predicted label and confidence.
 
-Output is written to `output/nli_scores/nli_config=<cfg>/assessment=<id>/km=<km>/bm=<bm>/`, partitioned by `nli_config` so scores from different model profiles are stored separately and comparable.
+Output is written to `output/nli_scores/scorer_config=<cfg>/assessment=<id>/km=<km>/bm=<bm>/`, partitioned by `scorer_config` so scores from different model profiles are stored separately and comparable.
 
 See [TD_BM_NLI_approach.qmd](TD_BM_NLI_approach.html) for full design rationale.
 
@@ -666,7 +666,7 @@ See [TD_BM_NLI_approach.qmd](TD_BM_NLI_approach.html) for full design rationale.
 
 ```r
 arrow::open_dataset("output/nli_scores") |>
-  dplyr::filter(nli_config == "deberta_zeroshot", assessment == "GA1", bm == "A1") |>
+  dplyr::filter(scorer_config == "deberta_zeroshot", assessment == "GA1", bm == "A1") |>
   dplyr::collect()
 ```
 
@@ -674,7 +674,7 @@ arrow::open_dataset("output/nli_scores") |>
 
 | Column | Type | Description |
 |---|---|---|
-| `nli_config` | chr | Active NLI profile name (partition) |
+| `scorer_config` | chr | Active NLI profile name (partition) |
 | `assessment` | chr | Assessment ID (partition) |
 | `km` | chr | Key Message identifier (partition) |
 | `bm` | chr | Background Message identifier (partition) |
@@ -706,14 +706,14 @@ Supported for `naive_bm`/`atomic_bm`; a no-op sentinel for `complete_bm`
 (no per-sub-claim evidence tokens exist for whole-field claims — every row
 is tagged FALSE there). Reads only already-existing, unmodified targets
 (`key_messages_parquet`, `refs_parquet`, `works_parquet`, `snowball_parquet`,
-`claim_completion_model`, and `nli_ready_evidence_parquet` for a drift
+`claim_completion_model`, and `claim_work_pairs` for a drift
 sanity check); under `naive_bm`/`complete_bm` makes no network/API calls of
 its own, but under `atomic_bm` re-runs `complete_bm_fragments()` (normally a
 cache-hit against the completion cache already populated by a real
-`nli_ready_evidence_parquet` atomic_bm build) to recover which fragments
+`claim_work_pairs` atomic_bm build) to recover which fragments
 survived completion. Deliberately does **not** call `segment_bm_by_evidence()`
-or `segment_bm_atomic()` (`R/build_nli_ready_evidence_parquet.R`) — even a
-behavior-preserving edit there would mark `nli_ready_evidence_parquet`, and
+or `segment_bm_atomic()` (`R/build_claim_work_pairs.R`) — even a
+behavior-preserving edit there would mark `claim_work_pairs`, and
 the NLI scoring chain downstream of it, outdated, since `targets` hashes
 function bodies as dependencies. Instead duplicates the small amount of
 segmentation logic needed for each, verified byte-for-byte identical in
@@ -779,7 +779,7 @@ for why.
 **Source:** `R/build_llm_verification_keypaper_parquet.R`
 
 QA sanity check, **not** the main Phase 2 corpus — mirrors
-`nli_scores_keypaper_evidence`'s own relationship to the main NLI chain.
+`claim_scores_keypaper`'s own relationship to the main NLI chain.
 Reviews **every** key/seed paper's NLI-scored pair, irrespective of
 `nli_labels`/`nli_certainty` — unlike `llm_verification_parquet` above,
 which routes by those fields purely for cost control on a millions-of-rows
@@ -787,7 +787,7 @@ corpus, key papers are a small, bounded, high-importance set (the actual
 evidence a BM was written from) where every one is worth an independent
 check. Structural sibling of `build_llm_verification_parquet()`, same
 "separate file, don't touch the delicate already-working builder"
-precedent `R/build_nli_ready_evidence_keypaper_parquet.R` already documents
+precedent `R/build_claim_work_pairs_keypaper.R` already documents
 for its own Phase-1 counterpart — doubly justified here since that
 function was only just stabilized against a `pair_id` collision bug (fixed
 in the same turn this chain was added) and shouldn't be touched again for
@@ -810,19 +810,19 @@ apply to a key paper, which *is* a seed reference itself; the column is
 omitted from this chain's output schema entirely rather than a meaningless
 always-FALSE/NA placeholder.
 
-Reads premise from `nli_ready_evidence_keypaper_parquet`'s own
+Reads premise from `claim_work_pairs_keypaper`'s own
 per-assessment path and NLI scores from
-`output/nli_scores_evidence_keypaper/granularity=<g>/nli_config=<cfg>/assessment=<id>/`.
+`output/nli_scores_evidence_keypaper/granularity=<g>/scorer_config=<cfg>/assessment=<id>/`.
 Writes to its own `output/llm_verification/scores_keypaper/` root (cache
 under `output/llm_verification/raw_keypaper/`) — never collides with or
 invalidates the main citing-works output tree. Takes
-`nli_scores_keypaper_evidence` as a bare (DAG-dependency-only) argument,
+`claim_scores_keypaper` as a bare (DAG-dependency-only) argument,
 same convention `llm_verification_parquet` already uses for
-`nli_scores_by_claim_evidence` — runs automatically as part of a bare
+`claim_scores_by_claim` — runs automatically as part of a bare
 `tar_make()`.
 
 **New paid API surface**, same caution as `llm_verification_parquet` and
-`nli_scores_keypaper_evidence` themselves: a plain `tar_make()`/
+`claim_scores_keypaper` themselves: a plain `tar_make()`/
 `tar_make(names = "report_fact_checker")` now also dispatches real
 OpenRouter calls for every key paper, not just the routed citing-works
 subset. Use `tar_make(names = ..., shortcut = TRUE)` to render against
@@ -856,8 +856,8 @@ main claims table there's no `per_claim_cap` need here).
 rejected** for Phase 2: the LLM emits one categorical verdict, not a
 3-part probability composition, so a simplex density would really just be
 NLI's own chart wearing a Phase-2 label. Two figures instead, in a new
-file — deliberately does **not** modify `R/build_nli_scores_qa_figures.R`/
-`nli_scores_qa_ternary_plot()`, same "duplicate, don't call" discipline
+file — deliberately does **not** modify `R/build_claim_scores_qa_figures.R`/
+`claim_scores_qa_ternary_plot()`, same "duplicate, don't call" discipline
 protecting Phase-1-adjacent (explicitly locked) code from unrelated
 invalidation:
 
@@ -929,15 +929,15 @@ they read `assessment`/`granularity` back out of the funnel data rds
 itself (both stored there), which stays correctly aligned with whichever
 branch is executing.
 
-Each branch depends only on `works_citing_parquet`, `nli_active` (to
+Each branch depends only on `works_citing_parquet`, `scorer_name` (to
 reconstruct the `nli_scores_evidence` path, same convention as
 `nli_overview_data`'s call site, with a `granularity=<value>/` segment
 inserted using the branch's OWN `nli_granularities` value, not the single
 active-config one), and `llm_verification_parquet` — pure local
 `arrow`/`dplyr`, no network/GPU calls, and no edge into
-`nli_scores_by_claim_evidence`'s actual computation (only as an
+`claim_scores_by_claim`'s actual computation (only as an
 already-built dependency elsewhere in the pipeline). Reuses
-`build_nli_overview_data.R`'s doi-lookup join verbatim, since neither
+`build_claim_scores_overview_data.R`'s doi-lookup join verbatim, since neither
 source table stores `doi`. `deployment = "main"` for the same OOM reason as
 `nli_overview_data` (a full per-assessment `nli_scores_evidence` collect()).
 `nli_overview_data`/`nli_overview_figures`/`nli_bm_explorer_html` (not

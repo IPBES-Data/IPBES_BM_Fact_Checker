@@ -967,15 +967,15 @@ metadata, the diagram selector, and TD_targets' Running section. Every one of
 those is a place the set can drift out of sync, and several already have.
 
 Inside the training project it is four targets reusing `config_file`,
-`nli_active`, `granularity`, `r_files` and the existing diagram chain.
+`scorer_name`, `granularity`, `r_files` and the existing diagram chain.
 
 #### The decisive reason: a better dependency edge becomes available
 
 `nli_finetuned_model` is already a `format = "file"` target, so the training
 project already hashes its output. Taking it as a **bare, never-read argument**
 — the convention this codebase already uses three times (`nli_scores_qa_data` ←
-`nli_scores_keypaper_evidence`, `nli_finetuned_model` ← `nli_training_data`,
-`llm_verification_parquet` ← `nli_scores_by_claim_evidence`) — makes a new
+`claim_scores_keypaper`, `nli_finetuned_model` ← `nli_training_data`,
+`llm_verification_parquet` ← `claim_scores_by_claim`) — makes a new
 checkpoint invalidate the benchmark automatically, at no additional cost.
 
 Across a project boundary that edge is not available: the benchmark would have
@@ -1023,7 +1023,7 @@ c(
 Three entries today. Each checkpoint's path is already its identity
 (`KP=GA1_IAS/citing=GA1/downsample_seed=13/date=2026.09.01_11_30`), so it
 doubles as the output partition key and the result-table row label with no
-naming scheme to invent. The `.disabled/<nli_config>/` marker directory written
+naming scheme to invent. The `.disabled/<scorer_config>/` marker directory written
 when `training.finetune.enabled` is false contains no `best/` and is skipped by
 the same pattern.
 
@@ -1081,7 +1081,7 @@ renders there and nothing else renders anything. That principle did not
 survive contact with the three QA reports describing *this* pipeline's work.
 Rendering them from `reporting` meant re-declaring training's targets across
 the project boundary, and two of the three stubs reproduced training's own
-output-path logic by formula — `output/nli_training/granularity=…/nli_config=…/`
+output-path logic by formula — `output/nli_training/granularity=…/scorer_config=…/`
 rebuilt by hand, and `.last_run_dir.txt` read directly to recover the
 fine-tuning run directory. Two copies of a path convention, one of them in a
 project that has no business knowing it.
@@ -1258,7 +1258,7 @@ per-assessment subset for evaluation or top-up training without regenerating the
 5. **Evaluate** on held-out set; compare F1 on SUPPORTS against zero-shot baseline
 6. **Spot-check** on a sample from `works_citing_parquet`
 7. **Redeploy** Docker container with updated model path
-8. **Invalidate** `nli_scores_by_claim_evidence` (and/or `nli_scores_keypaper_evidence`)
+8. **Invalidate** `claim_scores_by_claim` (and/or `claim_scores_keypaper`)
    and re-run the pipeline
 
 ---

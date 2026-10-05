@@ -1,5 +1,5 @@
 # Merge Phase 1's per-claim scratch files into one consolidated parquet per
-# (nli_config, assessment, km, bm) group, and prune claims that no longer
+# (scorer_config, assessment, km, bm) group, and prune claims that no longer
 # exist upstream.
 #
 # score_one_claim() deliberately writes each claim to its own scratch file
@@ -14,20 +14,20 @@
 # score_one_claim() only ever inspects its own claim, so a stale claim_id's
 # rows persisted indefinitely and kept contributing to nli_overview_data and
 # the funnel targets, which open_dataset() the whole tree unfiltered — only
-# the manual find_orphaned_nli_scores() ever caught it. Consolidation is the
+# the manual find_orphaned_claim_scores() ever caught it. Consolidation is the
 # natural place to fix that: the file is being rewritten anyway and the
 # authoritative claim list is already a target.
 #
 # Deleting scored data costs real GPU time to recreate, so pruning is guarded:
 # an empty upstream claim list for a group, or a prune that would remove more
 # than `max_prune_fraction` of its rows, is treated as an upstream failure and
-# stop()s rather than being carried out. Same caution find_orphaned_nli_scores()
+# stop()s rather than being carried out. Same caution find_orphaned_claim_scores()
 # embodies with its delete = FALSE default.
 
 # Columns encoded in the consolidated file's Hive path, therefore dropped from
 # the file itself (Arrow re-materializes them on read; leaving them in the
 # file would collide with the path-derived ones).
-nli_scores_path_cols <- c("nli_config", "assessment", "km", "bm")
+nli_scores_path_cols <- c("scorer_config", "assessment", "km", "bm")
 
 # Read parquet files that were written WITHOUT their Hive path columns, by
 # explicit path — never open_dataset() on the directory, so a leftover
@@ -47,11 +47,11 @@ read_consolidated_group <- function(files) {
   )
 }
 
-consolidate_nli_scores <- function(
+consolidate_claim_scores <- function(
   scored_records,
   claim_units,
   output_root,
-  nli_active,
+  scorer_name,
   # Current scope, so out-of-scope groups are never visited. `assessments` and
   # `km` both NULL means "everything", which is the behaviour before scoping
   # existed. See the groups filter below for why this is not optional.
@@ -85,8 +85,8 @@ consolidate_nli_scores <- function(
   # and (c) would leave its rows on disk forever.
   recs <- Filter(function(r) is.list(r) && !is.null(r$km), scored_records)
 
-  scratch_root <- file.path(output_root, ".scratch", paste0("nli_config=", nli_active))
-  disk_root <- file.path(output_root, paste0("nli_config=", nli_active))
+  scratch_root <- file.path(output_root, ".scratch", paste0("scorer_config=", scorer_name))
+  disk_root <- file.path(output_root, paste0("scorer_config=", scorer_name))
 
   groups_from <- function(root) {
     if (!dir.exists(root)) {
@@ -114,7 +114,7 @@ consolidate_nli_scores <- function(
 
   # ---- restrict to the CURRENT SCOPE --------------------------------------
   # groups_from(disk_root) globs every assessment=*/km=*/bm=* under the
-  # nli_config= root and is scoped by nothing. Any group on disk that the
+  # scorer_config= root and is scoped by nothing. Any group on disk that the
   # current claim list does not cover therefore reaches the loop, where
   # `!group_in_current` stops outright ("contains NO claims for this group at
   # all. Refusing to delete"). That is right when claims genuinely vanished
@@ -139,14 +139,14 @@ consolidate_nli_scores <- function(
     if (any(!in_scope)) {
       message(sprintf(
         "[NLI consolidate %s] %d group(s) outside the current scope left untouched",
-        nli_active, sum(!in_scope)
+        scorer_name, sum(!in_scope)
       ))
     }
     groups <- groups[in_scope]
   }
 
   if (!length(groups)) {
-    message(sprintf("[NLI consolidate %s] nothing to consolidate", nli_active))
+    message(sprintf("[NLI consolidate %s] nothing to consolidate", scorer_name))
     dir.create(disk_root, recursive = TRUE, showWarnings = FALSE)
     return(disk_root)
   }
@@ -214,8 +214,8 @@ consolidate_nli_scores <- function(
           paste0(
             "[NLI consolidate] assessment=%s km=%s bm=%s has %d scored row(s) but the current ",
             "claim list contains NO claims for this group at all. Refusing to delete: this is ",
-            "far more likely an upstream failure (empty/failed nli_ready_evidence_parquet) than ",
-            "a genuine removal. Inspect with find_orphaned_nli_scores_all(), then re-run."
+            "far more likely an upstream failure (empty/failed claim_work_pairs) than ",
+            "a genuine removal. Inspect with find_orphaned_claim_scores_all(), then re-run."
           ),
           assessment_id, km_val, bm_val, nrow(merged)
         ))
@@ -225,7 +225,7 @@ consolidate_nli_scores <- function(
           paste0(
             "[NLI consolidate] assessment=%s km=%s bm=%s: pruning would drop %d/%d rows (%.1f%%), ",
             "above max_prune_fraction = %.2f. Refusing — verify the upstream claim list is correct ",
-            "(find_orphaned_nli_scores_all()), then re-run with a higher threshold if genuinely intended."
+            "(find_orphaned_claim_scores_all()), then re-run with a higher threshold if genuinely intended."
           ),
           assessment_id, km_val, bm_val, n_prune, nrow(merged), 100 * frac, max_prune_fraction
         ))
@@ -278,7 +278,7 @@ consolidate_nli_scores <- function(
 
   message(sprintf(
     "[NLI consolidate %s] %d group(s) written%s",
-    nli_active, n_written,
+    scorer_name, n_written,
     if (n_pruned_total) sprintf(", %d orphaned row(s) pruned", n_pruned_total) else ""
   ))
 

@@ -11,7 +11,7 @@
 # Structural sibling of build_llm_verification_parquet()
 # (R/build_llm_verification_parquet.R) -- same "separate file, don't touch
 # the delicate already-working builder" precedent
-# R/build_nli_ready_evidence_keypaper_parquet.R already documents for its
+# R/build_claim_work_pairs_keypaper.R already documents for its
 # own Phase-1 counterpart, and doubly justified here since that function
 # was only just stabilized (a pair_id collision fix) and shouldn't be
 # touched again for an unrelated variant.
@@ -37,12 +37,12 @@ build_llm_verification_keypaper_parquet <- function(
   assessment,
   nli_ready_keypaper_path,
   nli_scores_keypaper_path,
-  nli_active,
+  scorer_name,
   llm_active,
   cfg,
   system_prompt_file,
   user_prompt_file,
-  nli_scores_keypaper_evidence = NULL, # unused -- establishes the DAG dependency on the key-paper NLI scoring chain
+  claim_scores_keypaper = NULL, # unused -- establishes the DAG dependency on the key-paper NLI scoring chain
   # Relevance screen (R/build_llm_relevance_screen.R). BOTH default to NULL,
   # i.e. no filtering: the threshold stays unset until validated against human
   # labels, because a wrongly dropped pair is never reviewed and leaves no trace.
@@ -280,12 +280,12 @@ build_llm_verification_keypaper_parquet <- function(
   out$llm_agrees <- out$llm_label == out$nli_label
   out$llm_config <- llm_active
   out$llm_model <- cfg$model
-  out$nli_config <- nli_active
+  out$scorer_config <- scorer_name
   out$assessment <- assessment_id
 
   out <- out |>
     dplyr::select(
-      llm_config, nli_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
+      llm_config, scorer_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
       nli_label, uncertain, nli_confidence, p_supports, p_refutes, p_nei,
       llm_model, llm_label, llm_agrees, sufficient_evidence,
       quote, quote_verbatim, explanation

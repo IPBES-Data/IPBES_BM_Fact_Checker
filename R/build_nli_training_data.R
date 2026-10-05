@@ -25,7 +25,7 @@
 # "NLI was wrong, LLM corrected it" cases fine-tuning most needs, the same
 # reasoning already applied to how negatives are sourced above).
 #
-# Output is hive-partitioned granularity=<g>/nli_config=<cfg>/assessment=<id>/
+# Output is hive-partitioned granularity=<g>/scorer_config=<cfg>/assessment=<id>/
 # keypaper=<TRUE|FALSE>/ -- one level deeper than output/nli_scores_evidence
 # and friends, which stop at assessment=<id>/. `llm_config` is still carried
 # as a plain COLUMN rather than a partition level (matching Phase 1's own
@@ -64,7 +64,7 @@ build_nli_training_data <- function(
   llm_verification_keypaper_path,
   works_path,
   works_citing_path,
-  nli_active,
+  scorer_name,
   llm_active,
   granularity,
   output_root = "output/nli_training",
@@ -85,7 +85,7 @@ build_nli_training_data <- function(
 
   output_path <- file.path(
     output_root, paste0("granularity=", granularity),
-    paste0("nli_config=", nli_active), paste0("assessment=", assessment_id)
+    paste0("scorer_config=", scorer_name), paste0("assessment=", assessment_id)
   )
 
   has_data <- function(path) {
@@ -94,7 +94,7 @@ build_nli_training_data <- function(
   }
 
   # Title/abstract/doi lookup, same defensive collapse-to-one-row-per-id
-  # pattern build_nli_scores_qa_data.R/build_llm_verification_qa_data.R
+  # pattern build_claim_scores_qa_data.R/build_llm_verification_qa_data.R
   # already use -- a work can repeat across the (km, bm) partitions it's
   # cited/reviewed from. doi is kept for the QA report's clickable work
   # link, not for training itself.
@@ -128,7 +128,7 @@ build_nli_training_data <- function(
     dplyr::tibble(
       assessment = character(), km = character(), bm = character(),
       claim = character(), work_id = character(), quote = character(),
-      nli_config = character(),
+      scorer_config = character(),
       nli_label = character(), nli_confidence = double()
     )
   }
@@ -159,7 +159,7 @@ build_nli_training_data <- function(
   if (has_data(llm_verification_keypaper_path)) {
     positives <- arrow::open_dataset(llm_verification_keypaper_path) |>
       dplyr::filter(llm_label == "SUPPORTS") |>
-      dplyr::select(km, bm, claim, work_id, quote, nli_config) |>
+      dplyr::select(km, bm, claim, work_id, quote, scorer_config) |>
       dplyr::collect()
     positives$nli_label <- NA_character_
     positives$nli_confidence <- NA_real_
@@ -177,7 +177,7 @@ build_nli_training_data <- function(
     if (!has_data(path)) return(empty_pairs())
     arrow::open_dataset(path) |>
       dplyr::filter(nli_label %in% c("SUPPORTS", "REFUTES"), !uncertain, llm_label == "NOT_ENOUGH_INFO") |>
-      dplyr::select(km, bm, claim, work_id, quote, nli_config, nli_label, nli_confidence) |>
+      dplyr::select(km, bm, claim, work_id, quote, scorer_config, nli_label, nli_confidence) |>
       dplyr::collect()
   }
 
@@ -255,7 +255,7 @@ build_nli_training_data <- function(
     }
     d <- arrow::open_dataset(path) |>
       dplyr::filter(llm_label == "REFUTES") |>
-      dplyr::select(km, bm, claim, work_id, quote, nli_config, nli_label, nli_confidence) |>
+      dplyr::select(km, bm, claim, work_id, quote, scorer_config, nli_label, nli_confidence) |>
       dplyr::collect()
     d |>
       dplyr::left_join(work_lookup(wp, unique(d$work_id)), by = "work_id") |>
@@ -274,7 +274,7 @@ build_nli_training_data <- function(
   cols <- c(
     "id",
     "assessment", "km", "bm", "work_id", "hypothesis", "quote", "title", "abstract", "doi",
-    "label", "source", "llm_config", "nli_config", "nli_label", "nli_confidence", "keypaper",
+    "label", "source", "llm_config", "scorer_config", "nli_label", "nli_confidence", "keypaper",
     "split"
   )
   training_pairs <- dplyr::bind_rows(positives, negatives, refutes)
@@ -388,7 +388,7 @@ build_nli_training_data <- function(
     # writes two sibling subdirectories under output_path rather than one;
     # output_path (returned below) stays the assessment=<id>/ parent, which
     # correctly covers both.
-    partitioning = c("granularity", "nli_config", "assessment", "keypaper"),
+    partitioning = c("granularity", "scorer_config", "assessment", "keypaper"),
     existing_data_behavior = "delete_matching"
   )
 
