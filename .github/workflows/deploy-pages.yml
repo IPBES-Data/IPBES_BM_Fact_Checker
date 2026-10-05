@@ -24,7 +24,7 @@ name: Deploy report to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ["output/reports/**", "output/reports_training/**"]
+    paths: ["output/reports/**"]
   workflow_dispatch:
 
 permissions:
@@ -45,19 +45,15 @@ jobs:
           ref: gh-pages
           path: gh-pages
 
-      # --exclude='training' matters: without it this --delete pass wipes the
-      # training/ subtree the NEXT step publishes, every single run, because
+      # --exclude='training' is KEPT although nothing publishes there any more:
+      # gh-pages still holds the subtree from before the training project was
+      # removed (2026-10-05), and without the exclusion this --delete pass would
+      # silently wipe it. Drop the exclusion only when that history is meant to
+      # go. Previously it mattered because
       # output/reports/ does not contain it.
       - name: Sync output/reports/ into gh-pages/
         run: rsync -a --delete --exclude='.git' --exclude='training' main/output/reports/ gh-pages/
 
-      # The training pipeline renders its own QA reports to a separate Quarto
-      # project (Quarto allows one output-dir per project), published under
-      # /training/ rather than at the site root.
-      - name: Sync output/reports_training/ into gh-pages/training/
-        run: |
-          mkdir -p gh-pages/training
-          rsync -a --delete --exclude='.git' main/output/reports_training/ gh-pages/training/
 
       - name: Commit and push if changed
         working-directory: gh-pages

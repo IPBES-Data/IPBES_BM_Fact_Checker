@@ -46,7 +46,11 @@
 # output-dir: output/reports/ is published to GitHub Pages at the site root,
 # output/reports_training/ under /training/. See input/reports_training/_quarto.yml.
 report_project_dirs <- function() {
-  c(reporting = "input/reports", training = "input/reports_training")
+  # `training` was removed on 2026-10-05 with the project that rendered into it.
+  # Kept as a one-element vector rather than collapsed to a bare string: the
+  # `project:` key, the per-directory pruning and the both-preambles call all
+  # still work, so adding a second output directory back is adding an element.
+  c(reporting = "input/reports")
 }
 
 # Marker written into every generated file. Pruning only ever removes files
@@ -133,34 +137,6 @@ report_wrapper_spec <- function() {
       },
       name = function(p) {
         paste0("QA_LLM_Verification_Report_", p$assessment, "_", p$llm_config)
-      }
-    ),
-    # Deliberately raw underscores rather than the two *_suffix() helpers:
-    # this is what the former nli_training_qa_report_html target produced, and
-    # the point of this change is not to rename anything.
-    QA_NLI_Training_Data_Report = list(
-      dims = c("assessment", "granularity", "nli_config"),
-      deps = function(p) c(nli_training_qa_data = "nli_training_qa_data"),
-      params = function(p) {
-        list(
-          assessment_id = p$assessment,
-          nli_config = p$nli_config,
-          granularity = p$granularity
-        )
-      },
-      name = function(p) {
-        paste0(
-          "QA_NLI_Training_Data_Report_", p$assessment, "_", p$nli_config,
-          "_", p$granularity
-        )
-      }
-    ),
-    QA_NLI_Finetuned_Model_Report = list(
-      dims = c("nli_config"),
-      deps = function(p) c(nli_finetuned_model_qa_data = "nli_finetuned_model_qa_data"),
-      params = function(p) list(nli_config = p$nli_config),
-      name = function(p) {
-        paste0("QA_NLI_Finetuned_Model_Report_", p$nli_config)
       }
     )
   )
@@ -375,26 +351,6 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
 
   grid$.dummy <- NULL
 
-  # The fine-tuned-model report only exists for a config that was actually
-  # trained. This replaces the old `.skipped_<cfg>` placeholder-file hack:
-  # no wrapper, so nothing is rendered and nothing needs pruning downstream.
-  if (identical(qmd_name, "QA_NLI_Finetuned_Model_Report") && nrow(grid)) {
-    # Fine-tuning is now gated by training.finetune.enabled on the TRAINING
-    # purpose block, not by a `train:` field on each serving config -- so the
-    # report exists for exactly the one config that block selects, when enabled.
-    tr <- purpose_config(cfg, "training")
-    trained <- vapply(grid$nli_config, function(cf) {
-      isTRUE(tr$finetune_enabled) && identical(cf, tr$nli)
-    }, logical(1))
-    dropped <- grid$nli_config[!trained]
-    if (length(dropped)) {
-      message(sprintf(
-        "[report wrappers] %s: skipping %s (train: false)",
-        qmd_name, paste(dropped, collapse = ", ")
-      ))
-    }
-    grid <- grid[trained, , drop = FALSE]
-  }
 
   grid
 }
@@ -406,7 +362,7 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
 #' current config no longer asks for.
 # Writes EVERY entry's wrappers, into whichever directory its `project:`
 # names, regardless of which pipeline called it. Called from both
-# _targets_reporting.R's and _targets_training.R's preamble: both calls are
+# _targets_reporting.R's preamble (it was called from _targets_training.R's too,
 # idempotent (write_if_changed() leaves unchanged bytes alone), so running
 # either project leaves both directories correct, and neither can drift behind
 # a config edit made while only the other was being run.

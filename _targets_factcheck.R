@@ -455,5 +455,170 @@ list(
     # concurrently.
     deployment = "main",
     garbage_collection = TRUE
-  ),  NULL
+  ),
+
+  # ══ KEY-PAPER QA CHAIN ═══════════════════════════════════════════════════
+  # Moved here from _targets_training.R on 2026-10-05, when the fine-tuning arm
+  # was retired (design_notes.md points 3, 6, 7, 8). It never belonged to
+  # training logically: it asks whether the papers IPBES itself cites as
+  # evidence for a Background Message actually support it, which is a
+  # fact-checking sanity check. It lived there because that is where the
+  # training set's positive class came from.
+  #
+  # DELIBERATELY SEPARATE from the citing-works chain beside it: its own
+  # premise root (output/nli_ready_evidence_keypaper/), its own scores root
+  # (output/nli_scores_evidence_keypaper/), its own Phase 2 output
+  # (scores_keypaper/) and its own relevance partition (keypaper=true). The two
+  # score DIFFERENT pairs and must be runnable, re-runnable and deletable
+  # independently.
+  #
+  # ONE BEHAVIOUR CHANGE in the move: it now follows fact_checking's nli config
+  # rather than training's. The reason it was pinned to zero-shot -- "avoid
+  # training on labels the model itself shaped" -- was about protecting the
+  # training set, which no longer exists. A QA check on the fact-checking
+  # pipeline should use the model that pipeline actually runs.
+  # Scores the actual seed/reference papers IPBES cites as evidence for a BM
+  # (relation == "keypaper" in the snowball nodes) against their OWN BM's claim
+  # text. Mirrors the citing-works chain exactly -- same
+  # build_nli_claim_units()/score_one_claim() reused unchanged -- with only the
+  # premise source and the output roots differing, so it can never collide with
+  # or invalidate that chain.
+  tar_target(
+    nli_ready_evidence_keypaper_parquet,
+    build_nli_ready_evidence_keypaper_parquet(
+      assessment,
+      key_messages_parquet,
+      works_parquet,
+      snowball_parquet,
+      workers,
+      file.path("output/nli_ready_evidence_keypaper", paste0("granularity=", granularity)),
+      granularity,
+      claim_completion_model
+    ),
+    pattern = map(assessment, key_messages_parquet, works_parquet, snowball_parquet),
+    format = "file",
+    deployment = "main",
+    garbage_collection = TRUE
+  ),
+  tar_target(
+    nli_claim_units_evidence_keypaper,
+    build_nli_claim_units(assessment, nli_ready_evidence_keypaper_parquet, max_length),
+    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
+    iteration = "list"
+  ),
+  tar_target(
+    nli_claim_units_evidence_keypaper_flat,
+    unlist(nli_claim_units_evidence_keypaper, recursive = FALSE),
+    iteration = "list"
+  ),
+  # Same scratch-then-consolidate split as the citing-works chain.
+  tar_target(
+    nli_scores_keypaper_evidence,
+    score_one_claim(
+      nli_claim_units_evidence_keypaper_flat,
+      nli_config,
+      nli_active,
+      nli_pool_health,
+      output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity))
+    ),
+    pattern = map(nli_claim_units_evidence_keypaper_flat),
+    error = "continue"
+  ),
+  tar_target(
+    nli_scores_keypaper_evidence_consolidated,
+    consolidate_nli_scores(
+      nli_scores_keypaper_evidence,
+      nli_claim_units_evidence_keypaper_flat,
+      output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity)),
+      nli_active = nli_active
+    ),
+    format = "file",
+    deployment = "main"
+  ),
+
+  # ---- relevance screen ----------------------------------------------------
+  # Screens EVERY key-paper pair, because this chain has no routing: Phase 2
+  # here reviews every pair unconditionally. That was right while key papers
+  # were "a small, bounded, high-importance set"; at 968,534 pairs (945k still
+  # unreviewed, ~$140 at gpt-4o-mini rates) it is no longer small, which is
+  # what a screen is for.
+  #
+  # Duplicated rather than shared with the fact-checking project, deliberately:
+  # the two chains score DIFFERENT pairs (claims x key papers vs claims x
+  # citing works, 1.35% overlap), their claim sets depend on each purpose
+  # block's own granularity, and after deployment they run different NLI models
+  # -- fact checking on the fine-tune, this chain left on zero-shot to avoid
+  # training on labels the model itself shaped. Only the ~8-line declaration is
+  # duplicated; the function lives once in R/.
+  tar_target(
+    relevance_screen_keypaper,
+    build_llm_relevance_screen(
+      assessment,
+      pairs = select_llm_verification_candidates(
+        file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity),
+                  paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)),
+        nli_ready_evidence_keypaper_parquet,
+        nli_labels = NULL, nli_certainty = NULL
+      ),
+      keypaper = TRUE,
+      model = relevance_config$model,
+      batch_size = relevance_config$batch_size
+    ),
+    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
+    format = "file", deployment = "main"
+  ),
+
+  # ---- key-paper Phase 2 LLM verification ----------------------------------
+  # Reviews EVERY key paper's NLI-scored pair, irrespective of
+  # nli_labels/nli_certainty -- unlike the citing-works chain, which routes by
+  # those fields purely for cost control. Key papers are a small, bounded,
+  # high-importance set where every one is worth an independent check.
+  tar_target(
+    llm_verification_keypaper_parquet,
+    build_llm_verification_keypaper_parquet(
+      assessment,
+      nli_ready_evidence_keypaper_parquet,
+      file.path(
+        "output/nli_scores_evidence_keypaper", paste0("granularity=", granularity),
+        paste0("nli_config=", nli_active), paste0("assessment=", assessment$id)
+      ),
+      nli_active,
+      llm_verification_active,
+      llm_verification_config,
+      llm_verification_system_prompt_file,
+      llm_verification_user_prompt_file,
+      nli_scores_keypaper_evidence_consolidated,
+      relevance_path = relevance_screen_keypaper,
+      relevance_threshold = relevance_config$threshold
+    ),
+    pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
+    format = "file",
+    deployment = "main",
+    garbage_collection = TRUE
+  ),
+
+  # ══ GOLD STANDARD ════════════════════════════════════════════════════════
+  # Moved here from _targets_training.R on 2026-10-05. It used to gate
+  # fine-tuning and the benchmark; both are gone, and it is kept because it is
+  # now the ONLY thing that can test the decision that removed them. Every
+  # conclusion in design_notes.md points 5-8 comes from models judging models,
+  # with Jev and the review panel on one side and the NLI alone on the other.
+  # Human labels are what break that circularity.
+  # Hand-maintained input, same format = "file" + path convention as
+  # config_file and the prompt files. The DIRECTORY is tracked rather than
+  # individual files, so adding an assessment's reviews invalidates downstream
+  # without anyone editing the pipeline.
+  #
+  # The sample itself is drawn by R/build_goldstandard_sample.R, which is
+  # deliberately NOT a target: a target would regenerate the instruments
+  # whenever upstream changed and destroy reviewer work in progress. Ordering is
+  # nli_training_data (defines the holdout) -> hand-run draw -> humans -> gold.
+  # nli_training_data is gone with the rest of the training arm, so the holdout
+  # it defined now survives only as the `split` column inside the archived
+  # dataset and as the id set in input/goldstandard/sample_manifest_*.csv --
+  # which is enough to adjudicate and score the instrument that was already
+  # drawn, but a NEW sample would need that fold definition rebuilding.
+  tar_target(goldstandard_dir, "input/goldstandard", format = "file"),
+  tar_target(goldstandard, build_goldstandard(goldstandard_dir)),
+  NULL
 )

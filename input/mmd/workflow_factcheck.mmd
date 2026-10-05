@@ -14,11 +14,10 @@ flowchart TD
   %%   workflow_main.mmd        collection: LOD -> refs -> zotero -> works ->
   %%                            snowball -> works_citing
   %%   workflow_factcheck.mmd   this file
-  %%   workflow_training.mmd    key papers -> NLI -> LLM -> training set -> fine-tune
   %%   workflow_reporting.mmd   everything that renders
   %% --
   %% This is the expensive arm: the citing-works corpus, millions of pairs,
-  %% GPU hours and real OpenRouter spend. Its sibling workflow_training.mmd
+  %% GPU hours and real OpenRouter spend. The former training project's chart
   %% scores the far smaller key-paper set through the same two phases.
 
   %% Configuration. There is no global `active:` any more -- each project reads
@@ -105,10 +104,57 @@ flowchart TD
   llm_scope_db --> llm_verify
   llm_active --> llm_verify
 
+
+  %% ══ KEY-PAPER QA CHAIN ═══════════════════════════════════════════════════
+  %% Moved in from the training project on 2026-10-05. It asks the inverse
+  %% question to the citing-works chain above: do the papers IPBES ITSELF cites
+  %% as evidence for a BM actually support it? A key paper IS that evidence, so
+  %% it should land overwhelmingly in SUPPORTS -- when it does not, that is the
+  %% signal worth chasing. Measured 2026-10-05: 77.8% of key papers confirmed
+  %% against 18.9% of citing works, on the same claims.
+  %% --
+  %% Entirely separate roots from the chain above, deliberately: the two score
+  %% DIFFERENT pairs and must run, re-run and be deleted independently.
+  subgraph keypaper["Key-paper QA — does a BM's own cited evidence support it?"]
+    direction TB
+
+    kp_ready@{ shape: rect, label: "Same segmentation, premise from the SEED papers instead of citing works<br/><tt>[nli_ready_evidence_keypaper_parquet]</tt>" }
+    kp_ready_db@{ shape: lin-cyl, label: "Key-paper NLI-Ready DB<br/><tt>output/nli_ready_evidence_keypaper/granularity=&lt;gran&gt;/assessment=&lt;id&gt;/</tt>" }
+    kp_scoring@{ shape: rect, label: "Score every key paper against its own BM's claims<br/><tt>[nli_claim_units_evidence_keypaper -> nli_scores_keypaper_evidence -> ..._consolidated]</tt>" }
+    kp_scores_db@{ shape: lin-cyl, label: "Key-paper NLI Scores DB<br/><tt>output/nli_scores_evidence_keypaper/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/</tt>" }
+    kp_verify@{ shape: rect, label: "Phase 2 over EVERY key paper, irrespective of NLI label or confidence<br/>(no routing: a small, bounded, high-importance set)<br/><tt>[llm_verification_keypaper_parquet]</tt>" }
+    kp_scores_llm_db@{ shape: lin-cyl, label: "Key-paper LLM Verification DB<br/><tt>output/llm_verification/scores_keypaper/llm_config=&lt;cfg&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/</tt>" }
+
+    kp_ready --> kp_ready_db
+    kp_ready_db --> kp_scoring
+    kp_scoring --> kp_scores_db
+    kp_scores_db --> kp_verify
+    kp_verify --> kp_scores_llm_db
+  end
+
+  key_messages_db --> kp_ready
+  works_db --> kp_ready
+  snowball_db --> kp_ready
+  nli_server <--> kp_scoring
+  nli_active --> kp_scoring
+  llm_server <--> kp_verify
+  llm_active --> kp_verify
+
+  %% ══ GOLD STANDARD ════════════════════════════════════════════════════════
+  %% Human labels. Moved in with the key-paper chain; it used to gate
+  %% fine-tuning and the benchmark, and is kept because it is now the only
+  %% thing that can test the decision that removed them -- every other
+  %% comparison in this project is models judging models.
+  gold_dir@{ shape: doc, label: "Blinded reviewer instruments + filled reviews<br/><tt>input/goldstandard/R{1,2}_&lt;id&gt;.csv</tt>" }
+  gold@{ shape: rect, label: "Adjudicate R1 vs R2 → gold_&lt;id&gt;.csv<br/>agreement becomes gold; disagreement is the human ceiling (Cohen's kappa)<br/><tt>[goldstandard_dir -> goldstandard]</tt>" }
+  gold_dir --> gold
+
   %% Where this arm's output goes.
-  consumers@{ shape: doc, label: "Consumed by<br/><tt>workflow_reporting.mmd</tt> (funnels, QA) · <tt>workflow_training.mmd</tt> (training set)" }
+  consumers@{ shape: doc, label: "Consumed by<br/><tt>workflow_reporting.mmd</tt> (funnels, QA)" }
   nli_scores_db --> consumers
   llm_scores_db --> consumers
+  kp_scores_llm_db --> consumers
+  gold --> consumers
 
   %% Workflow-diagram navigation (shiny_app/) -- see workflow_main.mmd's own
   %% block for why these are href-style click directives and how

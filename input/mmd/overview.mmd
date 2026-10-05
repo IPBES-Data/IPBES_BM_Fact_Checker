@@ -6,81 +6,82 @@ config:
 ---
 flowchart TD
 
-  %% OVERVIEW -- which MODEL runs at which step, across all four projects.
+  %% OVERVIEW -- which MODEL runs at which step, and what each step costs.
   %% --
-  %% The per-project diagrams (workflow_main / _factcheck / _training /
-  %% _reporting) show what each pipeline DOES. This one shows what each step
-  %% COSTS and which model does it, because that is the question that keeps
-  %% coming up and no single per-project diagram can answer it: the feedback
-  %% loop (training produces the model fact checking runs on) crosses two of
-  %% them, and the price ladder that decides where a screening step belongs
-  %% only makes sense side by side.
+  %% The per-project diagrams (workflow_main / _factcheck / _reporting) show
+  %% what each pipeline DOES. This one shows what each step COSTS and which
+  %% model does it, because the price ladder that decides where a screening
+  %% step belongs only makes sense side by side.
   %% --
   %%   zero-shot NLI   $0.0000036 /pair   labels everything
-  %%   Jev (proposed)  $0.0000172 /pair   screens, does not judge
+  %%   Jev             $0.0000172 /pair   one typed question, calibrated score
   %%   gpt-4o-mini     $0.000149  /pair   judges, quotes, gets quote-checked
   %% --
-  %% Jev only pays off BETWEEN the other two: screening ahead of the NLI would
-  %% cost more than simply running the NLI (~$42 vs ~$9 for GA1's cross-join).
+  %% REWRITTEN 2026-10-05. The previous version said "Jev only pays off BETWEEN
+  %% the other two: screening ahead of the NLI would cost more than simply
+  %% running the NLI (~$42 vs ~$9 for GA1's cross-join)". That reasoning was
+  %% about price alone and is now contradicted by measurement: the NLI is at or
+  %% below CHANCE at the job, so $9 of it buys nothing to be cheaper than.
+  %% See design_notes.md points 6 and 8, and the `NLI_dirty` branch for the
+  %% architecture this replaced.
 
   collect@{ shape: lin-cyl, label: "COLLECTION (main)<br/>LOD → refs → works → snowball → works_citing<br/>no models" }
 
   subgraph fc["FACT CHECKING — the deliverable (GA1)"]
     direction TB
     fc_pairs@{ shape: lin-cyl, label: "claims × CITING WORKS<br/>2.43M pairs (GA1, atomic_bm)" }
-    fc_nli@{ shape: rect, label: "PHASE 1 — NLI<br/>bge-m3-zeroshot-v2.0-c<br/>$0.0000036/pair on an L4<br/>labels every pair SUPPORTS/REFUTES/NEI" }
-    fc_route@{ shape: hex, label: "route: REFUTES or SUPPORTS, certain only<br/>190,759 of 2.43M" }
-    fc_jev@{ shape: rect, label: "PROPOSED — Jev relevance screen<br/>typesafe/jev-1.13 · $0.0000172/pair<br/>“does this paper bear on the claim?”<br/>keeps ~76% of SUPPORTS, drops ~81% of NEI" }
-    fc_llm@{ shape: rect, label: "PHASE 2 — LLM verification<br/>openai/gpt-4o-mini · $0.000149/pair<br/>verdict + verbatim quote + quote_is_verbatim()" }
+    fc_nli@{ shape: rect, label: "PHASE 1 — NLI (incumbent, under challenge)<br/>bge-m3-zeroshot-v2.0-c · $0.0000036/pair on an L4<br/>labels every pair SUPPORTS/REFUTES/NEI<br/>MEASURED: AUC 0.50 for REFUTES, 0.38 for SUPPORTS" }
+    fc_route@{ shape: hex, label: "route: REFUTES or SUPPORTS, certain only<br/>190,759 of 2.43M — and the routed slice is DEPLETED<br/>of refutations: 0.058% vs 0.693% in SUPPORTS-uncertain" }
+    fc_llm@{ shape: rect, label: "PHASE 2 — LLM verification<br/>openai/gpt-4o-mini · $0.000149/pair<br/>verdict + verbatim quote + quote_is_verbatim()<br/>reproduces only 53% of its OWN verdicts" }
     fc_out@{ shape: lin-cyl, label: "llm_verification/scores → funnel reports" }
-    fc_pairs --> fc_nli --> fc_route --> fc_jev --> fc_llm --> fc_out
+    fc_pairs --> fc_nli --> fc_route --> fc_llm --> fc_out
   end
 
-  subgraph nei["NEVER REVIEWED — the recall blind spot"]
+  subgraph kp["KEY-PAPER QA — the control, same project"]
     direction TB
-    fc_nei@{ shape: rect, label: "the other 1,232,027 pairs<br/>NLI said NOT_ENOUGH_INFO<br/>no model has ever looked at them<br/>Jev screen makes this affordable (~$55 total)" }
+    kp_pairs@{ shape: lin-cyl, label: "claims × KEY PAPERS<br/>29,511 pairs · the evidence IPBES itself cited" }
+    kp_nli@{ shape: rect, label: "PHASE 1 — same model, same pool" }
+    kp_llm@{ shape: rect, label: "PHASE 2 — FULL COVERAGE, no routing<br/>a small, bounded, high-importance set" }
+    kp_pairs --> kp_nli --> kp_llm
   end
-  fc_nli --> fc_nei
-  fc_nei -.->|"screen, then verify the survivors"| fc_jev
 
-  subgraph tr["TRAINING — produces the model, does not ship findings"]
+  subgraph prop["PROPOSED PHASE 1 — Jev, or a self-hosted equivalent"]
     direction TB
-    tr_pairs@{ shape: lin-cyl, label: "claims × KEY PAPERS<br/>968,534 pairs · the evidence IPBES itself cited" }
-    tr_nli@{ shape: rect, label: "PHASE 1 — NLI<br/>same zero-shot model, same pool" }
-    tr_jev@{ shape: rect, label: "PROPOSED — Jev relevance screen<br/>saves MORE here than in fact checking:<br/>this chain reviews every pair, no routing<br/>945k still unreviewed (~$140 at gpt-4o-mini rates)" }
-    tr_llm@{ shape: rect, label: "PHASE 2 — LLM, FULL COVERAGE<br/>gpt-4o-mini, every pair, no routing<br/>GA1 done (29,496 · $2.25); 945k still unreviewed" }
-    tr_set@{ shape: lin-cyl, label: "TRAINING SET · 2,436 rows<br/>SUPPORTS 937 · NEI 937 · REFUTES 562" }
-    tr_ft@{ shape: rect, label: "FINE-TUNE · local CPU<br/>train_nli.py, 1,467 rows balanced" }
-    tr_model@{ shape: stadium, label: "FINE-TUNED NLI<br/>rakrug/ipbes-bm-nli-atomic-v1<br/>NOT YET DEPLOYED" }
-    tr_bench@{ shape: rect, label: "BENCHMARK · fixed 1,205-row holdout<br/>scores every model incl. the zero-shot baseline" }
-    tr_pairs --> tr_nli --> tr_jev --> tr_llm --> tr_set --> tr_ft --> tr_model --> tr_bench
+    pr_jev@{ shape: rect, label: "THREE typed questions per pair, cross-normalised<br/>supports / contradicts / bears-on-the-claim<br/>→ the SAME (p_supports, p_refutes, p_nei) schema<br/>exactly what passes:3 already does for the zero-shot head<br/>~$120 for all of GA1" }
+    pr_alt@{ shape: rect, label: "OR a self-hostable open-weight model on the existing pool<br/>llama-3.1-8b measured AUC 0.648 [0.56, 0.73]<br/>removes the alpha-API dependency entirely" }
   end
 
   collect --> fc_pairs
-  collect --> tr_pairs
+  collect --> kp_pairs
 
   %% --
-  %% The loop. Training exists to replace the model fact checking runs on.
-  tr_model -.->|"REPLACES the zero-shot model in Phase 1<br/>needs passes:1, uppercase labels, image v0.4.0+,<br/>and a full rescore (~$9 GPU)"| fc_nli
+  %% Why the swap is proposed at all. Measured on the 179 triple-positive rows
+  %% against refutations confirmed by three independent models.
+  fc_nli -.->|"REPLACED BY — AUC 0.737 [0.63,0.83] vs 0.529<br/>and 97.7% of candidates lie OUTSIDE the NLI's REFUTES label"| pr_jev
 
-  warn@{ shape: doc, label: "CIRCULARITY TO AVOID: if the fine-tuned model also replaces<br/>zero-shot in the TRAINING chain, the next training set is built<br/>from labels the model itself shaped. Keep that chain on<br/>zero-shot, or accept self-training knowingly." }
-  tr_model -.-> warn
-  warn -.-> tr_nli
+  subgraph nei["NEVER REVIEWED — the recall blind spot"]
+    direction TB
+    fc_nei@{ shape: rect, label: "1,232,027 pairs the NLI called NOT_ENOUGH_INFO<br/>plus 688,534 it called SUPPORTS-uncertain<br/>no judge has ever looked at them<br/>yet they hold the HIGHEST rate of contradiction candidates" }
+  end
+  fc_nli --> fc_nei
+  fc_nei -.->|"a Phase 1 that ranks would reach these"| pr_jev
+
+  gate@{ shape: doc, label: "GATE: every number above comes from models judging models.<br/>Jev and the review panel on one side, the NLI alone on the other.<br/>input/goldstandard/ is what breaks that circularity — nothing<br/>here is a decision until the human round reports." }
+  pr_jev -.-> gate
+  pr_alt -.-> gate
 
   classDef zeroshot fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
   classDef llm      fill:#fed7aa,stroke:#ea580c,color:#7c2d12,stroke-width:1.5px;
   classDef jev      fill:#e9d5ff,stroke:#7c3aed,color:#3b0764,stroke-width:2px;
-  classDef ft       fill:#bfdbfe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px;
   classDef data     fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
   classDef gate     fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
   classDef blind    fill:#fecaca,stroke:#dc2626,color:#7f1d1d,stroke-width:1.5px;
   classDef note     fill:#f5f3ff,stroke:#7c3aed,color:#3b0764,stroke-dasharray:4 3;
 
-  class fc_nli,tr_nli zeroshot;
-  class fc_llm,tr_llm llm;
-  class fc_jev,tr_jev jev;
-  class tr_model,tr_ft,tr_bench ft;
-  class collect,fc_pairs,fc_out,tr_pairs,tr_set data;
+  class fc_nli,kp_nli zeroshot;
+  class fc_llm,kp_llm llm;
+  class pr_jev,pr_alt jev;
+  class collect,fc_pairs,kp_pairs,fc_out data;
   class fc_route gate;
   class fc_nei blind;
-  class warn note;
+  class gate note;

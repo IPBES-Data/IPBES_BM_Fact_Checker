@@ -7,6 +7,12 @@
 # would cost days of OpenAlex time AND produce a different corpus from the one
 # every existing score was computed against.
 #
+# The `training` project was removed on 2026-10-05 (branch `Jev`): the
+# fine-tuning arm had no subject once the NLI stopped being the first-stage
+# filter. Its two halves that were never training -- the key-paper QA chain and
+# the gold standard -- moved into `factcheck`. See design_notes.md and the
+# `NLI_dirty` branch for the state before.
+#
 #   tar_make()                                    # collection (default)
 #   Sys.setenv(TAR_PROJECT = "reporting"); tar_make()
 #   tar_make(script = "_targets_reporting.R", store = "_targets_reporting")
@@ -19,6 +25,3 @@ factcheck:
 reporting:
   script: _targets_reporting.R
   store: _targets_reporting
-training:
-  script: _targets_training.R
-  store: _targets_training

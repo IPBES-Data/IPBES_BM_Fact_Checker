@@ -6,7 +6,6 @@
 #                          snowball -> works_citing. Keeps the ORIGINAL
 #                          _targets/ store, so nothing re-downloads.
 #   _targets_factcheck.R   citing works -> NLI -> LLM
-#   _targets_training.R    key papers -> NLI -> LLM -> training set -> fine-tune
 #   _targets_reporting.R   this file
 #
 # THE POINT OF THIS PROJECT: it has no path to a paid target. Rendering a
@@ -109,17 +108,18 @@ list(
 
   # ---- configuration (re-derived here; every project reads the same file) ---
   tar_target(config_file, "input/config.yaml", format = "file"),
-  # Reporting renders BOTH arms, so it resolves both purpose blocks rather
-  # than one global `active:`. The fact-checking selection drives the
-  # citing-works funnels and QA; the training selection drives the key-paper,
-  # training-set and fine-tuned-model views. They happen to name the same nli
-  # config today, which is exactly why keeping them distinct matters -- the
-  # moment they diverge, a single `nli_active` would send half these targets
-  # to the wrong nli_config=<name> directory and report scored data as unscored.
+  # ONE purpose block now. Reporting used to resolve two -- fact_checking for the
+  # citing-works views and training for the key-paper, training-set and
+  # fine-tuned-model ones -- because the two arms could legitimately name
+  # different nli configs. The training block was removed on 2026-10-05 and the
+  # key-paper chain moved into factcheck, so both arms are selected by one block
+  # and purpose_tr would now error ("config.yaml has no `training:` block").
+  #
+  # The hazard that justified keeping them distinct is gone with the second
+  # block, not merely ignored: there is no longer a second selection to diverge
+  # from.
   tar_target(purpose_fc, purpose_config(yaml::read_yaml(config_file), "fact_checking")),
-  tar_target(purpose_tr, purpose_config(yaml::read_yaml(config_file), "training")),
   tar_target(nli_active, purpose_fc$nli),
-  tar_target(nli_active_training, purpose_tr$nli),
   tar_target(nli_configs_all, yaml::read_yaml(config_file)[["nli"]][["configs"]]),
   tar_target(nli_config, yaml::read_yaml(config_file)[["nli"]][["configs"]][[nli_active]]),
   tar_target(
@@ -131,7 +131,6 @@ list(
   # granularity scored earlier under its own config still gets a report.
   tar_target(nli_granularities, c("naive_bm", "complete_bm", "atomic_bm")),
   tar_target(llm_verification_active, purpose_fc$llm),
-  tar_target(llm_verification_active_training, purpose_tr$llm),
   tar_target(claim_completion_model, purpose_fc$claim_completion_model),
   tar_target(
     assessments_list,
@@ -225,7 +224,9 @@ list(
     pattern = map(assessment)
   ),
 
-  # ---- inputs from the training project (_targets_training.R) --------------
+  # ---- key-paper inputs, now produced by _targets_factcheck.R --------------
+  # These moved out of the training project with the chain that writes them.
+  # The paths are unchanged, so nothing on disk had to move.
   tar_target(
     nli_scores_keypaper_evidence_consolidated,
     "output/nli_scores_evidence_keypaper", format = "file"
@@ -252,7 +253,7 @@ list(
     llm_verification_keypaper_parquet,
     file.path(
       "output/llm_verification/scores_keypaper",
-      paste0("llm_config=", llm_verification_active_training),
+      paste0("llm_config=", llm_verification_active),
       paste0("assessment=", assessment$id)
     ),
     pattern = map(assessment)

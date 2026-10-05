@@ -1,6 +1,12 @@
 # Compare a second LLM judge against the one that produced the training labels.
 #
-#   Rscript scripts/benchmark/compare_llm_judge.R [N]        # default 200 pairs
+#   Rscript scripts/compare_llm_judge.R [N]        # default 200 pairs
+#
+# Moved out of scripts/benchmark/ on 2026-10-05 when the fine-tuning arm was
+# retired. It never belonged there: it asks whether the JUDGE is sound, which is
+# design_notes.md point 2 and is unaffected by anything that happened to the
+# NLI. Its premise was confirmed on 2026-10-05 -- gpt-4o-mini reproduces only
+# 53.1% of its own Phase 2 verdicts (input/ai_goldstandard/).
 #
 # WHY: every number in this project measures agreement with gpt-4o-mini --
 # Phase 2's verdicts are the training labels, and the benchmark scores how well

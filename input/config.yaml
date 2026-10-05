@@ -124,31 +124,15 @@ fact_checking:
       llm: openrouter_cheap
       claim_completion: haiku_completion
 
-# _targets_training.R -- the key-paper arm. All five, because a key paper IS
-# the evidence a BM was written from, so every assessment's seed set is worth
-# scoring: it is both the QA sanity check and the source of the positive class
-# for fine-tuning, and it is small and bounded where the citing-works corpus is
-# not.
+# The `training:` purpose block was removed on 2026-10-05 (branch `Jev`). The
+# fine-tuning arm it selected for had no subject once the NLI stopped being the
+# first-stage filter -- see design_notes.md points 3, 6, 7, 8. Its two halves
+# that were never training moved into `factcheck`: the key-paper QA chain (does
+# a BM's own cited evidence support it?) and the gold standard.
 #
-# finetune: is the gate on nli_finetuned_model, a real ~25 min local CPU run.
-# It lives here rather than in the serving config where it used to sit -- how a
-# model is SERVED and whether this project TRAINS one are different questions,
-# and putting `train:` in the serving block meant every config carried a field
-# only one pipeline ever read.
-training:
-  assessments: [GA1] # , VA, TCA, IAS, BBA]
-  nli: bge_m3_zeroshot_atomic_bm
-  llm: openrouter_cheap
-  claim_completion: haiku_completion
-  finetune:
-    enabled: true
-    # null = train on the full pooled dataset as-is. A seed downsamples every
-    # label class to the smallest class's count first, for class balance --
-    # a real risk once assessments are pooled and one (e.g. a keypaper-only
-    # assessment) contributes far more SUPPORTS/NOT_ENOUGH_INFO than REFUTES.
-    # See scripts/training/train_nli.py.
-    downsample_seed: 13
-
+# purpose_config() still accepts the flat shape this block used, so restoring
+# it is adding it back; nothing in R/ was narrowed. The `NLI_dirty` branch
+# holds the state before.
 
 # ---------------------------------------------------------------------------
 # Benchmark: held-out evaluation of the NLI models (see TD_NLI_training.qmd).
@@ -206,7 +190,19 @@ relevance_screen:
   # first rather than setting it globally here.
   threshold: ~
   batch_size: 20
-
+# ---------------------------------------------------------------------------
+# Benchmark: repointed 2026-10-05 (branch `Jev`).
+#
+# It used to measure fine-tuned checkpoints against a zero-shot baseline, with
+# scope taken from `training:`. Both are gone. What survives here is the FOLD
+# DEFINITION: holdout_fraction, monitor_fraction and salt describe how
+# input/goldstandard/sample_manifest_GA1.csv was drawn, and changing `salt`
+# re-cuts folds the already-drawn instrument depends on. Leave them alone unless
+# the whole sample is being redrawn.
+#
+# baseline_model is now a RECORD of what the existing scores were produced with,
+# not something the pipeline reads.
+# ---------------------------------------------------------------------------
 benchmark:
   holdout_fraction: 0.2
   # A third fold, carved out of what used to be `train`, used ONLY for
@@ -240,24 +236,6 @@ reports:
     title: "QA LLM Verification - {assessment}"
     assessment: [GA1]
     llm_config: [openrouter_cheap]
-
-  # `project:` picks which Quarto project (and therefore which output
-  # directory, and which targets STORE the wrapper's tar_read() calls resolve
-  # against) the generated wrapper belongs to. Omitted = reporting.
-  # See R/generate_report_wrappers.R's report_project_dirs().
-  - qmd_name: QA_NLI_Training_Data_Report
-    title: "QA NLI Training Data - {assessment} ({granularity})"
-    project: training
-    assessment: [GA1]
-    granularity: [atomic_bm]
-
-  # No assessment dimension at all -- one report per nli_config. Only
-  # generated when that config has train: true, which replaces the old
-  # `.skipped_<cfg>` placeholder-file hack outright.
-  - qmd_name: QA_NLI_Finetuned_Model_Report
-    title: "QA NLI Fine-tuned Model - {nli_config}"
-    project: training
-    nli_config: [bge_m3_zeroshot_atomic_bm]
 
 # NLI alignment backend. The pipeline POSTs (premise, hypothesis) pairs to a
 # zero-shot NLI server (see external/runpod/docker/nli-runpod/). Switch models by changing

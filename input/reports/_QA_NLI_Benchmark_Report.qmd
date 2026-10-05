@@ -1,3 +1,26 @@
+<!--
+PARKED, 2026-10-05 (branch `Jev`).
+
+Underscore-prefixed, so Quarto excludes it from the project completely: it is
+neither rendered nor returned by tar_quarto_files(). Renaming it back is all
+that is needed to make it live again.
+
+It is parked rather than deleted because what it computes is still wanted --
+Cohen's kappa against human labels, the R1/R2 ceiling, bootstrap CIs,
+inverse-inclusion-probability weighting, the per-class precision/recall tables.
+What it no longer has is a SUBJECT: it compared fine-tuned checkpoints against a
+zero-shot baseline, and both are gone (design_notes.md points 3, 7).
+
+To revive it, build_nli_benchmark_metrics() needs repointing from
+`output/nli_training_finetuned/*/best` (now in deep_archive/) to the
+`nli_config=` score trees that already exist on disk -- the comparison becomes
+"which first-stage model ranks the gold rows best", which is exactly the open
+question in design_notes.md point 8. Its `training_data_path` argument also
+points at output/nli_training/, which moved to deep_archive/ with the rest; the
+holdout fold it defines is what input/goldstandard/sample_manifest_GA1.csv was
+drawn from, so that path has to resolve before any of this runs.
+-->
+
 ---
 title: "QA: NLI Model Benchmark"
 subtitle: Held-out evaluation across the zero-shot baseline and every fine-tuned checkpoint

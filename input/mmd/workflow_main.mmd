@@ -14,10 +14,9 @@ flowchart TD
   %%   workflow_main.mmd        this file -- LOD -> refs -> zotero -> works ->
   %%                            snowball -> works_citing
   %%   workflow_factcheck.mmd   citing works -> NLI -> LLM verification
-  %%   workflow_training.mmd    key papers -> NLI -> LLM -> training set -> fine-tune
   %%   workflow_reporting.mmd   everything that renders
   %% --
-  %% The scoring, verification and training subgraphs that used to live here
+  %% The scoring and verification subgraphs that used to live here
   %% moved out when those targets did. The first cut of this file (out of the
   %% single workflow_nli.mmd) predated that move and kept them, which left it
   %% depicting three projects' worth of work under this one's name.
@@ -86,7 +85,7 @@ flowchart TD
   %% What the three consumer projects read from here. Drawn as one node rather
   %% than repeating each downstream chain: this diagram's job is to end where
   %% collection ends, and each consumer has its own file.
-  consumers@{ shape: doc, label: "Consumed by the other three projects<br/><tt>workflow_factcheck.mmd</tt> · <tt>workflow_training.mmd</tt> · <tt>workflow_reporting.mmd</tt>" }
+  consumers@{ shape: doc, label: "Consumed by the other two projects<br/><tt>workflow_factcheck.mmd</tt> · <tt>workflow_reporting.mmd</tt>" }
   refs_db --> consumers
   key_messages_db --> consumers
   works_db --> consumers
@@ -133,7 +132,7 @@ flowchart TD
 
   %% No linkStyle entries: this file has no subgraph-to-subgraph force-ordering
   %% edges left to hide (they existed only to stack the scoring/verification/
-  %% training subgraphs that have moved out). Nothing here needs recounting.
+  %% subgraphs that have moved out). Nothing here needs recounting.
 
   class config_file input_file;
   class assessment_list,assessment_id config;
