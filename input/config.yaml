@@ -114,6 +114,16 @@ fact_checking:
       llm: openrouter_cheap
       claim_completion: haiku_completion
 
+    # Jev as Phase 1, scored BESIDE the NLI on identical rows (own nli_config=
+    # tree). KM C. matches what the fine-tune already scored, so the three can
+    # be compared directly on 2,307,101 pairs. ~$115 citing + ~$1.50 key papers.
+    ga1_jev:
+      assessments: [GA1]
+      km: ["C."]
+      nli: jev_atomic_bm
+      llm: openrouter_cheap
+      claim_completion: haiku_completion
+
     # The fine-tuned model from the 2026-09-29 GA1 run, served from its own
     # image. Writes under nli_config=bge_m3_ft_ga1, so it cannot overwrite
     # anything the zero-shot config scored.
@@ -411,6 +421,42 @@ nli:
         min_ready: 4
         name_prefix: nli-bge-m3-naive
         registry_auth_id: ""
+
+    # Jev as PHASE 1, not as the screen it currently is one stage further down.
+    #
+    # backend: jev switches score_one_claim() out for score_one_claim_jev()
+    # (R/score_one_claim_jev.R). Three typed questions per pair --
+    # supports / contradicts / bears-on-the-claim, in
+    # input/prompts/jev_claim_questions.json -- cross-normalised into
+    # (p_supports, p_refutes, p_nei). That is the same operation `passes: 3`
+    # already performs for the zero-shot head, so the output schema,
+    # uncertain_threshold, the nli_route= partitions and every report
+    # downstream are untouched.
+    #
+    # Its own nli_config= tree means it scores BESIDE the NLI on identical rows
+    # rather than instead of it. Deliberate: every measurement behind this comes
+    # from models judging models, the human review round has not happened, and
+    # comparing the two on the same rows afterwards is the whole point of
+    # waiting. See design_notes.md points 6 and 8.
+    #
+    # Measured 2026-10-05 against refutations confirmed by three independent
+    # reviewers: AUC 0.737 [0.63, 0.84] where the zero-shot NLI scores 0.529,
+    # and 0.95 vs 0.38 for SUPPORTS.
+    #
+    # Cost: ~$0.00005/pair, so ~$121 for GA1's 2.43M citing-work pairs and
+    # ~$1.50 for its 29,511 key-paper pairs. No pod, no GPU, no host list --
+    # concurrency is per-request inside the scorer.
+    jev_atomic_bm:
+      backend: jev
+      model: typesafe/jev-1.13
+      # Label vocabulary and threshold kept identical to the zero-shot configs
+      # so the two are directly comparable; nothing reads candidate_labels in
+      # this backend (the question file defines the three slots) but it is left
+      # in as the record of what the columns mean.
+      candidate_labels: ["supports", "refutes", "is not relevant to"]
+      uncertain_threshold: 0.60   # UNCALIBRATED for this model -- carried over so the comparison is like-for-like, not because it is right. Calibrate against human labels.
+      granularity: atomic_bm
+      max_length: 2048            # advisory only: the decisions API chunks by a token BUDGET, it does not truncate per pair
 
     # The 2026-09-29 GA1 fine-tune (atomic_bm, max_length 512, downsample_seed
     # 13), baked into its own image by docker/ipbes-ft/Dockerfile. Not zero-shot:

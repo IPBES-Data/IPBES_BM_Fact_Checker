@@ -1,0 +1,49 @@
+{
+  "_comment": [
+    "The three typed questions Jev is asked per (claim, work) pair, cross-normalised",
+    "into (p_supports, p_refutes, p_nei) by R/score_one_claim_jev.R.",
+    "",
+    "Tracked as a format = 'file' target, so EDITING THIS FILE INVALIDATES SCORING.",
+    "That is correct and deliberate: different questions produce different scores, and",
+    "a mixed tree would be meaningless. A real edit means a full rescore of whatever",
+    "nli_config= uses the jev backend.",
+    "",
+    "'addresses' is deliberately WORD-FOR-WORD the relevance screen's own question",
+    "(relevance_question() in R/build_llm_relevance_screen.R). That screen has been",
+    "computing this component all along, one stage further down the pipeline; keeping",
+    "the wording identical is what makes the two comparable.",
+    "",
+    "p_nei is derived as 1 - addresses rather than asked directly -- 'does this paper",
+    "fail to provide enough information' is an awkward binary that models answer",
+    "badly, where 'does it bear on the claim at all' is the question Jev is",
+    "demonstrably good at (AUC 0.95 for SUPPORTS, 0.74-0.79 for REFUTES, measured",
+    "2026-10-05). A paper that does not address the claim cannot support or",
+    "contradict it, which is precisely NOT_ENOUGH_INFO."
+  ],
+  "questions": {
+    "supports": {
+      "type": "noul",
+      "instructions": "Does this paper report a finding that SUPPORTS the claim -- a result that makes the claim more likely to be true?",
+      "criteria": {
+        "true": "the abstract reports a result consistent with the claim and bearing on it",
+        "false": "the abstract does not support the claim, whether it contradicts it, is unrelated, or reports nothing bearing on it"
+      }
+    },
+    "refutes": {
+      "type": "noul",
+      "instructions": "Does this paper report a finding that CONTRADICTS the claim -- a result that makes the claim less likely to be true?",
+      "criteria": {
+        "true": "the abstract reports a result inconsistent with the claim, or pointing in the opposite direction",
+        "false": "the abstract does not contradict the claim -- whether it supports it, is unrelated, or reports nothing bearing on it"
+      }
+    },
+    "addresses": {
+      "type": "noul",
+      "instructions": "Does this paper address the specific subject of the claim closely enough that its findings bear on whether the claim is true?",
+      "criteria": {
+        "true": "the paper studies the same phenomenon, taxa, driver or region the claim is about, and its findings speak to the claim",
+        "false": "the paper is about a related but different topic, so its findings cannot settle the claim either way"
+      }
+    }
+  }
+}

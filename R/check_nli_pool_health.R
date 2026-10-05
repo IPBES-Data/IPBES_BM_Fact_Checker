@@ -7,6 +7,22 @@
 # every scored row.
 check_nli_pool_health <- function(nli_config, nli_active) {
   cfg <- if (is.null(nli_config)) list() else nli_config
+
+  # The jev backend has no pool: it scores through an HTTP API, not a fixed set
+  # of hosts serving one checkpoint. There is nothing to health-check and
+  # nothing to verify is homogeneous, so this returns the model name -- which
+  # is all the caller actually uses it for, stamping nli_model onto scored rows.
+  # It is NOT skipped silently: a missing API key is the equivalent failure and
+  # is caught here, early and once, rather than per claim halfway into a run.
+  if (identical(cfg$backend, "jev")) {
+    model <- cfg$model %||% "typesafe/jev-1.13"
+    if (!nzchar(Sys.getenv("API_openrouter"))) {
+      stop(sprintf("[NLI pool=%s] backend is jev but API_openrouter is not set", nli_active), call. = FALSE)
+    }
+    message(sprintf("[NLI pool=%s] backend=jev, model=%s -- no pod pool to check", nli_active, model))
+    return(model)
+  }
+
   hosts <- nli_hosts(cfg)
   base_urls <- vapply(hosts, function(h) {
     cfg_h <- cfg

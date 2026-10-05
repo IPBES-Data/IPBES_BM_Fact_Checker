@@ -269,6 +269,39 @@ REFUTES:
 scores 0.503 and 0.422 — chance and below.) Jev is handicapped in this
 comparison: the probe's judges saw the cited quote, Jev never did.
 
+**⚠ CORRECTION, 2026-10-05 (later the same day). Finding B below is not
+reliable, and Finding A is.** Writing the Jev Phase 1 scorer surfaced that the
+decisions API, given many papers in one request against a shared `state`,
+answers about the CHUNK rather than the paper. Measured on 8 works of one GA1
+claim: individually 0.01 / 0.05 / 0.03 / 0.04 / 0.03 / 0.03 / 0.01 / 0.05 (4
+distinct), batched 0.06 / 0.07 / 0.07 / 0.06 / 0.07 / 0.06 / 0.07 / 0.06 (2
+distinct, systematically higher). A controlled triple — one paper plainly
+supporting a claim, one plainly refuting it, one about GPU kernels — came back
+0.750 / 0.750 / 0.750 on `supports` when batched, and the SUPPORTING paper
+scored 0.89 on `refutes`.
+
+Which results this touches:
+
+- **Finding A stands.** The AUC numbers come from `scripts/run_jev_reviewer.R`,
+  which sends ONE paper per request. Unaffected.
+- **Finding B is suspect.** The 0.693% / 0.058% comparison and the "97.7% of
+  candidates lie outside the NLI's REFUTES label" figure come from
+  `scripts/build_refutes_candidates.R` and `scripts/jev_recall_probe.R`, both of
+  which call `build_llm_relevance_screen()` and therefore batch. The *direction*
+  may well survive — the compression is toward a chunk mean, not toward noise,
+  and the buckets compared are large — but the magnitudes should not be quoted
+  until it is rescored per paper.
+- **The production relevance screen is affected too.** 170,405 scored pairs,
+  and 7,889 works under one claim share just 23 distinct values (ratio 0.003).
+  Its own comment records "answers correlate 0.904 with the per-pair run" — true
+  ACROSS claims, which is not what a filter needs. `relevance_screen.threshold`
+  is `~`, so nothing has been filtered on it; that is now a second reason to
+  leave it there.
+
+Re-running the recall probe per paper costs ~$2 and settles it. Until then,
+treat Finding B as a hypothesis with a plausible mechanism rather than a
+measurement.
+
 **Finding B — the NLI points at the wrong population entirely.**
 `scripts/jev_recall_probe.R` screened 18,577 pairs the NLI did **not** call
 REFUTES, with the identical question ($0.28):

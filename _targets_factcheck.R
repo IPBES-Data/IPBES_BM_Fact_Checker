@@ -62,7 +62,14 @@ tar_option_set(
       fc <- cfg[["fact_checking"]]
       sel <- if (!is.null(fc[["configs"]])) fc[["configs"]][[fc[["active"]]]][["nli"]] else fc[["nli"]]
       if (is.null(sel)) stop("could not resolve fact_checking's nli config name")
-      n <- length(unlist(cfg[["nli"]][["configs"]][[sel]][["host"]]))
+      nc <- cfg[["nli"]][["configs"]][[sel]]
+      # The jev backend has no hosts to size against. Its concurrency is
+      # per-request inside score_one_claim_jev() (httr2, max_active), so crew
+      # workers here only decide how many CLAIMS are in flight at once. Four is
+      # a deliberate compromise: enough to keep the API busy across claims,
+      # few enough that four claims' premise frames are not all in memory.
+      if (identical(nc[["backend"]], "jev")) return(4L)
+      n <- length(unlist(nc[["host"]]))
       if (n < 1L) stop(sprintf("nli.configs.%s.host is empty -- start the pool first", sel))
       n
     }, error = function(e) {
@@ -156,6 +163,14 @@ list(
     yaml::read_yaml(config_file)[["llm_verification"]][["configs"]][[llm_verification_active]]
   ),
   tar_target(relevance_config, yaml::read_yaml(config_file)[["relevance_screen"]]),
+  # Tracked like the other prompts: editing the questions invalidates whatever
+  # the jev backend scored, which is correct -- different questions, different
+  # scores, and a tree scored under two question sets would be meaningless.
+  tar_target(
+    jev_questions_file,
+    "input/prompts/jev_claim_questions.json",
+    format = "file"
+  ),
   tar_target(
     llm_verification_system_prompt_file,
     "input/prompts/llm_verification_system.md",
@@ -289,13 +304,24 @@ list(
   # invalidation churn. See R/score_one_claim.R's header.
   tar_target(
     nli_scores_by_claim_evidence,
-    score_one_claim(
-      nli_claim_units_evidence_flat,
-      nli_config,
-      nli_active,
-      nli_pool_health,
-      output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity))
-    ),
+    # BACKEND DISPATCH. `backend: jev` on the active nli config scores with
+    # Jev's decisions API instead of the RunPod pool -- same output schema, its
+    # own nli_config= tree, so it scores BESIDE the NLI on identical rows rather
+    # than instead of it. score_one_claim() itself is untouched, deliberately:
+    # it is the production path for every existing score and carries a bug
+    # history worth not disturbing. See R/score_one_claim_jev.R.
+    if (identical(nli_config$backend, "jev")) {
+      score_one_claim_jev(
+        nli_claim_units_evidence_flat, nli_config, nli_active, nli_pool_health,
+        output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity)),
+        questions_file = jev_questions_file
+      )
+    } else {
+      score_one_claim(
+        nli_claim_units_evidence_flat, nli_config, nli_active, nli_pool_health,
+        output_root = file.path("output/nli_scores_evidence", paste0("granularity=", granularity))
+      )
+    },
     pattern = map(nli_claim_units_evidence_flat),
     error = "continue"
   ),
@@ -514,13 +540,24 @@ list(
   # Same scratch-then-consolidate split as the citing-works chain.
   tar_target(
     nli_scores_keypaper_evidence,
-    score_one_claim(
-      nli_claim_units_evidence_keypaper_flat,
-      nli_config,
-      nli_active,
-      nli_pool_health,
-      output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity))
-    ),
+    # Same backend dispatch as the citing-works chain above. The key-paper
+    # corpus is 29,511 pairs against 2.43M, so it costs ~$1.50 at jev rates --
+    # and it is the control: key papers ARE the evidence a BM was written from,
+    # so a first-stage model that cannot separate them from citing works is
+    # telling you something. The NLI separates the two by 9 points where the
+    # reviewers separate them by 49.
+    if (identical(nli_config$backend, "jev")) {
+      score_one_claim_jev(
+        nli_claim_units_evidence_keypaper_flat, nli_config, nli_active, nli_pool_health,
+        output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity)),
+        questions_file = jev_questions_file
+      )
+    } else {
+      score_one_claim(
+        nli_claim_units_evidence_keypaper_flat, nli_config, nli_active, nli_pool_health,
+        output_root = file.path("output/nli_scores_evidence_keypaper", paste0("granularity=", granularity))
+      )
+    },
     pattern = map(nli_claim_units_evidence_keypaper_flat),
     error = "continue"
   ),
