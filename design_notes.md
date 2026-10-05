@@ -436,6 +436,46 @@ LLM-derived, though none of these models was among the three that defined it.
 would move), and whether a self-hostable open-weight model can match Jev closely
 enough to remove the alpha-API dependency without the distillation chain at all.
 
+## 9. Is the relevance screen redundant under a Jev Phase 1? Deferred, with data
+
+Under `backend: jev` a routed pair is asked about twice by the same model: once
+by Phase 1's Choice, whose `NOT_ENOUGH_INFO` criterion covers "about a related
+but different topic", and once by the screen's Noul, whose whole question is that
+clause. Measured 2026-10-05, $0.28 for both tests.
+
+**On the population the screen acts on** — 2,000 pairs the fine-tune routed, 38
+claims:
+
+| | |
+|---|---|
+| Spearman `p_nei` vs `(1 − addresses)` | **0.781** [0.762, 0.799] |
+| agreement on keep/drop | **95.4%** (92 of 2,000 disagree) |
+| `p_nei` saturated at 1.000 | **54.1%** |
+| `addresses` saturated at 0 | 0.0% |
+
+A first attempt correlated across ALL pairs and got 0.756, but 98% of those were
+NEI with `p_nei` pinned at 1.000 — both signals agreeing that an irrelevant paper
+is irrelevant, on a population the screen never sees. Recorded because the number
+looks fine and answers the wrong question.
+
+**Reading:** for a threshold filter, which is all the screen is, `p_nei` carries
+the signal — 95% agreement on the only decision it makes. What `p_nei` loses is
+ranking granularity inside the rejected mass, where it saturates and `addresses`
+still spreads (0.02–0.26). That matters for ordering the pile, not for a cutoff.
+
+**DECISION: leave it in for the first KM C. run.** It costs **$0.65**, 2% on top
+of Phase 1's $33.05 — Jev routes only 2.1% of pairs, far less than the NLI's 8%
+(zero-shot) or 34% (fine-tune), so the screened set is ~49,000 rather than
+180,000–790,000. At that price the cost argument is gone, and one real run
+produces the population today's test lacked: pairs **Jev itself** routed, of
+which only 76 existed in the sample.
+
+**Side-finding worth not burying.** Jev calls **54% of the fine-tune's confident
+REFUTES/SUPPORTS pairs** `NOT_ENOUGH_INFO` with probability **1.000**, and would
+keep only 3.8% of them. That is a far sharper disagreement between the two Phase 1
+candidates than the AUC comparison showed, and it falls on exactly the pairs that
+reach Phase 2 and cost money.
+
 ## Sequencing
 
 The two points that changed today (5 and 6) both argue for acting **before** the

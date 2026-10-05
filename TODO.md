@@ -68,6 +68,12 @@ first or the round measures the wrong thing.
 - [ ] **Update `TD_NLI_LLM_two_phase.qmd` if Phase 1 changes.** It has no stale
   references today — every target it names exists — but it describes Phase 1 as
   the NLI throughout. Premature while that is still a proposal.
+- [ ] **Decide the relevance screen's future, after the first Jev run.**
+  Left in deliberately ($0.65, 2% of the run) so the redundancy test gets the
+  population it needs — pairs Jev itself routes. Today's test used pairs the
+  fine-tune routed: Spearman 0.781, 95.4% agreement on keep/drop, but only 76
+  Jev-routed pairs in the sample. `design_notes.md` point 9.
+
 - [ ] **An ensemble judge for Phase 2.** Independent of everything above and
   unaffected by it: `gpt-4o-mini` reproduces only 53% of its own verdicts.
   Three cheap models from different labs, majority vote, ≈ $56 for all of GA1
