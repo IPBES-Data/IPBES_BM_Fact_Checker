@@ -288,15 +288,11 @@ list(
   # health check is no longer a pipeline stage, and what remains is the one thing
   # scoring needs: a name for the scorer_model column.
   #
-  # check_nli_pool_health() is KEPT in R/ and is still worth running by hand
-  # before a RunPod-backed run -- it catches an unreachable host, a pool serving
-  # mixed models, and an expect_model mismatch, none of which this target does:
-  #
-  #   check_nli_pool_health(tar_read(scorer_config), tar_read(scorer_name))
-  #
-  # It is not wired in because the backend that needs it is on its way out, and a
-  # target that silently does nothing for the active backend is worse than an
-  # explicit call.
+  # The pool check is GONE, not merely unwired. check_nli_pool_health() and the
+  # RunPod-only machinery around it were deleted on 2026-10-05 with the rest of
+  # the NLI stage; it is in git history and on the `NLI_dirty` branch if the
+  # RunPod path is ever revived. What it did that this target does not: catch an
+  # unreachable host, a pool serving mixed models, and an expect_model mismatch.
   tar_target(
     scorer_model,
     {

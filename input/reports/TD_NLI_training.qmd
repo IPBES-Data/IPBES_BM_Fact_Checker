@@ -46,9 +46,14 @@ reasoning, with the measurements, is in `design_notes.md` points 3 and 5–8.
 `R/build_nli_finetuned_model_qa_data.R`, `R/build_nli_training_qa_data.R`,
 `R/build_nli_benchmark_scores.R`, and the two training QA reports. The source
 links below are kept as plain paths for that reason.
-`R/build_nli_benchmark_metrics.R` and its report survive but are parked
-(`input/reports/_QA_NLI_Benchmark_Report.qmd`, underscore-prefixed so Quarto
-skips it) — the metrics are still wanted, the subject is not.
+`R/build_nli_benchmark_metrics.R` was parked on 2026-10-05 and **deleted later
+the same day**, once the whole Phase 1 stage was renamed away from `nli_*` and
+the file had no caller left. `input/reports/_QA_NLI_Benchmark_Report.qmd` is
+still present and still underscore-prefixed, but it now has no data builder:
+reviving the benchmark means rewriting that builder, not un-parking it. What is
+worth recovering from git is the metric design — Cohen's kappa against human
+labels, the R1/R2 ceiling, percentile bootstrap CIs, inverse-inclusion-probability
+weighting, and the deliberate absence of accuracy.
 
 **Checkpoints and data** are in `deep_archive/2026-10-05_training_dormant/`, and
 the state before any of this is the `NLI_dirty` branch. Nothing here is

@@ -74,7 +74,8 @@ fi
 # The inventory lists every pod CREATED, not every pod READY -- a pod that
 # never came up is in there precisely because it is billing and has to be
 # findable for teardown. Writing that column straight into config.yaml would
-# hand the pipeline a host check_nli_pool_health() then stops on, so the hosts
+# hand the pipeline a host that cannot serve (the pipeline no longer checks --
+# check_nli_pool_health() was removed 2026-10-05), so the hosts
 # are filtered by asking them. The full inventory is what stop_nli_pods.sh
 # uses; only this filtered copy feeds the write-back.
 READY_CSV="${CSV%.csv}_ready.csv"
