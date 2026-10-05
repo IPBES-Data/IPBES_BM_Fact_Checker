@@ -20,9 +20,12 @@
 suppressPackageStartupMessages(library(dplyr))
 source("R/build_llm_relevance_screen.R")   # chunk_by_tokens(), RELEVANCE_ENDPOINT, budget
 
+# Paths overridable for the same reason run_ai_reviewers.R's are: a second,
+# REFUTES-enriched instrument lives in input/ai_goldstandard_refutes/.
 ASSESSMENT <- "GA1"
-TEMPLATE <- file.path("input/goldstandard", sprintf("R1_%s_template.csv", ASSESSMENT))
-OUTDIR   <- "input/ai_goldstandard"
+TEMPLATE <- Sys.getenv("NLI_REVIEW_TEMPLATE",
+                       file.path("input/goldstandard", sprintf("R1_%s_template.csv", ASSESSMENT)))
+OUTDIR   <- Sys.getenv("NLI_REVIEW_OUTDIR", "input/ai_goldstandard")
 MODEL    <- "typesafe/jev-1.13"
 
 api_key <- Sys.getenv("API_openrouter")

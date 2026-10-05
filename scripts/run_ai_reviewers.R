@@ -23,10 +23,16 @@
 #   Rscript scripts/run_ai_reviewers.R gemini       # one, by slug substring
 suppressPackageStartupMessages({library(dplyr)})
 
+# A second instrument (input/ai_goldstandard_refutes/) exists for the same rows'
+# worth of work on a REFUTES-enriched draw, so the paths are overridable rather
+# than duplicated into a near-identical script. Defaults are the first
+# instrument, so an existing invocation is unchanged.
+#   NLI_REVIEW_TEMPLATE=... NLI_REVIEW_OUTDIR=... Rscript scripts/run_ai_reviewers.R
 ASSESSMENT <- "GA1"
-TEMPLATE   <- file.path("input/goldstandard", sprintf("R1_%s_template.csv", ASSESSMENT))
+TEMPLATE   <- Sys.getenv("NLI_REVIEW_TEMPLATE",
+                         file.path("input/goldstandard", sprintf("R1_%s_template.csv", ASSESSMENT)))
 GUIDE      <- "input/goldstandard/REVIEWER_GUIDE.md"
-OUTDIR     <- "input/ai_goldstandard"
+OUTDIR     <- Sys.getenv("NLI_REVIEW_OUTDIR", "input/ai_goldstandard")
 CACHE      <- file.path(OUTDIR, ".cache")
 VERDICTS   <- c("SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO", "CANNOT_JUDGE")
 
