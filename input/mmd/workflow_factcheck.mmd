@@ -58,14 +58,23 @@ flowchart TD
   works_db --> llm_scope
   snowball_db --> llm_scope
 
-  subgraph nli_assessment["Phase 1 — NLI alignment of BMs and citing publications"]
+  %% ⚠ PHASE 1 IS UNDER CHALLENGE, and this diagram shows what the code RUNS,
+  %% not what is proposed. Measured 2026-10-05 against refutations confirmed by
+  %% three independent reviewers: this model reaches AUC 0.50 for REFUTES and
+  %% 0.38 for SUPPORTS -- chance and below -- and the slice it routes on is
+  %% DEPLETED of refutations (0.058% vs 0.693% in the SUPPORTS-uncertain bucket
+  %% it discards). A replacement is proposed in design_notes.md point 8 and
+  %% drawn in overview.mmd; nothing has been swapped, because every measurement
+  %% behind it comes from models judging models and the human review round has
+  %% not happened. Redraw this subgraph when that changes, not before.
+  subgraph nli_assessment["Phase 1 — NLI alignment of BMs and citing publications (under challenge, see overview.mmd)"]
     direction TB
 
     %% Nodes
     nli_segment@{ shape: rect, label: "Segment each BM into claims — per granularity:<br/>naive_bm: evidence-delimited, one claim per sentence-group ending in a {ref} (+ a separate bm_label claim) — 2-17 claims per BM<br/>complete_bm: whole bm_description/bm_label as one claim each — 2 per BM (1 if identical)<br/>atomic_bm: split at EVERY evidence brace, then LLM-complete elliptical fragments into self-contained claims (confidence qualifiers extracted to their own column, same as naive_bm)<br/><tt>[nli_ready_evidence_parquet]</tt>" }
     nli_ready_db@{ shape: lin-cyl, label: "NLI-Ready DB (claim × citing-work premise)<br/><tt>output/nli_ready_evidence/granularity=&lt;gran&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
-    nli_server@{ shape: cloud, label: "Zero-shot NLI server pool<br/>bge-m3-zeroshot-v2.0-c<br/><tt>external/runpod/docker/nli-runpod-bge-m3/</tt>" }
-    nli_scoring@{ shape: rect, label: "Classify each citing work vs one BM claim<br/>premise = clean(title + abstract)<br/>hypothesis = one evidence-segmented BM claim<br/>→ SUPPORTS / REFUTES / NEI<br/>one branch per claim; resumable at WORK granularity (delta dispatch)<br/><tt>[nli_claim_units_evidence -> nli_claim_units_evidence_flat -> nli_scores_by_claim_evidence]</tt>" }
+    nli_server@{ shape: cloud, label: "Zero-shot NLI server pool<br/>bge-m3-zeroshot-v2.0-c · or the fine-tune (nli_config=bge_m3_ft_ga1)<br/><tt>external/runpod/docker/nli-runpod-bge-m3/</tt>" }
+    nli_scoring@{ shape: rect, label: "Classify each citing work vs one BM claim<br/>premise = clean(title + abstract)<br/>hypothesis = one evidence-segmented BM claim<br/>→ SUPPORTS / REFUTES / NEI<br/>one branch per claim; resumable at WORK granularity (delta dispatch)<br/>MEASURED AUC 0.50 (REFUTES) / 0.38 (SUPPORTS) — see overview.mmd<br/><tt>[nli_claim_units_evidence -> nli_claim_units_evidence_flat -> nli_scores_by_claim_evidence]</tt>" }
     nli_consolidate@{ shape: rect, label: "Merge per-claim scratch files into one parquet per (km, bm)<br/>and prune rows whose claim_id is gone<br/><tt>[nli_scores_evidence_consolidated]</tt>" }
     nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores_evidence/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
