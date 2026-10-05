@@ -528,7 +528,14 @@ list(
   ),
   tar_target(
     nli_claim_units_evidence_keypaper,
-    build_nli_claim_units(assessment, nli_ready_evidence_keypaper_parquet, max_length),
+    # km_scope applies here too, which it did NOT when this chain lived in the
+    # training project -- that block had no km: field, so there was nothing to
+    # thread. Moving it into factcheck without this made the two chains
+    # inconsistent under the same config: `km: ["C."]` scoped the citing works
+    # and silently scored every key paper of every KM. Cheap (29,511 pairs for
+    # all of GA1) but wrong, and wrong in the direction that is hard to notice,
+    # since the extra rows look like legitimate output.
+    build_nli_claim_units(assessment, nli_ready_evidence_keypaper_parquet, max_length, km_scope),
     pattern = map(assessment, nli_ready_evidence_keypaper_parquet),
     iteration = "list"
   ),

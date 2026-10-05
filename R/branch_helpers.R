@@ -87,6 +87,24 @@ nli_config_for_granularity <- function(nli_configs, granularities, fallback) {
 
   vapply(granularities, function(g) {
     hit <- names(gran_of)[!is.na(gran_of) & gran_of == g]
+    # FIRST MATCH WINS, and that is now order-dependent in a way it was not when
+    # each granularity had exactly one config. Three configs declare atomic_bm
+    # (the zero-shot one that produced every existing score, the fine-tune, and
+    # the jev backend), so a reordering of the yaml would silently repoint every
+    # atomic_bm report at a different nli_config= directory and make scored data
+    # look unscored -- the precise failure this helper exists to prevent.
+    #
+    # So it warns when a granularity is ambiguous, naming what it picked and
+    # what it passed over. It does NOT stop: resolving to the first declaration
+    # is correct for the reporting layer, which wants whichever config actually
+    # produced the bulk of the scores, and a hard error here would make adding a
+    # second backend impossible without editing this function.
+    if (length(hit) > 1L) {
+      warning(sprintf(
+        "nli_config_for_granularity: granularity '%s' is declared by %d configs (%s); using '%s'. Reordering input/config.yaml would change which scores the reports read.",
+        g, length(hit), paste(hit, collapse = ", "), hit[[1L]]
+      ), call. = FALSE)
+    }
     if (length(hit)) hit[[1L]] else fallback
   }, character(1))
 }
