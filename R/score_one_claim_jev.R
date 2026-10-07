@@ -155,7 +155,28 @@ score_one_claim_jev <- function(
       cached <- NULL
     }
   }
-  already <- if (is.null(cached)) character(0) else unique(cached$work_id)
+  # A work with NO SCORE was never scored, so it must NOT count as done.
+  #
+  # Failed requests deliberately yield NA rows rather than dropped ones (see the
+  # failure path below), so that a pair missing from the output cannot later read
+  # as "never scored" and be re-dispatched. But the resume check used to take
+  # every work_id in the cache, NA scores included -- which meant any request
+  # failure marked its pairs complete FOREVER. The run reported no error: the
+  # claim finished, the rows were written, and the gap was invisible except for
+  # one "N of M works unscored" line in a long log.
+  #
+  # That is survivable for a transient blip and not survivable for the case it
+  # was most likely to meet: OpenRouter credit running out mid-run, which fails
+  # every remaining request and so silently freezes the corpus at wherever the
+  # money stopped.
+  #
+  # Filtering on p_supports costs at most a second attempt at pairs that were
+  # probably never billed anyway -- a 402 or an exhausted retry returns no usage
+  # -- and trades that against a permanent, silent coverage hole.
+  already <- if (is.null(cached)) character(0) else {
+    scored <- cached[!is.na(cached$p_supports), , drop = FALSE]
+    unique(scored$work_id)
+  }
 
   claim_rows <- function(cols) {
     arrow::open_dataset(claim_unit$nli_ready_path) |>

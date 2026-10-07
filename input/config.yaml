@@ -164,7 +164,7 @@ fact_checking:
     # missing. Do not move them until that round is finished.
     ga1_jev:
       assessments: [GA1]
-      km: ["C."]
+      km: ["B.", "C."]
       nli: jev_atomic_bm
       llm: openrouter_cheap
       claim_completion: haiku_completion
