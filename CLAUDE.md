@@ -57,15 +57,50 @@ targets::tar_make(script = "_targets_reporting.R", store = "_targets_reporting")
 project was renamed `main` → `collection` on 2026-10-07 and the store was **moved**
 (`_targets/` → `_targets_collection/`), not recreated.
 
-> ⚠ **Do not run the `collection` project.** 16 of its 18 targets are outdated and all five
-> download/network targets would fire. `build_snowball_parquet()` unlinks its output with **no
-> existence check** (16 GB, days of OpenAlex time, and a different corpus from the one every
-> existing score was computed against); `download_works.R:9` and `download_zotero.R:123` both
-> `unlink()` then refetch; only `ttl_path` is SHA-checked and therefore cheap. The cause is that
-> `targets` hashes function bodies, and the `output/` restructure plus the config restructure
-> edited a path literal inside every one of collection's builders. See `TODO_AFTER_BREAK.md` for
-> the three options; the chosen one is "keep the new structure, never run it" until the download
-> builders are made idempotent the way `download_ttls.R` already is.
+**Running the `collection` project is safe as of 2026-10-07.** It was not before: the
+`output/` restructure edited a path literal inside every one of its builders, and since `targets`
+hashes function bodies, all five download/network targets were queued to refetch a corpus that had
+not changed — days of OpenAlex time, 16 GB of snowball deleted, and a different corpus from the one
+every existing score was computed against.
+
+The fix is **content-key guards** (`R/input_key_guard.R`), generalising what `download_ttls.R` has
+always done with its GitHub blob SHA. Each expensive fetch records the set of identifiers that
+actually determine its output and skips when that set is unchanged:
+
+| target | key | cost if it runs |
+|---|---|---|
+| `ttl_path` | GitHub blob SHA | seconds |
+| `refs_parquet`, `key_messages_parquet` | *(unguarded — local SPARQL)* | minutes |
+| `zotero_parquet` | group id + Zotero `Last-Modified-Version` | minutes |
+| `works_parquet` | the DOI set **and** the refs `(doi, km, bm)` mapping | hours |
+| `snowball_parquet` | the seed work-id set | **days, 16 GB** |
+| `works_citing_parquet` | *(unguarded — local DuckDB)* | minutes |
+
+This is **not** an existence guard. "The directory is there, skip" breaks the invalidation contract
+outright — a genuinely new TTL or Zotero item would be silently ignored, the bug class `0bb6bb0`
+removed from two `nli_ready` builders. A content key keeps the contract: a real upstream change
+moves the key and the fetch re-runs. Measured on GA1 — unchanged inputs skip in 0.24 s (works) and
+0.06 s (snowball) with zero bytes touched; adding one DOI or one seed, or setting
+`COLLECTION_FORCE_REFRESH=1`, correctly forces the fetch.
+
+**The chain is a single line, not two independent roots.** Zotero is a second external service but
+it sits *below* refs and takes only the group id from it
+(`download_zotero.R`'s `infer_zotero_group_id()`), and the DOI set that drives OpenAlex comes from
+`zotero_parquet`, not refs (`download_works.R`). So a new Zotero item cannot change `refs_parquet`;
+it changes `works_parquet`, and from there the snowball.
+
+```
+ttl_path -> refs_parquet -> zotero_parquet -> works_parquet -> snowball_parquet -> works_citing_parquet
+         -> key_messages_parquet
+```
+
+**The keys needed one-time seeding**, because the data on disk predates the mechanism and "no
+recorded key" means refetch. `scripts/seed_collection_input_keys.R` (dry-run by default) asserts
+that the outputs on disk correspond to the inputs on disk and records that. It deliberately does
+**not** seed `zotero`: that key includes the live library version, and seeding it would assert
+something the script cannot check — that the on-disk copy was downloaded at that version. Zotero
+refetches instead, which is minutes, and if nothing changed the DOI set comes out identical and
+`works` skips anyway.
 
 **There were FOUR projects until 2026-10-05.** A `training` project held key papers → NLI → LLM →
 training set → fine-tune → benchmark. It was retired when the model it existed to improve was

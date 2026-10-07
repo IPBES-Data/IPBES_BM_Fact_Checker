@@ -101,7 +101,8 @@ zotero_item_to_row <- function(item, group_id) {
 download_zotero <- function(
   assessment,
   refs_path,
-  output_root = out_collection("zotero")
+  output_root = out_collection("zotero"),
+  force = collection_force_refresh()
 ) {
   output_path <- branch_output_dir(output_root, assessment$id)
   group_id <- infer_zotero_group_id(refs_path)
@@ -116,6 +117,38 @@ download_zotero <- function(
     stop("Zotero group ", group_id, ": Total-Results header missing or zero")
   }
   message("Zotero group ", group_id, ": ", total, " top-level items")
+
+  # CONTENT KEY -- see R/input_key_guard.R. This is the direct analogue of
+  # download_ttl()'s GitHub blob SHA check: one cheap request (limit = 1, already
+  # being made for Total-Results) establishes whether anything changed before
+  # paging through the whole library.
+  #
+  # Last-Modified-Version is the LIBRARY's version, bumped by any change
+  # anywhere in the group, not just to the top-level items this fetches. That
+  # over-sensitivity is deliberate: it can only cause an unnecessary refetch,
+  # never a stale skip, and the asymmetry matters because a stale skip here
+  # propagates silently into works and snowball.
+  #
+  # A missing header means we cannot PROVE the library is unchanged, so it
+  # refetches and warns rather than guessing.
+  zotero_version <- httr2::resp_header(resp0, "Last-Modified-Version")
+  if (is.null(zotero_version) || !nzchar(zotero_version)) {
+    warning(sprintf(
+      "[zotero %s] no Last-Modified-Version header from group %s -- refetching in full; the skip guard cannot be used",
+      assessment$id, group_id
+    ), call. = FALSE)
+    zotero_key <- NA_character_
+  } else {
+    zotero_key <- input_key(group_id, zotero_version, total)
+    if (input_key_is_current("zotero", assessment$id, zotero_key,
+                             outputs = output_path, force = force)) {
+      input_key_skip_message(
+        "zotero", assessment$id,
+        sprintf("group %s at library version %s", group_id, zotero_version)
+      )
+      return(output_path)
+    }
+  }
 
   limit <- 100
   starts <- seq(0, total - 1, by = limit)
@@ -175,6 +208,15 @@ download_zotero <- function(
     length(starts),
     " pages"
   )
+
+  # Recorded only after every page landed. NA when the server gave no version
+  # header, in which case input_key_clear() makes the next run refetch rather
+  # than inherit a key that proves nothing.
+  if (is.na(zotero_key)) {
+    input_key_clear("zotero", assessment$id)
+  } else {
+    input_key_write("zotero", assessment$id, zotero_key)
+  }
 
   output_path
 }

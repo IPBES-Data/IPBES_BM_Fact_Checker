@@ -41,10 +41,12 @@ global `active:` setting. A second block, `training:`, existed until 2026-10-05;
 
 Two cautions worth knowing before a first run:
 
-- **Do not run `collection`.** 16 of its 18 targets are outdated after the
-  2026-10-07 output restructure, and all five download/network targets would
-  fire — days of OpenAlex time, and a different corpus from the one every
-  existing score was computed against. See the warning in [CLAUDE.md](CLAUDE.md).
+- **`collection` is safe to run, but only because of content-key guards.** The
+  expensive fetches (Zotero, OpenAlex works, the snowball) record the set of
+  identifiers that determines their output and skip when it is unchanged, so a
+  code edit or a directory move no longer triggers days of refetching. A real
+  change — a new TTL, a new Zotero item — still propagates normally. Force a
+  refetch with `COLLECTION_FORCE_REFRESH=1`. See [CLAUDE.md](CLAUDE.md).
 - `factcheck` spends real money on every scoring and verification target. Use
   `tar_make(names = ..., shortcut = TRUE)` to render against on-disk data.
 

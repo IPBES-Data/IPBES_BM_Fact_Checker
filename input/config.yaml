@@ -25,7 +25,7 @@ collection:
 
   assessments:
     - id: GA1
-      ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v09.ttl
+      ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v11.ttl
       full_text: false
     # - id: VA
     #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Values%20Assessment/VA_v05.ttl

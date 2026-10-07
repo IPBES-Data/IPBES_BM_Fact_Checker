@@ -1,7 +1,19 @@
+# Seed set and key factored out so scripts/seed_collection_input_keys.R uses the
+# SAME derivation as the builder -- see the note in R/download_works.R.
+snowball_input_seeds <- function(works_path) {
+  unique(sub(
+    "^https://openalex\\.org/", "",
+    arrow::open_dataset(works_path) |> dplyr::select(id) |> dplyr::collect() |> dplyr::pull(id)
+  ))
+}
+
+snowball_input_key <- function(ids) input_key(ids)
+
 build_snowball_parquet <- function(
   assessment,
   works_path,
-  output_root = out_collection("snowball")
+  output_root = out_collection("snowball"),
+  force = collection_force_refresh()
 ) {
   assessment_id <- assessment$id
   nodes_root <- file.path(output_root, "nodes")
@@ -61,6 +73,31 @@ build_snowball_parquet <- function(
   # mapping -- see R/build_works_citing_parquet.R and
   # R/build_claim_work_pairs_keypaper.R.
   ids <- unique(works$w_id)
+
+  # CONTENT KEY -- see R/input_key_guard.R for the full rationale.
+  #
+  # The seed set is the only thing about this call that determines its output:
+  # pro_snowball() is a pure function of `ids` plus whatever OpenAlex currently
+  # holds about them. So an unchanged seed set means re-running costs days of
+  # OpenAlex time to rebuild 16 GB that is already on disk -- and, worse, yields
+  # a DIFFERENT corpus from the one every existing score was computed against,
+  # because OpenAlex's citation graph keeps growing underneath a fixed seed set.
+  #
+  # This is deliberately NOT an existence check. If a new TTL or a new Zotero
+  # item adds a seed, the key moves and the snowball re-runs, which is exactly
+  # the propagation path that has to keep working.
+  snowball_key <- snowball_input_key(ids)
+  if (input_key_is_current(
+    "snowball", assessment_id, snowball_key,
+    outputs = c(nodes_assessment_dir, edges_assessment_dir),
+    force = force
+  )) {
+    input_key_skip_message(
+      "snowball", assessment_id,
+      sprintf("seed set (%d works)", length(ids))
+    )
+    return(c(nodes_assessment_dir, edges_assessment_dir, keypaper_assessment_dir))
+  }
 
   if (length(ids)) {
     message("Snowball [", assessment_id, "]: ", length(ids), " unique seeds")
@@ -138,17 +175,23 @@ build_snowball_parquet <- function(
       )
 
       unlink(sb_dir, recursive = TRUE, force = TRUE)
+
+      # Recorded only now, after the write succeeded. A key written earlier
+      # would make the next run skip a fetch that never actually landed.
+      input_key_write("snowball", assessment_id, snowball_key)
     } else {
       # pro_snowball() hit the known zero-keypaper package bug handled
       # above and produced nothing. No new data means whatever sits on
       # disk from an earlier run is stale, so it goes -- matching what
       # this function has always done for the no-data case.
       clear_assessment_output()
+      input_key_clear("snowball", assessment_id)
     }
   } else {
     # No seed works for this assessment at all: nothing to snowball, and
     # any existing output is stale.
     clear_assessment_output()
+    input_key_clear("snowball", assessment_id)
   }
 
   c(nodes_assessment_dir, edges_assessment_dir, keypaper_assessment_dir)

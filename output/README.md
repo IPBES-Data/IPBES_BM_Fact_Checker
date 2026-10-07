@@ -16,6 +16,7 @@ pipeline owned which. It is now grouped to match `_targets.yaml`:
 | `factchecker/` | `factcheck` | `claim_work_pairs/` `claim_scores/` `llm_candidate_scope/` `llm_relevance/` `llm_verification/` `claim_completion/` |
 | `reporting/` | `reporting` | `tables/` `figures/` |
 | `reports/` | `reporting` | the rendered site |
+| `collection/.inputkeys/` | `collection` | One `<target>_<assessment>.key` per guarded fetch — the recorded content key from `R/input_key_guard.R`. Hidden and outside every dataset root deliberately: Arrow does skip dot-prefixed files, but builder state living inside the data it reads is how the `.premigration` directories became a trap. Deleting one forces that fetch to re-run |
 | `config/` | — | **empty.** Held generated RunPod `.conf` files; the pod wrappers that wrote them went to `deep_archive/2026-10-07_runpod_pod_wrappers/` with the NLI backend |
 
 **`reports/` is deliberately NOT inside `reporting/`.**

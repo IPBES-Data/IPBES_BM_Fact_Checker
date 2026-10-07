@@ -471,6 +471,86 @@ splitting it before setting a real value — but `training:` was retired
 
 ---
 
+## DONE 2026-10-07 (part 3) — collection is runnable
+
+Content-key guards on the three expensive external fetches, so the pipeline can
+be run without refetching a corpus that has not changed.
+
+**The problem.** `targets` invalidates on the hash of every function body a
+target reaches. Right for derived data, wrong for a download: the `output/`
+restructure edited a path literal in all seven collection builders, leaving 16
+of 18 targets outdated with every network target queued to refetch. Cost would
+have been days of OpenAlex time, 16 GB of snowball deleted, and a corpus
+different from the one every existing score was computed against.
+
+**The shape of the chain** (checked against `tar_manifest()`, not assumed):
+
+```
+ttl_path -> refs_parquet -> zotero_parquet -> works_parquet -> snowball_parquet -> works_citing_parquet
+         -> key_messages_parquet
+```
+
+TTL and Zotero are both external services, but they are **in series, not
+parallel**. Zotero sits below refs and takes only the group id from it; the DOI
+set that drives OpenAlex comes from `zotero_parquet`, not refs. So a new Zotero
+item cannot change `refs_parquet` — it changes `works_parquet`, and from there
+the snowball.
+
+**What was added** (`R/input_key_guard.R`): each expensive fetch records the set
+of identifiers that actually determines its output, and skips when unchanged.
+
+| target | key | cost if it runs |
+|---|---|---|
+| `zotero_parquet` | group id + `Last-Modified-Version` | minutes |
+| `works_parquet` | DOI set **and** refs `(doi, km, bm)` mapping | hours |
+| `snowball_parquet` | seed work-id set | days, 16 GB |
+
+Two keys for `works` because its output is a join: the DOI set decides which
+records are fetched, the refs mapping decides how each is partitioned. Keying on
+DOIs alone would silently keep a stale km/bm layout after a TTL change — the
+quieter failure and the easier to miss.
+
+**Not an existence guard.** "Directory is there, skip" breaks the invalidation
+contract outright; that is the bug class `0bb6bb0` removed from two `nli_ready`
+builders. A content key keeps it: a real upstream change moves the key.
+
+**Also fixed in passing:** `download_works()` unlinked its own output as its
+first statement, so a run that was going to change nothing still destroyed its
+output before finding that out — the same shape as the 2026-09-15 snowball
+incident. Both destructive steps now happen only after the guard decides to
+fetch.
+
+**Measured on GA1:**
+
+| | |
+|---|---|
+| `download_works()` unchanged | skips in 0.24 s, 0 bytes touched |
+| `build_snowball_parquet()` unchanged | skips in 0.06 s, 15.8 GB intact |
+| one extra DOI / one extra seed | correctly refetches |
+| `COLLECTION_FORCE_REFRESH=1` | correctly refetches |
+| output directory removed | correctly refetches |
+
+**One-time seeding.** `scripts/seed_collection_input_keys.R` (dry-run by
+default, `--write` to apply). The data on disk predates the mechanism, so "no
+recorded key" would have meant refetch-everything on the first run. Seeded GA1:
+5,886 DOIs, 2,137 seeds — the latter matching the known key-paper count.
+
+It deliberately does **not** seed `zotero`: that key includes the live library
+version, and seeding it would assert something the script cannot check — that
+the on-disk copy was downloaded at that version. If the group changed since,
+that assertion would be false and would propagate silently into works and
+snowball. Zotero refetches instead (minutes); if nothing changed the DOI set is
+identical and `works` skips anyway.
+
+**What a run now does:** `ttl_path` seconds, `refs`/`key_messages` minutes of
+local SPARQL, `zotero` re-checks the live version, `works` and `snowball` skip,
+`works_citing` rebuilds locally. `fuseki-server` is on PATH.
+
+**Not yet run end to end** — the guards and seeding are verified in isolation
+but a full `tar_make()` has not been done.
+
+---
+
 ## DONE 2026-10-07 (part 2) — diagrams, docs and `r_files`
 
 ### `input/config.yaml` — 412 → 367 lines

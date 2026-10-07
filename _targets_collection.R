@@ -144,7 +144,15 @@ list(
   tar_target(sparql_url, yaml::read_yaml(config_file)[["collection"]][["sparql_url"]]),
   tar_target(
     assessments_list,
-    lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
+    # Read through config_assessments(), NOT by reaching into the structure.
+    # `assessments:` moved under `collection:` on 2026-10-07 and this target was
+    # missed, so yaml::read_yaml(config_file)[["assessments"]] silently became
+    # NULL -- lapply(NULL, ...) is list(), so assessments_list "completed" at
+    # 46 B and the branched targets below it had nothing to map over. That is
+    # the exact failure config_assessments() exists to turn into a hard stop
+    # naming the move: an empty assessment list looks like a successful empty
+    # run, not a broken config.
+    lapply(config_assessments(yaml::read_yaml(config_file)), function(a) {
       a[setdiff(names(a), "full_text")]
     })
   ),

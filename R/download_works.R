@@ -1,27 +1,68 @@
-download_works <- function(
-  assessment,
-  zotero_path,
-  refs_path,
-  output_root = out_collection("works"),
-  workers = 8
-) {
-  output_path <- branch_output_dir(output_root, assessment$id)
-  if (file.exists(output_path)) {
-    unlink(output_path, recursive = TRUE, force = TRUE)
-  }
-  dir.create(output_path, showWarnings = FALSE, recursive = TRUE)
+# Key factored out of download_works() so scripts/seed_collection_input_keys.R
+# computes it with the SAME code rather than a copy. A copied key derivation
+# that drifted would be invisible: the seeded key would simply never match, and
+# the guard would refetch forever while looking correct.
+works_input_key <- function(dois, refs_path) {
+  refs_map <- arrow::open_dataset(refs_path) |>
+    dplyr::select(doi, km, bm) |>
+    dplyr::collect()
+  input_key(dois, paste(refs_map$doi, refs_map$km, refs_map$bm, sep = "\037"))
+}
 
+# The DOI set exactly as download_works() derives it for the OpenAlex query.
+works_input_dois <- function(zotero_path) {
   dois <- arrow::open_dataset(zotero_path) |>
     dplyr::select(doi) |>
     dplyr::filter(!is.na(doi)) |>
     dplyr::collect() |>
     dplyr::pull(doi) |>
     openalexPro::extract_doi(non_doi_value = "", normalize = TRUE, what = "doi")
-  dois <- unique(dois[nzchar(dois)])
+  unique(dois[nzchar(dois)])
+}
+
+download_works <- function(
+  assessment,
+  zotero_path,
+  refs_path,
+  output_root = out_collection("works"),
+  workers = 8,
+  force = collection_force_refresh()
+) {
+  output_path <- branch_output_dir(output_root, assessment$id)
+
+  dois <- works_input_dois(zotero_path)
 
   if (!length(dois)) {
     stop("No DOIs found for assessment ", assessment$id)
   }
+
+  # CONTENT KEY -- see R/input_key_guard.R.
+  #
+  # TWO parts, because this target's output is a join of two things. The DOI set
+  # (from zotero_parquet) decides WHICH OpenAlex records are fetched; the refs
+  # (doi, km, bm) mapping decides how each fetched record is partitioned. A new
+  # Zotero item moves the first; a re-cut Background Message moves the second.
+  # Keying on the DOIs alone would silently keep a stale km/bm layout after a
+  # TTL change, which is the quieter of the two failures and the easier to miss.
+  works_key <- works_input_key(dois, refs_path)
+  if (input_key_is_current("works", assessment$id, works_key,
+                           outputs = output_path, force = force)) {
+    input_key_skip_message(
+      "works", assessment$id,
+      sprintf("DOI set (%d) and refs km/bm mapping", length(dois))
+    )
+    return(output_path)
+  }
+
+  # Cleared only after the guard has decided to fetch. This used to be the first
+  # statement in the function, so a run that was going to change nothing still
+  # destroyed its own output before finding that out -- the same shape as the
+  # 2026-09-15 snowball incident documented in build_snowball_parquet.R.
+  if (file.exists(output_path)) {
+    unlink(output_path, recursive = TRUE, force = TRUE)
+  }
+  dir.create(output_path, showWarnings = FALSE, recursive = TRUE)
+
   message("Querying OpenAlex for ", length(dois), " DOIs [", assessment$id, "]")
 
   query_url <- openalexPro::pro_query(
@@ -135,6 +176,8 @@ download_works <- function(
     partitioning = c("assessment", "km", "bm"),
     existing_data_behavior = "delete_matching"
   )
+
+  input_key_write("works", assessment$id, works_key)
 
   output_path
 }
