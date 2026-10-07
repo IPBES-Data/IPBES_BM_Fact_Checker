@@ -54,14 +54,14 @@ grab <- function(root, keypaper) {
     select(km, bm, claim_id, claim, work_id, quote, explanation) |> collect() |>
     mutate(keypaper = keypaper)
 }
-cand <- bind_rows(grab("output/llm_verification/scores", FALSE),
-                  grab("output/llm_verification/scores_keypaper", TRUE)) |>
+cand <- bind_rows(grab(out_factcheck("llm_verification/scores"), FALSE),
+                  grab(out_factcheck("llm_verification/scores_keypaper"), TRUE)) |>
   distinct(km, bm, claim_id, work_id, .keep_all = TRUE)
 
 meta <- function(root, ids) open_dataset(root) |> filter(id %in% !!ids) |>
   select(id, title, abstract, doi) |> collect() |> distinct(id, .keep_all = TRUE)
-m <- bind_rows(meta(file.path("output/works_citing_meta", paste0("assessment=", A)), unique(cand$work_id)),
-               meta(file.path("output/works", paste0("assessment=", A)), unique(cand$work_id))) |>
+m <- bind_rows(meta(file.path(out_collection("works_citing_meta"), paste0("assessment=", A)), unique(cand$work_id)),
+               meta(file.path(out_collection("works"), paste0("assessment=", A)), unique(cand$work_id))) |>
   distinct(id, .keep_all = TRUE)
 cand <- cand |> inner_join(m, by = c("work_id" = "id")) |>
   filter(!is.na(abstract), nzchar(trimws(abstract)))

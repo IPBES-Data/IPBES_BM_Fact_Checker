@@ -1,6 +1,6 @@
 # Quarto project for every report this pipeline renders.
 #
-# Rendered by the single `reports_project` target in _targets.R via
+# Rendered by the single `reports_project` target in _targets_collection.R via
 # tarchetypes::tar_quarto(). This replaced nine separate tar_target() bodies
 # that each called quarto::quarto_render() and then file.rename()d the result
 # out of input/reports/ into output/reports/ -- Quarto writes its output next

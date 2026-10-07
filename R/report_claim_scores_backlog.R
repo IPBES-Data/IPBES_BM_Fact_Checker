@@ -8,7 +8,7 @@
 # looks the other way (scored claims with no upstream), so a claim that is
 # scored but INCOMPLETE is invisible to both.
 #
-# Deliberately not wired into _targets.R, same as find_orphaned_claim_scores():
+# Deliberately not wired into _targets_collection.R, same as find_orphaned_claim_scores():
 # it is an operator report, not a pipeline input, and the number it prints is
 # a spend decision rather than a build artifact.
 #
@@ -28,7 +28,7 @@ nli_backlog_report <- function(
   granularity = "atomic_bm",
   nli_config_name = NULL,
   claim_units_object = "_targets/objects/claim_units_flat",
-  scores_root = "output/claim_scores",
+  scores_root = out_factcheck("claim_scores"),
   config_file = "input/config.yaml",
   pairs_per_sec = 33.6,
   n_pods = NULL,
@@ -50,9 +50,11 @@ nli_backlog_report <- function(
   }
 
   units <- readRDS(claim_units_object)
+  # keypaper=false: list.files(root) below assumes the next level is
+  # assessment=*, which the merged tree only satisfies past the keypaper level.
   root <- file.path(
     scores_root, paste0("granularity=", granularity),
-    paste0("scorer_config=", nli_config_name)
+    paste0("scorer_config=", nli_config_name), "keypaper=false"
   )
 
   enum <- dplyr::tibble(

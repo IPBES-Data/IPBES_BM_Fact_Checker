@@ -2,7 +2,7 @@ download_works <- function(
   assessment,
   zotero_path,
   refs_path,
-  output_root = "output/works",
+  output_root = out_collection("works"),
   workers = 8
 ) {
   output_path <- branch_output_dir(output_root, assessment$id)

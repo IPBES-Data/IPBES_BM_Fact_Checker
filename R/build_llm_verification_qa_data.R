@@ -22,7 +22,7 @@ build_llm_verification_qa_data <- function(
   works_citing_path,
   llm_active,
   scorer_name,
-  output_root = "output/tables",
+  output_root = out_reporting("tables"),
   per_claim_cap = 50L,
   llm_verification_keypaper_path = NULL,
   works_path = NULL

@@ -2,9 +2,9 @@
 #
 # One of four projects (see TD_targets.qmd and _targets.yaml):
 #
-#   _targets.R             collection: LOD -> refs -> zotero -> works ->
+#   _targets_collection.R             collection: LOD -> refs -> zotero -> works ->
 #                          snowball -> works_citing. Keeps the ORIGINAL
-#                          _targets/ store, so nothing re-downloads.
+#                          _targets_collection/ store, so nothing re-downloads.
 #   _targets_factcheck.R   citing works -> NLI -> LLM
 #   _targets_reporting.R   this file
 #
@@ -94,10 +94,10 @@ list(
   # navigable one, so it needs no workflow_node_metadata.R rows.
   tar_target(mmd_overview, "input/mmd/overview.mmd", format = "file"),
   tar_target(diagram_overview, render_mmd(mmd_overview), format = "file"),
-  tar_target(r_files, list.files("R", full.names = TRUE), format = "file"),
+  tar_target(targets_script, "_targets_reporting.R", format = "file"),
   tar_target(
     pipeline_mmd,
-    build_pipeline_mmd(r_files, "input/mmd/pipeline_reporting.mmd"),
+    build_pipeline_mmd(targets_script, "input/mmd/pipeline_reporting.mmd"),
     format = "file"
   ),
   tar_target(
@@ -148,7 +148,7 @@ list(
     iteration = "list"
   ),
 
-  # ---- inputs from the collection project (_targets.R) ----------------------
+  # ---- inputs from the collection project (_targets_collection.R) ----------------------
   # Every one KEEPS THE NAME the producing project uses, so the report targets
   # below move across verbatim, and so the qmds' own tar_read(refs_parquet) /
   # tar_read(works_parquet) / tar_read(works_citing_parquet) calls resolve
@@ -156,17 +156,17 @@ list(
   # dependency edges automatically.
   tar_target(
     refs_parquet,
-    file.path("output/refs", paste0("assessment=", assessment$id)),
+    file.path(out_collection("refs"), paste0("assessment=", assessment$id)),
     pattern = map(assessment), format = "file"
   ),
   tar_target(
     key_messages_parquet,
-    file.path("output/key_messages", paste0("assessment=", assessment$id)),
+    file.path(out_collection("key_messages"), paste0("assessment=", assessment$id)),
     pattern = map(assessment), format = "file"
   ),
   tar_target(
     works_parquet,
-    file.path("output/works", paste0("assessment=", assessment$id)),
+    file.path(out_collection("works"), paste0("assessment=", assessment$id)),
     pattern = map(assessment), format = "file"
   ),
   # Two paths per branch, exactly as the collection project's own target
@@ -175,8 +175,8 @@ list(
   tar_target(
     works_citing_parquet,
     c(
-      file.path("output/works_citing", paste0("assessment=", assessment$id)),
-      file.path("output/works_citing_meta", paste0("assessment=", assessment$id))
+      file.path(out_collection("works_citing"), paste0("assessment=", assessment$id)),
+      file.path(out_collection("works_citing_meta"), paste0("assessment=", assessment$id))
     ),
     pattern = map(assessment), format = "file"
   ),
@@ -188,7 +188,7 @@ list(
   # rather than through a dependency edge someone had to remember to draw.
   tar_target(
     claim_scores_consolidated,
-    "output/claim_scores", format = "file"
+    out_factcheck("claim_scores"), format = "file"
   ),
   # UNTRACKED on purpose, and NOT format = "file".
   #
@@ -207,8 +207,10 @@ list(
   tar_target(
     llm_verification_parquet,
     file.path(
-      "output/llm_verification/scores",
+      out_factcheck("llm_verification/scores"),
       paste0("llm_config=", llm_verification_active),
+      # keypaper=false: the citing-works half of the merged Phase 2 tree.
+      "keypaper=false",
       paste0("assessment=", assessment$id)
     ),
     pattern = map(assessment)
@@ -218,7 +220,7 @@ list(
   tar_target(
     claim_work_pairs,
     file.path(
-      "output/claim_work_pairs", paste0("granularity=", granularity),
+      out_factcheck("claim_work_pairs"), paste0("granularity=", granularity), "keypaper=false",
       paste0("assessment=", assessment$id)
     ),
     pattern = map(assessment)
@@ -227,13 +229,17 @@ list(
   # ---- key-paper inputs, now produced by _targets_factcheck.R --------------
   # These moved out of the training project with the chain that writes them.
   # The paths are unchanged, so nothing on disk had to move.
+  # Both now read the MERGED tree. output/claim_scores_keypaper/ no longer
+  # exists -- a format = "file" target on a vanished path is a hard error, which
+  # is the loudest of the breakages the fold caused and the easiest to miss,
+  # since the untracked stubs below degrade silently instead.
   tar_target(
     claim_scores_keypaper_consolidated,
-    "output/claim_scores_keypaper", format = "file"
+    out_factcheck("claim_scores"), format = "file"
   ),
   tar_target(
     claim_scores_keypaper,
-    "output/claim_scores_keypaper", format = "file"
+    out_factcheck("claim_scores"), format = "file"
   ),
   # UNTRACKED on purpose, and NOT format = "file".
   #
@@ -252,8 +258,9 @@ list(
   tar_target(
     llm_verification_keypaper_parquet,
     file.path(
-      "output/llm_verification/scores_keypaper",
+      out_factcheck("llm_verification/scores"),
       paste0("llm_config=", llm_verification_active),
+      "keypaper=true",
       paste0("assessment=", assessment$id)
     ),
     pattern = map(assessment)
@@ -288,7 +295,7 @@ list(
   # all dynamic branches of works_citing_parquet into one vector).
   tar_target(
     fig_pub_per_year,
-    build_fig_pub_per_year(works_citing_parquet, "output/figures"),
+    build_fig_pub_per_year(works_citing_parquet, out_reporting("figures")),
     format = "file"
   ),
   # Target 2f3: Key-paper overlap table — key/seed papers (works_parquet)
@@ -296,7 +303,7 @@ list(
   # assessment's works branches, same aggregation pattern as fig_pub_per_year.
   tar_target(
     overlap_key_paper_table,
-    build_overlap_key_paper_table(works_parquet, "output/tables"),
+    build_overlap_key_paper_table(works_parquet, out_reporting("tables")),
     format = "file"
   ),
   # # # Target 2f4/2f5: Citing-paper overlap tables — citing papers
@@ -307,12 +314,12 @@ list(
   # # # background_messages variant additionally carries the abstract column.
   # # tar_target(
   # #   overlap_after_2018_sub_messages_table,
-  # #   build_overlap_after_2018_sub_messages_table(works_citing_parquet, 2018, "output/tables"),
+  # #   build_overlap_after_2018_sub_messages_table(works_citing_parquet, 2018, out_reporting("tables")),
   # #   format = "file"
   # # ),
   # tar_target(
   #   overlap_after_2018_background_messages_table,
-  #   build_overlap_after_2018_background_messages_table(works_citing_parquet, 2018, "output/tables"),
+  #   build_overlap_after_2018_background_messages_table(works_citing_parquet, 2018, out_reporting("tables")),
   #   format = "file"
   # ),
   # QA report: how claim_work_pairs actually split each BM into
@@ -332,7 +339,7 @@ list(
       claim_work_pairs,
       key_messages_parquet,
       granularity,
-      "output/tables",
+      out_reporting("tables"),
       claim_completion_model
     ),
     pattern = map(assessment, claim_work_pairs, key_messages_parquet),
@@ -359,14 +366,17 @@ list(
     build_claim_scores_overview_data(
       assessment,
       file.path(
-        "output/claim_scores",
+        out_factcheck("claim_scores"),
+        # keypaper=false pinned: without it these citing-works tables would
+        # silently include key papers once the two trees merged.
         paste0("granularity=", nli_granularities),
         paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
+        "keypaper=false",
         paste0("assessment=", assessment$id)
       ),
       nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name),
       works_citing_meta_paths(works_citing_parquet),
-      "output/tables",
+      out_reporting("tables"),
       claim_scores_consolidated,
       nli_granularities
     ),
@@ -396,15 +406,18 @@ list(
     build_claim_scores_qa_data(
       assessment,
       file.path(
-        "output/claim_scores",
+        out_factcheck("claim_scores"),
+        # keypaper=false pinned: without it these citing-works tables would
+        # silently include key papers once the two trees merged.
         paste0("granularity=", nli_granularities),
         paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
+        "keypaper=false",
         paste0("assessment=", assessment$id)
       ),
       works_citing_meta_paths(works_citing_parquet),
       nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name),
       nli_granularities,
-      "output/tables",
+      out_reporting("tables"),
       per_claim_cap = 50L,
       # Same granularity/scorer_config resolution as the main nli_scores_path
       # above, pointed at the SEPARATE key-paper scoring chain instead --
@@ -412,9 +425,11 @@ list(
       # run; build_claim_scores_qa_data() degrades to "no overlay" rather
       # than erroring.
       keypaper_scores_path = file.path(
-        "output/claim_scores_keypaper",
+        out_factcheck("claim_scores"),
+        # The key-paper overlay for the QA ternary figure.
         paste0("granularity=", nli_granularities),
         paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
+        "keypaper=true",
         paste0("assessment=", assessment$id)
       ),
       # Bare reference -- establishes the DAG dependency only, so the
@@ -444,7 +459,7 @@ list(
   # replotting doesn't require recollecting the raw scored table.
   tar_target(
     nli_scores_qa_figures,
-    build_claim_scores_qa_figures(nli_scores_qa_data, "output/figures"),
+    build_claim_scores_qa_figures(nli_scores_qa_data, out_reporting("figures")),
     pattern = map(nli_scores_qa_data),
     format = "file"
   ),
@@ -464,7 +479,7 @@ list(
       works_citing_meta_paths(works_citing_parquet),
       llm_verification_active,
       scorer_name,
-      "output/tables",
+      out_reporting("tables"),
       per_claim_cap = 50L,
       llm_verification_keypaper_path = llm_verification_keypaper_parquet,
       works_path = works_parquet
@@ -488,7 +503,7 @@ list(
   # raw scored table.
   tar_target(
     llm_verification_qa_figures,
-    build_llm_verification_qa_figures(llm_verification_qa_data, "output/figures"),
+    build_llm_verification_qa_figures(llm_verification_qa_data, out_reporting("figures")),
     pattern = map(llm_verification_qa_data),
     format = "file"
   ),
@@ -496,7 +511,7 @@ list(
   # confidence density, alignment density, per assessment.
   tar_target(
     nli_overview_figures,
-    build_claim_scores_overview_figures(nli_overview_data, "output/figures"),
+    build_claim_scores_overview_figures(nli_overview_data, out_reporting("figures")),
     pattern = map(nli_overview_data),
     format = "file"
   ),
@@ -509,7 +524,7 @@ list(
   # knit_print() call inside a results:asis loop — see R/build_claim_scores_bm_explorer.R.
   tar_target(
     nli_bm_explorer_html,
-    save_claim_scores_bm_explorer(nli_overview_data, "output/tables"),
+    save_claim_scores_bm_explorer(nli_overview_data, out_reporting("tables")),
     pattern = map(nli_overview_data),
     format = "file"
   ),
@@ -530,10 +545,13 @@ list(
   # The scorer_config used to locate (and label) each granularity's data is
   # resolved per-branch via nli_config_for_granularity() (R/branch_helpers.R)
   # -- NOT scorer_name directly -- since each granularity is normally scored
-  # under its own dedicated config (bge_m3_zeroshot_naive_bm/_complete_bm/
-  # _atomic_bm); substituting the single globally active config name for
-  # every branch would make an already-scored, non-active granularity look
-  # unscored the moment `nli.active` points elsewhere.
+  # under its own dedicated config; substituting the single globally active
+  # config name for every branch would make an already-scored, non-active
+  # granularity look unscored the moment the selection points elsewhere.
+  # Since the bge_m3_* configs were removed on 2026-10-07 the library holds one
+  # entry, so all three granularities now resolve to jev_atomic_bm via the
+  # fallback -- which is correct for naive_bm/complete_bm (no data, empty
+  # sentinel) and leaves the archived bge trees unreachable by design.
   tar_target(
     refutes_funnel_data,
     build_label_funnel_data(
@@ -542,13 +560,16 @@ list(
       works_citing_map_paths(works_citing_parquet),
       works_citing_meta_paths(works_citing_parquet),
       file.path(
-        "output/claim_scores",
+        out_factcheck("claim_scores"),
+        # keypaper=false pinned: without it these citing-works tables would
+        # silently include key papers once the two trees merged.
         paste0("granularity=", nli_granularities),
         paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
+        "keypaper=false",
         paste0("assessment=", assessment$id)
       ),
       llm_verification_parquet,
-      "output/tables",
+      out_reporting("tables"),
       nli_granularities,
       nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)
     ),
@@ -567,13 +588,16 @@ list(
       works_citing_map_paths(works_citing_parquet),
       works_citing_meta_paths(works_citing_parquet),
       file.path(
-        "output/claim_scores",
+        out_factcheck("claim_scores"),
+        # keypaper=false pinned: without it these citing-works tables would
+        # silently include key papers once the two trees merged.
         paste0("granularity=", nli_granularities),
         paste0("scorer_config=", nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)),
+        "keypaper=false",
         paste0("assessment=", assessment$id)
       ),
       llm_verification_parquet,
-      "output/tables",
+      out_reporting("tables"),
       nli_granularities,
       nli_config_for_granularity(scorer_configs_all, nli_granularities, scorer_name)
     ),
@@ -584,25 +608,25 @@ list(
   ),
   tar_target(
     refutes_funnel_figures,
-    build_label_funnel_figures(refutes_funnel_data, "output/figures"),
+    build_label_funnel_figures(refutes_funnel_data, out_reporting("figures")),
     pattern = map(refutes_funnel_data),
     format = "file"
   ),
   tar_target(
     supports_funnel_figures,
-    build_label_funnel_figures(supports_funnel_data, "output/figures"),
+    build_label_funnel_figures(supports_funnel_data, out_reporting("figures")),
     pattern = map(supports_funnel_data),
     format = "file"
   ),
   tar_target(
     refutes_funnel_tables,
-    build_label_funnel_tables(refutes_funnel_data, "output/tables"),
+    build_label_funnel_tables(refutes_funnel_data, out_reporting("tables")),
     pattern = map(refutes_funnel_data),
     format = "file"
   ),
   tar_target(
     supports_funnel_tables,
-    build_label_funnel_tables(supports_funnel_data, "output/tables"),
+    build_label_funnel_tables(supports_funnel_data, out_reporting("tables")),
     pattern = map(supports_funnel_data),
     format = "file"
   ),

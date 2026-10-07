@@ -24,7 +24,7 @@ github_blob_sha <- function(raw_url) {
   httr2::resp_body_json(resp)$sha
 }
 
-download_ttl <- function(assessment, output_root = "output/LoD") {
+download_ttl <- function(assessment, output_root = out_collection("LoD")) {
   dir.create(output_root, showWarnings = FALSE, recursive = TRUE)
   dest     <- file.path(output_root, paste0(assessment$id, ".ttl"))
   sha_file <- paste0(dest, ".sha")
@@ -49,6 +49,6 @@ download_ttl <- function(assessment, output_root = "output/LoD") {
   dest
 }
 
-download_ttls <- function(config, output_root = "output/LoD") {
-  vapply(config$assessments, download_ttl, character(1), output_root = output_root)
+download_ttls <- function(config, output_root = out_collection("LoD")) {
+  vapply(config_assessments(config), download_ttl, character(1), output_root = output_root)
 }

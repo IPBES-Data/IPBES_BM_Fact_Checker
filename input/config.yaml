@@ -1,39 +1,55 @@
-# SPARQL endpoint to use for queries.
-# "fuseki" = start a local Fuseki server automatically (requires: brew install fuseki).
-# Any URL = query that endpoint directly (e.g. a remote SPARQL endpoint).
-sparql_url: fuseki
-
-# Number of parallel workers for mclapply-based targets (nli_ready_parquet).
+# Number of parallel workers for mclapply-based targets.
 # Falls back to 1 on Windows (mclapply does not fork there).
+#
+# NOT under collection: -- it is read only by the factcheck project
+# (claim_work_pairs' cross-join). The collection pipeline passes its own
+# literal `workers = 8` to download_works().
 workers: 8
 
-assessments:
-  - id: GA1
-    ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v09.ttl
-    full_text: false
-  - id: VA
-    ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Values%20Assessment/VA_v05.ttl
-    full_text: false
-  - id: TCA
-    ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Transformative%20Change%20Assessment/TCA_v02.ttl
-    full_text: false
-  - id: IAS
-    ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Invasive%20Alien%20Species%20Assessment/IAS_v05.ttl
-    full_text: true
-  - id: BBA
-    ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Business%20and%20Biodiversity%20Assessment/BBA_v01.ttl
-    full_text: true
+# ---------------------------------------------------------------------------
+# COLLECTION -- everything the `collection` targets project needs, and nothing
+# else. Named for the project in _targets.yaml, matching output/collection/.
+#
+# Commenting an assessment out here removes it from EVERY project, since
+# `assessments:` is the source list the others filter. That is what scopes the
+# pipeline today: only GA1 is live, and the other four were archived to
+# deep_archive/ on 2026-10-07. Re-enabling one means uncommenting it here AND
+# adding it back to the relevant `reports:` entries -- generate_report_wrappers()
+# hard-stops if a report names an assessment absent from this list.
+collection:
+
+  # SPARQL endpoint to use for queries.
+  # "fuseki" = start a local Fuseki server automatically (brew install fuseki).
+  # Any URL = query that endpoint directly (e.g. a remote SPARQL endpoint).
+  sparql_url: fuseki
+
+  assessments:
+    - id: GA1
+      ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/main/Global%20Assessment%201/GA1_v09.ttl
+      full_text: false
+    # - id: VA
+    #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Values%20Assessment/VA_v05.ttl
+    #   full_text: false
+    # - id: TCA
+    #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Transformative%20Change%20Assessment/TCA_v02.ttl
+    #   full_text: false
+    # - id: IAS
+    #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Invasive%20Alien%20Species%20Assessment/IAS_v05.ttl
+    #   full_text: true
+    # - id: BBA
+    #   ttl_url: https://raw.githubusercontent.com/IPBES-Data/IPBES_LOD/refs/heads/main/Business%20and%20Biodiversity%20Assessment/BBA_v01.ttl
+    #   full_text: true
 
 # Which reports to render, and over which dimensions.
 #
 # Consumed by generate_report_wrappers() (R/generate_report_wrappers.R), which
-# is called from _targets.R's preamble -- BEFORE the pipeline is defined -- and
+# is called from _targets_collection.R's preamble -- BEFORE the pipeline is defined -- and
 # writes one small wrapper .qmd per combination into input/reports/. Each
 # wrapper is a params: block plus a {{< include _<qmd_name>_body.qmd >}}, and
 # the Quarto project (input/reports/_quarto.yml) then renders them all.
 #
 # Generation has to happen in the preamble because tarchetypes::tar_quarto()
-# inspects the project and resolves its dependency edges when _targets.R is
+# inspects the project and resolves its dependency edges when _targets_collection.R is
 # SOURCED, not when the target runs -- a wrapper produced by an upstream target
 # would contribute nothing on the run that created it.
 #
@@ -59,10 +75,14 @@ assessments:
 #
 # `nli:` and `llm_verification:` below are LIBRARIES of named definitions and
 # select nothing. Each pipeline picks what it uses here, because "active" is a
-# single global answer to a question every project answers for itself: fact
-# checking scores one assessment's citing works, training pools all five key-
-# paper sets, and they need not agree on the model. While there was one DAG the
-# conflation was invisible; with four projects it is wrong.
+# single global answer to a question every project answers for itself, and they
+# need not agree on the model. While there was one DAG the conflation was
+# invisible; once the pipeline was split it is wrong.
+#
+# Only `fact_checking:` remains -- `training:` was retired 2026-10-05 -- so the
+# machinery is currently carrying one selection. It is kept because the
+# distinction is what stops a second purpose silently inheriting the first's
+# model, which is exactly how the two would drift apart.
 #
 # Scope lives here too, rather than as per-assessment flags inside
 # `assessments:`. Flags there would change `assessments_list`'s value and so
@@ -76,26 +96,25 @@ assessments:
 # real GPU cost.
 # ---------------------------------------------------------------------------
 
-# _targets_factcheck.R -- the citing-works corpus. Deliberately narrower than
-# training: this is the expensive arm (millions of pairs, GPU hours, real
-# OpenRouter spend), so it is scoped to the assessment actually being worked
-# on. Widen it here when another assessment is ready to be scored -- IAS
-# already has Phase 1 citing-works scores on disk from before this scoping, and
-# they stay there; they are simply no longer maintained by this pipeline until
-# IAS is listed here again.
+# _targets_factcheck.R -- the citing-works corpus. This is the expensive arm
+# (millions of pairs, GPU hours, real OpenRouter spend), so it is scoped to the
+# assessment actually being worked on. Widen it here when another is ready to
+# be scored. Note the other four assessments were archived to deep_archive/ on
+# 2026-10-07 and are commented out of `collection: assessments:` entirely, so
+# widening means uncommenting there first.
 #
-# Unlike `training:` below, this block is a LIBRARY plus an `active:` selection,
-# the same shape `nli:` and `llm_verification:` already use. One pipeline, one
-# selection -- running every config would multiply GPU and OpenRouter spend by
-# the number of definitions, and each distinct model needs its own pod pool
-# anyway, because check_nli_pool_health() stops when hosts report different
-# models. purpose_config() accepts both shapes, so `training:` stays flat.
+# A LIBRARY plus an `active:` selection, the same shape `nli:` and
+# `llm_verification:` already use. One pipeline, one selection -- running every
+# config would multiply GPU and OpenRouter spend by the number of definitions,
+# and each distinct model needs its own pod pool anyway, because a pool serves
+# one model per deployment. (purpose_config() still accepts the older flat
+# shape, which is why restoring a second purpose block is additive.)
 #
 # km: scopes scoring to one or more Key Messages, and OMITTING IT MEANS ALL --
 # the pre-existing behaviour, so an entry without it is unchanged. GA1 has 4 KMs
 # over 39 BMs, so naming one is roughly a 4x cut in both arms. The strings are
 # matched literally against key_messages_parquet and validated at runtime by
-# build_nli_claim_units(), which stops naming the offender: they are
+# build_claim_units(), which stops naming the offender: they are
 # per-assessment and inconsistent ("A." in GA1, "KM-A1" in IAS, "KM1" in VA /
 # TCA / BBA), and "A" for "A." would otherwise enumerate zero claims and look
 # like a successful no-op. The filter operates on the (km, bm) PAIR, not on km
@@ -103,37 +122,52 @@ assessments:
 #
 # Narrowing the scope computes less; it never deletes what is out of scope. The
 # three stages that used to wipe their output wholesale before writing
-# (consolidate_nli_scores, relevance_screen, llm_verification) are all additive
+# (consolidate_claim_scores, relevance_screen, llm_verification) are all additive
 # now, so widening again costs only the pairs that were never scored.
 fact_checking:
   active: ga1_jev
-  configs:
-    ga1_all:
-      assessments: [GA1]
-      nli: bge_m3_zeroshot_atomic_bm
-      llm: openrouter_cheap
-      claim_completion: haiku_completion
 
-    # Jev as Phase 1, scored BESIDE the NLI on identical rows (own nli_config=
-    # tree). KM C. matches what the fine-tune already scored, so the three can
-    # be compared directly on 2,307,101 pairs. ~$115 citing + ~$1.50 key papers.
+  # ---- relevance screen -------------------------------------------------
+  # Moved in here on 2026-10-07. It used to sit at the top level because the
+  # single `threshold:` applied to BOTH purposes -- fact_checking and training
+  # -- which wanted different answers. `training:` was retired 2026-10-05, so
+  # there is only one purpose left and the setting belongs to it.
+  relevance_screen:
+    model: typesafe/jev-1.13
+
+    # ~ means the screen SCORES but never filters -- nothing is dropped.
+    #
+    # A dropped pair never reaches Phase 2, so it never gets a verdict, and it
+    # leaves NO trace: no failed quote check, nothing to audit. That is the one
+    # failure mode here with no error and no signal, which is why this stays
+    # off until validated against human labels. Measured on the train fold
+    # (sparing NOT_ENOUGH_INFO, since irrelevance IS that label):
+    #
+    #   threshold   REFUTES   SUPPORTS   per-class cap   training rows
+    #   ~ (off)         489      1,568             489           1,467
+    #   0.3             303      1,192             303             909
+    #   0.5             127        753             127             381
+    threshold: ~
+
+  configs:
+    # Jev as Phase 1. KM C. is the scope the two retired NLI backends also
+    # scored, so all three stay directly comparable on 2,307,101 identical
+    # pairs. ~$115 citing works + ~$1.50 key papers.
+    #
+    # ⚠ Those two backends' scores are STILL ON DISK and still read, under
+    # scorer_config=bge_m3_ft_ga1 and scorer_config=bge_m3_zeroshot_atomic_bm.
+    # Their config entries are gone from `nli.configs` below, so nothing
+    # config-driven can address them and they look safe to archive -- but
+    # build_goldstandard_sample() names them in its own `scorer_configs`
+    # default and inner-joins all three to build the frame the human review
+    # round draws from. goldstandard_read_scores() stop()s if either is
+    # missing. Do not move them until that round is finished.
     ga1_jev:
       assessments: [GA1]
       km: ["C."]
       nli: jev_atomic_bm
       llm: openrouter_cheap
       claim_completion: haiku_completion
-
-    # The fine-tuned model from the 2026-09-29 GA1 run, served from its own
-    # image. Writes under nli_config=bge_m3_ft_ga1, so it cannot overwrite
-    # anything the zero-shot config scored.
-    ga1_finetuned:
-      assessments: [GA1]
-      km: ["C."]
-      nli: bge_m3_ft_ga1
-      llm: openrouter_cheap
-      claim_completion: haiku_completion
-
 # The `training:` purpose block was removed on 2026-10-05 (branch `Jev`). The
 # fine-tuning arm it selected for had no subject once the NLI stopped being the
 # first-stage filter -- see design_notes.md points 3, 6, 7, 8. Its two halves
@@ -144,102 +178,20 @@ fact_checking:
 # it is adding it back; nothing in R/ was narrowed. The `NLI_dirty` branch
 # holds the state before.
 
-# ---------------------------------------------------------------------------
-# Benchmark: held-out evaluation of the NLI models (see TD_NLI_training.qmd).
-#
-# Deliberately NOT a purpose block -- it selects no nli/llm config of its own.
-# Scope comes from `training:` above, because what is being benchmarked is what
-# `training:` produced. purpose_config() is untouched.
-#
-# The holdout is grouped by Background Message and assigned by HASH, so adding
-# an assessment or growing the corpus never moves an existing BM across the
-# boundary. `salt` is the version tag: changing it re-cuts every fold, which is
-# the only way the benchmark should ever change.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Relevance screen (R/build_llm_relevance_screen.R, input/mmd/overview.mmd).
-#
-# Sits between Phase 1 and Phase 2: a cheap model answers one narrow question
-# per pair -- does this paper bear on this claim at all? -- so the expensive
-# quoting LLM is not spent on pairs that cannot settle the claim either way.
-# $0.0000172/pair batched against gpt-4o-mini's $0.000149.
-#
-# It exists because quote_is_verbatim() checks a quote EXISTS, never that it
-# BEARS on the claim. Real REFUTES verdicts were found citing verbatim but
-# topically adjacent sentences -- a paper on flow regulation cited against a
-# claim about climate change extending invasive range. Every one passed.
-#
-# threshold: ~ means SCORE BUT DO NOT FILTER, and that is deliberate.
-# Measured on 300 stratified pairs, a 0.3 cutoff keeps 76% of true SUPPORTS --
-# so it discards ~24%, and whether those are marginal or real is unknown until
-# a human has read them. A wrongly dropped pair is never reviewed and leaves no
-# trace: no verdict, no failed check, nothing to audit. Set a number only after
-# validating it against human labels.
-# ---------------------------------------------------------------------------
-relevance_screen:
-  model: typesafe/jev-1.13
-  # ~ means the screen SCORES but never filters -- nothing is dropped. Before
-  # setting a real value, note that this one key currently applies to BOTH
-  # purposes, and they want different answers:
-  #
-  #   fact_checking is cost-dominated and can afford to screen hard;
-  #   training is data-starved and should screen lightly, or not at all.
-  #
-  # A dropped pair never reaches Phase 2, so it never gets a verdict, so it can
-  # never enter the training set without re-running the LLM -- a one-way door,
-  # and it opens widest on the scarcest class. Measured on the train fold
-  # (sparing NOT_ENOUGH_INFO, since irrelevance IS that label):
-  #
-  #   threshold   REFUTES   SUPPORTS   per-class cap   training rows
-  #   ~ (off)         489      1,568             489           1,467
-  #   0.3             303      1,192             303             909
-  #   0.5             127        753             127             381
-  #
-  # If a real threshold is ever wanted, split this into the two purpose blocks
-  # first rather than setting it globally here.
-  threshold: ~
-  batch_size: 20
-# ---------------------------------------------------------------------------
-# Benchmark: repointed 2026-10-05 (branch `Jev`).
-#
-# It used to measure fine-tuned checkpoints against a zero-shot baseline, with
-# scope taken from `training:`. Both are gone. What survives here is the FOLD
-# DEFINITION: holdout_fraction, monitor_fraction and salt describe how
-# input/goldstandard/sample_manifest_GA1.csv was drawn, and changing `salt`
-# re-cuts folds the already-drawn instrument depends on. Leave them alone unless
-# the whole sample is being redrawn.
-#
-# baseline_model is now a RECORD of what the existing scores were produced with,
-# not something the pipeline reads.
-# ---------------------------------------------------------------------------
-benchmark:
-  holdout_fraction: 0.2
-  # A third fold, carved out of what used to be `train`, used ONLY for
-  # eval_loss / checkpoint selection during fine-tuning. Separate from the
-  # holdout because selecting the best checkpoint on the rows the benchmark
-  # then scores makes every reported number optimistic by an unmeasured margin.
-  monitor_fraction: 0.1
-  salt: bench-v1
-  # The zero-shot model every fine-tuned checkpoint is measured against. Never
-  # measured before now -- a fine-tuned F1 in isolation says nothing about
-  # whether fine-tuning was worth doing.
-  baseline_model: MoritzLaurer/bge-m3-zeroshot-v2.0-c
-
 reports:
   - qmd_name: IPBES_Label_Funnel_Report
     title: "{label} - {assessment} ({granularity})"
-    assessment: [GA1, IAS]
+    assessment: [GA1]
     granularity: [naive_bm, complete_bm, atomic_bm]
 
   - qmd_name: QA_BM_Split_Report
     title: "QA BM Split - {assessment} ({granularity})"
-    assessment: [GA1, IAS]
+    assessment: [GA1]
     granularity: [naive_bm, complete_bm, atomic_bm]
 
   - qmd_name: QA_NLI_Scores_Report
     title: "QA NLI Scores - {assessment} ({granularity})"
-    assessment: [GA1, IAS]
+    assessment: [GA1]
     granularity: [naive_bm, complete_bm, atomic_bm]
 
   - qmd_name: QA_LLM_Verification_Report
@@ -247,181 +199,56 @@ reports:
     assessment: [GA1]
     llm_config: [openrouter_cheap]
 
-# NLI alignment backend. The pipeline POSTs (premise, hypothesis) pairs to a
-# zero-shot NLI server (see external/runpod/docker/nli-runpod/). Switch models by changing
-# `nli:`/`llm:` in a purpose block to a key under `configs`. Use `~` to disable.
+# Phase 1 scorer backends. A config's `backend:` selects the scorer:
+# `jev` routes to score_one_claim_jev() (R/score_one_claim_jev.R). Switch
+# models by changing `nli:` in the purpose block above to a key under
+# `configs`. Use `~` to disable.
 #
-# bge_m3_zeroshot is now the sole production config -- deberta_zeroshot/
-# deberta_zeroshot_v3 are RETIRED, not just
-# dormant. Switched over because, once actually measured on real GPU pods
-# (not the emulated-CPU numbers first assumed), bge-m3-zeroshot-v2.0-c came
-# out strictly ahead for this project's use case: ~2.7x faster per pod than
-# deberta-v3-large-zeroshot-v2.0 on an identical 256-premise batch (33.6 vs
-# 12.5 pairs/sec -- DeBERTa's disentangled-attention mechanism is heavier
-# per token despite fewer params), genuinely multilingual (citing-paper
-# premises can be in any language; deberta-v3-large-zeroshot-v2.0 is
-# English-only), and a ~8194-token ceiling vs. deberta's hard 512. A n=350
-# spot-check (150 pairs deberta had called REFUTES-certain + 200 general
-# random pairs, scored live against the real bge-m3 pod) found its overall
-# confidence distribution closely matches deberta's own full-corpus shape
-# (median ~0.50 vs ~0.51; both flag ~71-75% of pairs "uncertain" at 0.60) --
-# not a rigorous calibration, but enough to not fly blind. See
-# TD_BM_NLI_approach.qmd for the full writeup. All prior deberta-scored
-# output (output/nli_scores_evidence/, output/llm_verification/) has since
-# been deleted (disk space) and was not migrated -- there is nothing left to
-# reconcile against, which is what made a clean full switch straightforward.
+# ONE backend exists on this branch. The RunPod zero-shot pool
+# (bge-m3-zeroshot-v2.0-c), its GA1 fine-tune and the deberta configs before
+# them were retired on 2026-10-05: measured against refutations confirmed by
+# three independent reviewers they scored AUC 0.50 for REFUTES and 0.38 for
+# SUPPORTS -- chance and below. _targets_factcheck.R hard-stops on any config
+# whose backend is not `jev`. The remnants live on the `NLI_dirty` branch;
+# see design_notes.md points 3 and 5-8.
 #
 # granularity: how a BM's bm_description/bm_label text is cut into claims --
-#   "naive_bm" (default) -- evidence-delimited sub-claims (segment_bm_by_evidence(),
-#     2-17 per BM). Currently active (bge_m3_zeroshot.granularity below);
-#     output partitioned under output/nli_ready_evidence/granularity=naive_bm/
-#     and output/nli_scores_evidence/granularity=naive_bm/.
+#   "naive_bm" -- evidence-delimited sub-claims (segment_bm_by_evidence(),
+#     2-17 per BM). NOT active and never scored: no naive_bm scores exist for
+#     any assessment, and its GA1 premise corpus was archived 2026-10-07;
+#     output would partition under
+#     output/factchecker/claim_work_pairs/granularity=naive_bm/ and
+#     output/factchecker/claim_scores/granularity=naive_bm/.
 #   "complete_bm" -- each field taken whole, un-segmented (segment_bm_whole()):
 #     2 claims per BM (bm_description + bm_label), or 1 if the two fields are
-#     identical after whitespace normalization. Measured ~71% fewer NLI pairs
+#     identical after whitespace normalization. Measured ~71% fewer scored pairs
 #     combined across GA1+IAS (3,582,329 -> ~1,049,572) -- see
-#     TD_BM_NLI_approach.qmd for the full table and an important caveat: a
-#     complete-BM claim can exceed a model's own max_position_embeddings (512
-#     for deberta-v3-large-zeroshot-v2.0 -- a real architectural limit, not a
-#     raisable config value), truncating the CLAIM itself, not just the
-#     premise -- not a concern for bge_m3_zeroshot's own ~8194-token ceiling.
+#     TD_BM_NLI_approach.qmd for the full table. The caveat recorded there --
+#     that a whole-field claim can exceed a model's own position-embedding
+#     limit and truncate the CLAIM rather than the premise -- applied to the
+#     retired 512-token deberta configs; the decisions API chunks by a token
+#     budget instead, so it does not arise here.
 #     Output partitioned under .../granularity=complete_bm/.
-nli:
-  # granularity: atomic_bm's LLM-completion step (R/build_claim_completion.R):
-  # resolves elliptical fragments from segment_bm_atomic()'s per-brace split
-  # into self-contained claims. Tiny volume -- 656 real fragments actually
-  # need a call (computed directly against all 88 BMs across both
-  # assessments; single-fragment BM fields skip the LLM entirely), so this
-  # is picked for completion quality/instruction-following on a strict
-  # "never invent new content, only restore grammar" rewriting task, not
-  # cost -- every real candidate model priced out under $1 total for the
-  # whole one-time job. claude-haiku-4.5 chosen for its strong track record
-  # on precise, constrained rewriting instructions; not empirically
-  # A/B-tested against alternatives the way gpt-oss-20b was for Phase 2
-  # verification earlier -- swap `claim_completion:` in the purpose blocks
-  # above if that's ever done.
-  claim_completion:
-    configs:
-      haiku_completion:
-        model: "anthropic/claude-haiku-4.5"
-
-  # Everything scripts/runpod/start_nli_pods.sh needs to launch a pool, split
-  # into what is the same for every pod (here) and what a config chooses for
-  # itself (image:, pods: below). The wrapper merges the two into a disposable
-  # bash conf under output/config/ and hands it to the submodule's own
-  # create_pods.sh, so config.yaml stays the single source of truth and the
-  # hostnames stop being copy-pasted by hand.
-  #
-  # The hand-written input/nli_pods_*.conf files are what these values came
-  # from; they are kept for reference and are read by nothing.
-  pod_defaults:
-    gpu_type_id: "NVIDIA L4"
-    gpu_count: 1
-    pod_kind: http
-    port: 8080
-    health_path: /health
-    container_disk_gb: 30
-    volume_gb: 0
-    volume_mount_path: /workspace
-    cloud_type: SECURE
-    idle_min: 15
-    startup_grace_min: 60
-    poll_sec: 30
-    health_timeout_sec: 600
-    health_poll_interval_sec: 10
-    create_delay_sec: 5
-    max_consecutive_create_failures: 3
-    pod_env_runpod_api_key: '{{ RUNPOD_SECRET_TEI-RUNPOD-API }}'
-
-
+# granularity: atomic_bm's LLM-completion step (R/build_claim_completion.R):
+# resolves elliptical fragments from segment_bm_atomic()'s per-brace split
+# into self-contained claims. Tiny volume -- 656 real fragments actually
+# need a call (computed directly against all 88 BMs across both
+# assessments; single-fragment BM fields skip the LLM entirely), so this
+# is picked for completion quality/instruction-following on a strict
+# "never invent new content, only restore grammar" rewriting task, not
+# cost -- every real candidate model priced out under $1 total for the
+# whole one-time job. claude-haiku-4.5 chosen for its strong track record
+# on precise, constrained rewriting instructions; not empirically
+# A/B-tested against alternatives the way gpt-oss-20b was for Phase 2
+# verification earlier -- swap `claim_completion:` in the purpose blocks
+# above if that's ever done.
+claim_completion:
   configs:
-    # ACTIVE -- the sole production NLI config (see the comment above nli:
-    # for the full rationale: faster per-pod than deberta_zeroshot once
-    # actually measured, genuinely multilingual, and a ~8194-token ceiling).
-    # Originally added for granularity: complete_bm's long-context need
-    # specifically -- premises (citing-paper title+abstract) can be in any
-    # language the source paper was published in, even though the
-    # hypothesis (BM claim) is always English, so this needs cross-lingual
-    # entailment, not just a longer-context English model -- but that
-    # cross-lingual need applies regardless of granularity, which is why
-    # this config now also covers naive_bm (see granularity: below).
-    # Image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.1.0 (see TD_BM_NLI_approach.qmd).
-    bge_m3_zeroshot_complete_bm:
-      scheme: https
-      host: ["orn81igh4swblu-8080.proxy.runpod.net", "x4iv6cr25xoown-8080.proxy.runpod.net", "55o5uwkw0ipgav-8080.proxy.runpod.net"]
-      port: null
-      auth_token_keyring: null
-      model: MoritzLaurer/bge-m3-zeroshot-v2.0-c   # label only; verified against /health. max_position_embeddings ~8194 (real limit, not this project's choice)
-      candidate_labels: ["supports", "refutes", "is not relevant to"]
-      hypothesis_template: "This paper {} the following claim: %s"
-      passes: 3   # zero-shot: 3 forward passes per claim, one per reformulated candidate label, cross-normalized (see nli-runpod/server.py); a directly fine-tuned classifier instead uses passes: 1 (one forward pass, native head softmax) -- see the commented deberta_finetuned template below
-      batch_size: 64          # measured: 33.6 pairs/sec on one L4 pod at this setting (256-premise real batch) -- ~2.7x deberta_zeroshot's 12.5 pairs/sec at batch_size 128 on the same batch
-      max_length: 2048        # comfortably covers complete_bm's largest measured claim (~885 tokens) + a full premise, well under the ~8194 ceiling
-      uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
-      nei_threshold: 0.90
-      granularity: complete_bm    #  naive_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
+    haiku_completion:
+      model: "anthropic/claude-haiku-4.5"
 
-      image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.4.0
-      pods:
-        count: 4
-        min_ready: 4
-        name_prefix: nli-bge-m3-complete
-        registry_auth_id: ""
-
-    bge_m3_zeroshot_atomic_bm:
-      scheme: https
-      # expect_model turns the model check from a warning into a hard stop. It
-      # matters most HERE, not on the fine-tuned config: both can be served from
-      # the same pool of L4 pods, and the fine-tune differs by passes: 1 vs 3 --
-      # a different scoring scheme entirely, not just a different checkpoint --
-      # so pointing this config at a fine-tuned pod would score key papers with
-      # the wrong model while recording nli_config=bge_m3_zeroshot_atomic_bm.
-      # Nearly done by accident on 2026-10-02.
-      expect_model: MoritzLaurer/bge-m3-zeroshot-v2.0-c
-      host: ["6oh2gnus1851sb-8080.proxy.runpod.net"]
-      # kuhykgssi61j0v-8080.proxy.runpod.net dropped for now -- confirmed
-      # unreachable (HTTP 404 on /health, not just a boot-time delay) while
-      # the other 5 were healthy. Add it back once its pod is confirmed up.
-      auth_token_keyring: null
-      model: MoritzLaurer/bge-m3-zeroshot-v2.0-c   # label only; verified against /health. max_position_embeddings ~8194 (real limit, not this project's choice)
-      candidate_labels: ["supports", "refutes", "is not relevant to"]
-      hypothesis_template: "This paper {} the following claim: %s"
-      passes: 3   # zero-shot: 3 forward passes per claim, one per reformulated candidate label, cross-normalized -- see bge_m3_zeroshot_complete_bm's own passes: comment above
-      batch_size: 64          # measured: 33.6 pairs/sec on one L4 pod at this setting (256-premise real batch) -- ~2.7x deberta_zeroshot's 12.5 pairs/sec at batch_size 128 on the same batch
-      max_length: 2048        # comfortably covers complete_bm's largest measured claim (~885 tokens) + a full premise, well under the ~8194 ceiling
-      uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
-      nei_threshold: 0.90
-      granularity: atomic_bm    #  naive_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
-
-      image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.4.0
-      pods:
-        count: 4
-        min_ready: 4
-        name_prefix: nli-bge-m3-atomic
-        registry_auth_id: ""
-
-    bge_m3_zeroshot_naive_bm:
-      scheme: https
-      host: ["d78ew5xa898onb-8080.proxy.runpod.net", "k3d0ojjo3r34gn-8080.proxy.runpod.net", "imxudxy1q07w93-8080.proxy.runpod.net", "2yjh0c3crclwg2-8080.proxy.runpod.net", "qzv2pwdj8gccmj-8080.proxy.runpod.net", "6dbdypmy7ttlqe-8080.proxy.runpod.net", "tkmmt2u8s8xoy0-8080.proxy.runpod.net"]
-      port: null
-      auth_token_keyring: null
-      model: MoritzLaurer/bge-m3-zeroshot-v2.0-c   # label only; verified against /health. max_position_embeddings ~8194 (real limit, not this project's choice)
-      candidate_labels: ["supports", "refutes", "is not relevant to"]
-      hypothesis_template: "This paper {} the following claim: %s"
-      passes: 3   # zero-shot: 3 forward passes per claim, one per reformulated candidate label, cross-normalized -- see bge_m3_zeroshot_complete_bm's own passes: comment above
-      batch_size: 64          # measured: 33.6 pairs/sec on one L4 pod at this setting (256-premise real batch) -- ~2.7x deberta_zeroshot's 12.5 pairs/sec at batch_size 128 on the same batch
-      max_length: 2048        # comfortably covers complete_bm's largest measured claim (~885 tokens) + a full premise, well under the ~8194 ceiling
-      uncertain_threshold: 0.60   # spot-checked (n=350: 150 deberta REFUTES-certain pairs + 200 general random, scored live) -- overall confidence shape closely matches deberta_zeroshot's own full-corpus distribution (median ~0.50 vs ~0.51), so left unchanged; not a rigorous calibration, see TD_BM_NLI_approach.qmd
-      nei_threshold: 0.90
-      granularity:  naive_bm   # complete_bm also supported/tested (see comment above nli:); naive_bm is the current default corpus
-
-      image: ghcr.io/rkrug/nli-runpod-bge-m3:v0.4.0
-      pods:
-        count: 4
-        min_ready: 4
-        name_prefix: nli-bge-m3-naive
-        registry_auth_id: ""
-
+nli:
+  configs:
     # Jev as PHASE 1, not as the screen it currently is one stage further down.
     #
     # backend: jev switches score_one_claim() out for score_one_claim_jev()
@@ -433,11 +260,10 @@ nli:
     # uncertain_threshold, the nli_route= partitions and every report
     # downstream are untouched.
     #
-    # Its own nli_config= tree means it scores BESIDE the NLI on identical rows
-    # rather than instead of it. Deliberate: every measurement behind this comes
-    # from models judging models, the human review round has not happened, and
-    # comparing the two on the same rows afterwards is the whole point of
-    # waiting. See design_notes.md points 6 and 8.
+    # It writes its own scorer_config= tree, so the retired backends' scores
+    # on the same rows stay available for comparison. Every measurement
+    # behind the switch comes from models judging models and the human
+    # review round has not happened. See design_notes.md points 6 and 8.
     #
     # Measured 2026-10-05 against refutations confirmed by three independent
     # reviewers: AUC 0.737 [0.63, 0.84] where the zero-shot NLI scores 0.529,
@@ -457,64 +283,6 @@ nli:
       uncertain_threshold: 0.60   # UNCALIBRATED for this model -- carried over so the comparison is like-for-like, not because it is right. Calibrate against human labels.
       granularity: atomic_bm
       max_length: 2048            # advisory only: the decisions API chunks by a token BUDGET, it does not truncate per pair
-
-    # The 2026-09-29 GA1 fine-tune (atomic_bm, max_length 512, downsample_seed
-    # 13), baked into its own image by docker/ipbes-ft/Dockerfile. Not zero-shot:
-    # passes: 1 tells score_one_claim.R and the server to read the model's own
-    # native 3-way softmax directly instead of reformulating one hypothesis per
-    # candidate label, so candidate_labels MUST equal the checkpoint's own
-    # id2label values (server.py matches by name and fails loudly otherwise) and
-    # hypothesis_template is unused.
-    #
-    # max_length: 512 is the value the model was TRAINED at. start_nli_pods.sh
-    # DERIVES the pod's NLI_MAX_LENGTH from it rather than taking a second copy,
-    # so the pod and the scorer cannot disagree; a hand-written NLI_MAX_LENGTH
-    # under extra_env: that contradicts it is a hard error. Serving a
-    # 512-trained model at 2048 raises nothing at all and merely scores worse --
-    # the near-miss a8c6ea4 records.
-    bge_m3_ft_ga1:
-      scheme: https
-      host: ["lbejw3goolcv4e-8080.proxy.runpod.net", "q5nit6knsp5soz-8080.proxy.runpod.net", "41expfvjm9au2a-8080.proxy.runpod.net", "k9n70564ss49xh-8080.proxy.runpod.net", "95i20tdzwg3fsg-8080.proxy.runpod.net"]
-      port: null
-      auth_token_keyring: null
-      model: /opt/models/ipbes-bm-nli-atomic-ga1-512-v1
-      expect_model: /opt/models/ipbes-bm-nli-atomic-ga1-512-v1   # verified against /health by check_nli_pool_health()
-      candidate_labels: ["SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO"]
-      passes: 1
-      batch_size: 32
-      max_length: 512
-      uncertain_threshold: 0.60
-      granularity: atomic_bm
-      image: ghcr.io/rkrug/nli-runpod-bge-m3-ipbes-ft:v0.5.0-GA1-512-m1
-      pods:
-        count: 5
-        min_ready: 4
-        name_prefix: nli-ipbes-ft-ga1
-        registry_auth_id: ""     # set if the image is private on ghcr
-
-    # nli_finetuned: a directly fine-tuned 3-way classifier (scripts/training/
-    # train_nli.py), NOT a zero-shot model -- passes: 1 tells score_one_claim.R
-    # and nli-runpod/server.py to skip the candidate-label reformulation
-    # scheme entirely: one forward pass per (premise, raw claim text) pair,
-    # reading the model's own native 3-way softmax directly, instead of 3
-    # passes over reformulated "This paper {supports/refutes/is not relevant
-    # to} the claim" hypotheses. candidate_labels here MUST equal the
-    # fine-tuned model's own id2label values (server.py's _direct_label_order()
-    # matches by name, not position, and fails loudly on a mismatch) -- hence
-    # SUPPORTS/REFUTES/NOT_ENOUGH_INFO here, not the lowercase short phrases
-    # the zero-shot configs above use. hypothesis_template is unused in this
-    # mode (no per-label reformulation happens) and is omitted.
-    # nli_finetuned:
-    #   scheme: https
-    #   host: <pod-id>-8080.proxy.runpod.net   # fill in after the pod boots
-    #   port: null
-    #   auth_token_keyring: null
-    #   model: /app/nli-ipbes-finetuned/best   # baked into the Docker image
-    #   candidate_labels: ["SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO"]
-    #   passes: 1
-    #   batch_size: 32
-    #   uncertain_threshold: 0.60
-    #   nei_threshold: 0.90
 
 # Phase 2 — LLM verification of NLI-flagged pairs (see TD_NLI_LLM_two_phase.qmd
 # and R/build_llm_verification_parquet.R). One ellmer::chat_openrouter() call

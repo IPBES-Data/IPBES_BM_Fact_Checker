@@ -1,20 +1,20 @@
-# Fact-checking pipeline -- citing works -> NLI -> LLM verification.
+# Fact-checking pipeline -- citing works -> Jev scoring -> LLM verification.
 #
-# One of four projects (see TD_targets.qmd and _targets.yaml):
+# One of three projects (see TD_targets.qmd and _targets.yaml):
 #
-#   _targets.R             collection: LOD -> refs -> zotero -> works ->
+#   _targets_collection.R             collection: LOD -> refs -> zotero -> works ->
 #                          snowball -> works_citing. Keeps the ORIGINAL
-#                          _targets/ store, so nothing re-downloads.
-#   _targets_factcheck.R   this file
-#   _targets_training.R    key papers -> NLI -> LLM -> training set -> fine-tune
+#                          _targets_collection/ store, so nothing re-downloads.
+#   _targets_factcheck.R   this file -- citing works AND key papers
 #   _targets_reporting.R   renders everything, computes nothing that costs money
 #
 # WHAT THIS PROJECT IS FOR: the citing-works corpus -- every paper the snowball
 # found citing a Background Message's key papers, scored against that BM's own
-# claims by the zero-shot NLI pool (Phase 1), with the REFUTES/SUPPORTS-certain
-# subset routed to a grounded LLM review (Phase 2). This is the expensive arm:
-# millions of pairs, real GPU hours, real OpenRouter spend. Its sibling
-# _targets_training.R scores the far smaller key-paper set instead.
+# claims by Jev (Phase 1), with the REFUTES/SUPPORTS-certain subset routed to a
+# grounded LLM review (Phase 2). This is the expensive arm: millions of pairs,
+# real OpenRouter spend. The far smaller key-paper set is scored by the
+# key-paper QA chain further down this same file, which moved here when the
+# training project was retired on 2026-10-05.
 #
 # CREDENTIALS: API_openrouter only. Nothing here fetches from OpenAlex, so the
 # collection project's key and its rate-limit preflight are both absent.
@@ -34,67 +34,27 @@ Sys.setenv(
 tar_option_set(
   packages = c(
     "yaml", "dplyr", "arrow", "stringr", "xml2", "httr2",
-    "jsonlite", "digest", "ellmer", "filelock", "crew", "keyring"
+    "jsonlite", "digest", "ellmer", "crew", "keyring"
   ),
-  # Sized to the active NLI pool's host count: score_one_claim() dispatches
-  # claims across hosts by taking a per-host file lock, so local concurrency
-  # has to match the host count or hosts sit idle. Read straight from
-  # config.yaml at pipeline-definition time -- worker-pool sizing, not part of
-  # the DAG's correctness.
+  # Claim-level concurrency. Four is a deliberate compromise: enough to keep
+  # the Jev API busy across claims, few enough that four claims' premise frames
+  # are not all in memory at once. Concurrency WITHIN a claim is separate and
+  # lives in score_one_claim_jev() (httr2 max_active), which is where the real
+  # throughput comes from.
   #
-  # The lock directory (output/nli_scores/.locks/) is SHARED with the training
-  # project. Deliberate, and not a collision: if both run at once they contend
-  # for the same hosts, which is the behaviour wanted -- one pool, one queue.
-  # It is, with the two append-only LLM caches, the cross-project state that no
-  # DAG describes; see TD_targets.qmd's "Cross-project contracts".
-  controller = crew::crew_controller_local(
-    #
-    # Resolved inline rather than via purpose_config(), which lives in R/ and is
-    # sourced AFTER this block. It must handle both purpose-block shapes: the
-    # flat one and the library+active: one fact_checking: now uses. It did not,
-    # and the failure was silent -- `fact_checking$nli` became NULL, tryCatch
-    # swallowed the subscript error and sized the pool at ONE worker, so every
-    # pod past the first sat idle while being billed. Hence the warning on the
-    # fallback path: one worker is a legitimate value and an indistinguishable
-    # symptom, so it must not be reached quietly.
-    workers = tryCatch({
-      cfg <- yaml::read_yaml("input/config.yaml")
-      fc <- cfg[["fact_checking"]]
-      sel <- if (!is.null(fc[["configs"]])) fc[["configs"]][[fc[["active"]]]][["nli"]] else fc[["nli"]]
-      if (is.null(sel)) stop("could not resolve fact_checking's nli config name")
-      nc <- cfg[["nli"]][["configs"]][[sel]]
-      # The jev backend has no hosts to size against. Its concurrency is
-      # per-request inside score_one_claim_jev() (httr2, max_active), so crew
-      # workers here only decide how many CLAIMS are in flight at once. Four is
-      # a deliberate compromise: enough to keep the API busy across claims,
-      # few enough that four claims' premise frames are not all in memory.
-      # NO return() HERE. This block is an argument to crew_controller_local(),
-      # evaluated at script top level where there is no enclosing function, so a
-      # return() aborts the WHOLE SCRIPT and hands targets that value instead of
-      # the target list -- "Expected a list of target definition objects". It
-      # survived every expression-by-expression check, because those only abort
-      # the one expression. Keep this an if/else that yields a value.
-      if (identical(nc[["backend"]], "jev")) {
-        4L
-      } else {
-        n <- length(unlist(nc[["host"]]))
-        if (n < 1L) stop(sprintf("nli.configs.%s.host is empty -- start the pool first", sel))
-        n
-      }
-    }, error = function(e) {
-      warning(sprintf(
-        "crew workers falling back to 1: %s. Every host past the first will sit idle.",
-        conditionMessage(e)
-      ), call. = FALSE)
-      1L
-    })
-  )
+  # A fixed literal, not derived from config: the RunPod backend sized this from
+  # the active pool's host count, because score_one_claim() dispatched claims by
+  # taking a per-host file lock and under-sizing left pods idle while billing.
+  # That backend is gone from this branch (see the scoring target below), and
+  # with it the host count, the lock directory and the silent-fallback hazard
+  # the old block guarded against.
+  controller = crew::crew_controller_local(workers = 4L)
 )
 
 list.files("./R", full.names = TRUE) |> lapply(source)
 
 # ---------------------------------------------------------------------------
-# Cross-project inputs: what the collection project (_targets.R) writes.
+# Cross-project inputs: what the collection project (_targets_collection.R) writes.
 # Declared as format = "file" targets keeping the producing project's NAMES, so
 # the scoring targets below move across verbatim and a genuine upstream change
 # -- a refetched works_parquet, a new snowball -- still invalidates this chain
@@ -105,7 +65,7 @@ list(
   # DAG diagram for THIS project. build_pipeline_mmd() renders whatever DAG it
   # is run inside, so each project generates its own picture.
   # Hand-authored conceptual workflow for THIS project (one per targets
-  # project; see input/mmd/workflow_main.mmd's own header for the set).
+  # project; see input/mmd/workflow_collection.mmd's own header for the set).
   tar_target(
     mmd_workflow_factcheck,
     "input/mmd/workflow_factcheck.mmd",
@@ -116,10 +76,10 @@ list(
     render_mmd(mmd_workflow_factcheck),
     format = "file"
   ),
-  tar_target(r_files, list.files("R", full.names = TRUE), format = "file"),
+  tar_target(targets_script, "_targets_factcheck.R", format = "file"),
   tar_target(
     pipeline_mmd,
-    build_pipeline_mmd(r_files, "input/mmd/pipeline_factcheck.mmd"),
+    build_pipeline_mmd(targets_script, "input/mmd/pipeline_factcheck.mmd"),
     format = "file"
   ),
   tar_target(
@@ -171,7 +131,7 @@ list(
     llm_verification_config,
     yaml::read_yaml(config_file)[["llm_verification"]][["configs"]][[llm_verification_active]]
   ),
-  tar_target(relevance_config, yaml::read_yaml(config_file)[["relevance_screen"]]),
+  tar_target(relevance_config, yaml::read_yaml(config_file)[["fact_checking"]][["relevance_screen"]]),
   # Tracked like the other prompts: editing the questions invalidates whatever
   # the jev backend scored, which is correct -- different questions, different
   # scores, and a tree scored under two question sets would be meaningless.
@@ -196,20 +156,20 @@ list(
     format = "file"
   ),
 
-  # ---- inputs from the collection project (_targets.R) ----------------------
+  # ---- inputs from the collection project (_targets_collection.R) ----------------------
   tar_target(
     refs_parquet,
-    file.path("output/refs", paste0("assessment=", assessment$id)),
+    file.path(out_collection("refs"), paste0("assessment=", assessment$id)),
     pattern = map(assessment), format = "file"
   ),
   tar_target(
     key_messages_parquet,
-    file.path("output/key_messages", paste0("assessment=", assessment$id)),
+    file.path(out_collection("key_messages"), paste0("assessment=", assessment$id)),
     pattern = map(assessment), format = "file"
   ),
   tar_target(
     works_parquet,
-    file.path("output/works", paste0("assessment=", assessment$id)),
+    file.path(out_collection("works"), paste0("assessment=", assessment$id)),
     pattern = map(assessment), format = "file"
   ),
   # Three paths per branch (nodes / edges / keypaper), exactly as the
@@ -217,9 +177,9 @@ list(
   tar_target(
     snowball_parquet,
     c(
-      file.path("output/snowball/nodes", paste0("assessment=", assessment$id)),
-      file.path("output/snowball/edges", paste0("assessment=", assessment$id)),
-      file.path("output/snowball/keypaper", paste0("assessment=", assessment$id))
+      file.path(out_collection("snowball/nodes"), paste0("assessment=", assessment$id)),
+      file.path(out_collection("snowball/edges"), paste0("assessment=", assessment$id)),
+      file.path(out_collection("snowball/keypaper"), paste0("assessment=", assessment$id))
     ),
     pattern = map(assessment), format = "file"
   ),
@@ -228,16 +188,17 @@ list(
   tar_target(
     works_citing_parquet,
     c(
-      file.path("output/works_citing", paste0("assessment=", assessment$id)),
-      file.path("output/works_citing_meta", paste0("assessment=", assessment$id))
+      file.path(out_collection("works_citing"), paste0("assessment=", assessment$id)),
+      file.path(out_collection("works_citing_meta"), paste0("assessment=", assessment$id))
     ),
     pattern = map(assessment), format = "file"
   ),
 
-  # Target 2g' (NLI-ready, SECOND approach): identical to nli_ready_parquet but
+  # Target 2g' (claim/work pairs, evidence-segmented): same schema as the
+  # per-sentence approach it replaced, but
   # BM text is cut into EVIDENCE-DELIMITED claims (split at braces that end a
   # sentence, {5.4.1, 5.4.2}) rather than per sentence -- or, under a
-  # granularity: complete_bm NLI config, not split at all (whole
+  # granularity: complete_bm config, not split at all (whole
   # bm_description/bm_label as one claim each). Same column schema either
   # way; output root is hive-partitioned by granularity=<value>/ so naive_bm
   # (the default, byte-identical path to before this partition was added --
@@ -250,7 +211,7 @@ list(
       key_messages_parquet,
       works_citing_parquet,
       workers,
-      file.path("output/claim_work_pairs", paste0("granularity=", granularity)),
+      file.path(out_factcheck("claim_work_pairs"), paste0("granularity=", granularity), "keypaper=false"),
       granularity,
       claim_completion_model
     ),
@@ -263,10 +224,10 @@ list(
     deployment = "main",
     garbage_collection = TRUE
   ),
-  # Target 2h (NLI): NLI alignement scores — classify each citing work against
-  # each BM sentence (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) via a zero-shot NLI
-  # model served on a pool of RunPod hosts. Consumes nli_ready_parquet (work ×
-  # BM sentence cross-join with approx_tokens). Every work of every scored
+  # Target 2h: Phase 1 scoring — classify each citing work against each of its
+  # BM's claims (SUPPORTS / REFUTES / NOT_ENOUGH_INFO) with Jev. Consumes
+  # claim_work_pairs (work × claim cross-join with approx_tokens). Every work
+  # of every scored
   # claim IS scored — pairs longer than max_length are TRUNCATED by the server
   # (truncation="longest_first", so the abstract tail is trimmed and the short
   # hypothesis is preserved), not skipped. approx_tokens is used only for
@@ -343,22 +304,29 @@ list(
   # invalidation churn. See R/score_one_claim.R's header.
   tar_target(
     claim_scores_by_claim,
-    # BACKEND DISPATCH. `backend: jev` on the active nli config scores with
-    # Jev's decisions API instead of the RunPod pool -- same output schema, its
-    # own scorer_config= tree, so it scores BESIDE the NLI on identical rows rather
-    # than instead of it. score_one_claim() itself is untouched, deliberately:
-    # it is the production path for every existing score and carries a bug
-    # history worth not disturbing. See R/score_one_claim_jev.R.
-    if (identical(scorer_config$backend, "jev")) {
+    # JEV ONLY on this branch. The RunPod/NLI backend (score_one_claim(),
+    # per-host file locks, pool health checks) is on `NLI_dirty`; it was
+    # measured at or below chance for this task -- AUC 0.50 REFUTES, 0.38
+    # SUPPORTS against refutations confirmed by three independent reviewers --
+    # see design_notes.md points 6 and 8.
+    #
+    # The guard is kept even though config.yaml no longer defines any non-jev
+    # scorer (the bge_m3_* entries were removed 2026-10-07): restoring one from
+    # NLI_dirty is a paste, and without this check it would hand a
+    # RunPod-shaped config (host:, passes:, batch_size:) to the Jev scorer and
+    # score a whole corpus against the wrong thing, under the right
+    # scorer_config= name.
+    {
+      if (!identical(scorer_config$backend, "jev")) {
+        stop(sprintf(
+          "nli.configs.%s has backend '%s'; this branch only scores with 'jev'. Switch fact_checking.active to a jev config, or use the NLI_dirty branch.",
+          scorer_name, scorer_config$backend %||% "<unset>"
+        ), call. = FALSE)
+      }
       score_one_claim_jev(
         claim_units_flat, scorer_config, scorer_name, scorer_model,
-        output_root = file.path("output/claim_scores", paste0("granularity=", granularity)),
-        questions_file = jev_questions_file
-      )
-    } else {
-      score_one_claim(
-        claim_units_flat, scorer_config, scorer_name, scorer_model,
-        output_root = file.path("output/claim_scores", paste0("granularity=", granularity))
+        output_root = file.path(out_factcheck("claim_scores"), paste0("granularity=", granularity)),
+        questions_file = jev_questions_file, keypaper = FALSE
       )
     },
     pattern = map(claim_units_flat),
@@ -374,7 +342,7 @@ list(
     consolidate_claim_scores(
       claim_scores_by_claim,
       claim_units_flat,
-      output_root = file.path("output/claim_scores", paste0("granularity=", granularity)),
+      output_root = file.path(out_factcheck("claim_scores"), paste0("granularity=", granularity)),
       scorer_name = scorer_name,
       # Scope the groups it visits. Without this it globs every
       # assessment=*/km=*/bm=* under the scorer_config= root and stops dead on any
@@ -382,35 +350,12 @@ list(
       # hypothetical: assessment=IAS still holds 9 scored groups from before
       # the GA1 rescope. Out-of-scope groups are left untouched, not pruned.
       assessments = vapply(assessments_list, function(a) a$id, character(1)),
-      km = km_scope
+      km = km_scope,
+      keypaper = FALSE
     ),
     format = "file",
     deployment = "main"
   ),
-  # Cleanup: score_one_claim()'s per-host dispatch locks (output/nli_scores/
-  # .locks_temp/host_NN.lock) are real files on disk for as long as any
-  # claim branch might still try to acquire one -- deleting one mid-run
-  # (e.g. inside score_one_claim() itself, right after unlock()) would race
-  # with another branch's in-flight filelock::lock() on the same path: POSIX
-  # lets a third branch create a fresh file there and lock IT while the
-  # second branch still holds a valid lock on the now-unlinked original,
-  # breaking the one-claim-per-host guarantee these locks exist for. So
-  # cleanup only happens here, in a target that depends on the WHOLE
-  # claim_scores_by_claim pattern (referenced only to establish that
-  # DAG dependency) -- targets doesn't run this until every branch has
-  # actually returned (success or error = "continue" failure), so nothing
-  # can still be waiting on a lock by the time it fires. Naturally
-  # self-limiting too: if claim_scores_by_claim is fully up to date
-  # (nothing left to score), this target is too, and cleanup is skipped
-  # rather than re-deleting an already-empty directory every tar_make().
-  tar_target(scorer_host_locks_cleanup, {
-    claim_scores_by_claim
-    lock_dir <- "output/nli_scores/.locks_temp"
-    n <- length(list.files(lock_dir, pattern = "\\.lock$"))
-    unlink(lock_dir, recursive = TRUE, force = TRUE)
-    sprintf("removed %d lock file(s) from %s", n, lock_dir)
-  }),
-
   # Target 2h4a: Per-claim evidence scope feeding Phase 2's
   # `direct_evidence_match` tag (see R/build_llm_candidate_scope_parquet.R
   # and TD_NLI_LLM_two_phase.qmd; this fed a candidate-narrowing FILTER
@@ -425,7 +370,7 @@ list(
   # per-sub-claim evidence tokens. Reads only already-existing, unmodified
   # targets (key_messages_parquet, refs_parquet, works_parquet,
   # snowball_parquet, claim_work_pairs, claim_completion_model) —
-  # adding it does not invalidate any of Phase 1's NLI chain or the
+  # adding it does not invalidate any of Phase 1's scoring chain or the
   # download/snowball steps upstream of it. Under granularity ==
   # "atomic_bm" it DOES make a real (normally cache-hit only) OpenRouter
   # call via claim_completion_model/complete_bm_fragments(), to recover the
@@ -443,7 +388,7 @@ list(
       works_parquet,
       snowball_parquet,
       claim_work_pairs,
-      "output/llm_candidate_scope",
+      out_factcheck("llm_candidate_scope"),
       granularity,
       claim_completion_model
     ),
@@ -453,14 +398,15 @@ list(
     ),
     format = "file"
   ),
-  # Target 2h4b: Phase 2 — LLM verification of NLI-flagged pairs. Reviews
-  # only what NLI itself flagged as needing a second opinion (every REFUTES
-  # call, and every call NLI marked `uncertain`) — see
+  # Target 2h4b: Phase 2 — LLM verification of the pairs Phase 1 flagged.
+  # Reviews only what the scorer itself marked as needing a second opinion
+  # (what the active llm config's nli_labels/nli_certainty select) — see
   # R/build_llm_verification_parquet.R and TD_NLI_LLM_two_phase.qmd. One
   # target call per assessment loops internally over its own candidates
   # (ellmer's own parallel_chat_structured concurrency is enough here — no
   # crew/file-lock dispatch needed, since OpenRouter is a shared endpoint,
-  # not a fixed host pool to load-balance across like the NLI RunPod pool).
+  # not a fixed host pool to load-balance across as the retired RunPod backend
+  # required).
   # claim_scores_by_claim is passed only to establish the DAG
   # ---- relevance screen ----------------------------------------------------
   # Screens only the ROUTED subset -- what cfg$nli_labels/nli_certainty select,
@@ -475,9 +421,13 @@ list(
     relevance_screen,
     build_llm_relevance_screen(
       assessment,
+      # claim_scores_consolidated IS this tree's root -- taking it as the path
+      # rather than recomputing the same formula is what puts a real edge from
+      # Phase 1 scoring into this target. Without it the screen depends only on
+      # config and ran BEFORE scoring, against an empty tree, writing 0 bytes
+      # that targets then recorded as up to date and would never re-dispatch.
       pairs = select_llm_verification_candidates(
-        file.path("output/claim_scores", paste0("granularity=", granularity),
-                  paste0("scorer_config=", scorer_name), paste0("assessment=", assessment$id)),
+        file.path(claim_scores_consolidated, paste0("assessment=", assessment$id)),
         claim_work_pairs,
         nli_labels = llm_verification_config$nli_labels,
         nli_certainty = llm_verification_config$nli_certainty
@@ -506,11 +456,12 @@ list(
       granularity,
       claim_scores_consolidated,
       relevance_path = relevance_screen,
-      relevance_threshold = relevance_config$threshold
+      relevance_threshold = relevance_config$threshold,
+      keypaper = FALSE
     ),
     pattern = map(assessment, claim_work_pairs, llm_candidate_scope_parquet, relevance_screen),
     format = "file",
-    # select_llm_verification_candidates() collect()s both the routed NLI
+    # select_llm_verification_candidates() collect()s both the routed Phase 1
     # scores AND the full nli_ready_evidence premise table (title+abstract
     # per work x claim) per assessment before joining in R — multi-GB for a
     # single assessment. Running GA1's and IAS's branches on separate crew
@@ -531,12 +482,24 @@ list(
   # fact-checking sanity check. It lived there because that is where the
   # training set's positive class came from.
   #
-  # DELIBERATELY SEPARATE from the citing-works chain beside it: its own
-  # premise root (output/claim_work_pairs_keypaper/), its own scores root
-  # (output/claim_scores_keypaper/), its own Phase 2 output
-  # (scores_keypaper/) and its own relevance partition (keypaper=true). The two
-  # score DIFFERENT pairs and must be runnable, re-runnable and deletable
-  # independently.
+  # FOLDED INTO THE CITING TREES 2026-10-07. It used to carry its own premise
+  # root (output/claim_work_pairs_keypaper/), scores root
+  # (output/claim_scores_keypaper/) and Phase 2 output (scores_keypaper/). All
+  # three now live in the citing trees under a `keypaper=true` hive level,
+  # matching what output/llm_relevance/ already did.
+  #
+  # The separation it replaced was real but accidental: the two chains' claims
+  # are byte-identical and their premise construction is byte-identical code,
+  # so they differed only in work source and output root -- and the duplication
+  # had already drifted (this chain's consolidator passed neither assessments=
+  # nor km=, and its relevance screen is consumed aggregated rather than
+  # mapped). The requirement it was protecting still holds and is now met by the
+  # partition level instead: the two score DIFFERENT pairs and must be runnable,
+  # re-runnable and deletable independently.
+  #
+  # keypaper= sits ABOVE assessment= deliberately -- see
+  # scripts/migrate_keypaper_fold.R for why (a $-anchored regex in
+  # consolidate_claim_scores() and a <claim_id>.parquet scratch-file collision).
   #
   # ONE BEHAVIOUR CHANGE in the move: it now follows fact_checking's nli config
   # rather than training's. The reason it was pinned to zero-shot -- "avoid
@@ -557,7 +520,7 @@ list(
       works_parquet,
       snowball_parquet,
       workers,
-      file.path("output/claim_work_pairs_keypaper", paste0("granularity=", granularity)),
+      file.path(out_factcheck("claim_work_pairs"), paste0("granularity=", granularity), "keypaper=true"),
       granularity,
       claim_completion_model
     ),
@@ -587,24 +550,17 @@ list(
   # Same scratch-then-consolidate split as the citing-works chain.
   tar_target(
     claim_scores_keypaper,
-    # Same backend dispatch as the citing-works chain above. The key-paper
-    # corpus is 29,511 pairs against 2.43M, so it costs ~$1.50 at jev rates --
-    # and it is the control: key papers ARE the evidence a BM was written from,
-    # so a first-stage model that cannot separate them from citing works is
-    # telling you something. The NLI separates the two by 9 points where the
-    # reviewers separate them by 49.
-    if (identical(scorer_config$backend, "jev")) {
-      score_one_claim_jev(
-        claim_units_keypaper_flat, scorer_config, scorer_name, scorer_model,
-        output_root = file.path("output/claim_scores_keypaper", paste0("granularity=", granularity)),
-        questions_file = jev_questions_file
-      )
-    } else {
-      score_one_claim(
-        claim_units_keypaper_flat, scorer_config, scorer_name, scorer_model,
-        output_root = file.path("output/claim_scores_keypaper", paste0("granularity=", granularity))
-      )
-    },
+    # Jev only, same as the citing-works chain above. The key-paper corpus is
+    # 29,496 pairs against 2.3M, so it costs ~$1.50 at jev rates -- and it is
+    # the control: key papers ARE the evidence a BM was written from, so a
+    # first-stage model that cannot separate them from citing works is telling
+    # you something. Measured: Jev separates the two by 4.62x where the
+    # zero-shot NLI managed 1.26x.
+    score_one_claim_jev(
+      claim_units_keypaper_flat, scorer_config, scorer_name, scorer_model,
+      output_root = file.path(out_factcheck("claim_scores"), paste0("granularity=", granularity)),
+      questions_file = jev_questions_file, keypaper = TRUE
+    ),
     pattern = map(claim_units_keypaper_flat),
     error = "continue"
   ),
@@ -613,8 +569,14 @@ list(
     consolidate_claim_scores(
       claim_scores_keypaper,
       claim_units_keypaper_flat,
-      output_root = file.path("output/claim_scores_keypaper", paste0("granularity=", granularity)),
-      scorer_name = scorer_name
+      output_root = file.path(out_factcheck("claim_scores"), paste0("granularity=", granularity)),
+      scorer_name = scorer_name,
+      # Scoped exactly like the citing twin above. It passed NEITHER before,
+      # so its prune glob visited every group under the scorer root -- harmless
+      # only while it had a root to itself, which it no longer does.
+      assessments = vapply(assessments_list, function(a) a$id, character(1)),
+      km = km_scope,
+      keypaper = TRUE
     ),
     format = "file",
     deployment = "main"
@@ -629,18 +591,18 @@ list(
   #
   # Duplicated rather than shared with the fact-checking project, deliberately:
   # the two chains score DIFFERENT pairs (claims x key papers vs claims x
-  # citing works, 1.35% overlap), their claim sets depend on each purpose
-  # block's own granularity, and after deployment they run different NLI models
-  # -- fact checking on the fine-tune, this chain left on zero-shot to avoid
-  # training on labels the model itself shaped. Only the ~8-line declaration is
-  # duplicated; the function lives once in R/.
+  # citing works, 1.35% overlap -- 399 of 29,496 on GA1), so neither chain's
+  # result can stand in for the other's. They ran different models while the
+  # training project existed; since it was retired both follow
+  # fact_checking's selection, and the duplication is now only the ~8-line
+  # declaration -- the function lives once in R/.
   tar_target(
     relevance_screen_keypaper,
     build_llm_relevance_screen(
       assessment,
+      # Same missing-edge fix as relevance_screen above.
       pairs = select_llm_verification_candidates(
-        file.path("output/claim_scores_keypaper", paste0("granularity=", granularity),
-                  paste0("scorer_config=", scorer_name), paste0("assessment=", assessment$id)),
+        file.path(claim_scores_keypaper_consolidated, paste0("assessment=", assessment$id)),
         claim_work_pairs_keypaper,
         nli_labels = NULL, nli_certainty = NULL
       ),
@@ -654,7 +616,7 @@ list(
   ),
 
   # ---- key-paper Phase 2 LLM verification ----------------------------------
-  # Reviews EVERY key paper's NLI-scored pair, irrespective of
+  # Reviews EVERY key paper's scored pair, irrespective of
   # nli_labels/nli_certainty -- unlike the citing-works chain, which routes by
   # those fields purely for cost control. Key papers are a small, bounded,
   # high-importance set where every one is worth an independent check.
@@ -664,8 +626,9 @@ list(
       assessment,
       claim_work_pairs_keypaper,
       file.path(
-        "output/claim_scores_keypaper", paste0("granularity=", granularity),
-        paste0("scorer_config=", scorer_name), paste0("assessment=", assessment$id)
+        out_factcheck("claim_scores"), paste0("granularity=", granularity),
+        paste0("scorer_config=", scorer_name), "keypaper=true",
+        paste0("assessment=", assessment$id)
       ),
       scorer_name,
       llm_verification_active,
@@ -674,7 +637,8 @@ list(
       llm_verification_user_prompt_file,
       claim_scores_keypaper_consolidated,
       relevance_path = relevance_screen_keypaper,
-      relevance_threshold = relevance_config$threshold
+      relevance_threshold = relevance_config$threshold,
+      keypaper = TRUE
     ),
     pattern = map(assessment, claim_work_pairs_keypaper),
     format = "file",

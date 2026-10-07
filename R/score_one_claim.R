@@ -71,22 +71,31 @@ score_one_claim <- function(
   scorer_config,
   scorer_name,
   scorer_model,
-  lock_dir = "output/nli_scores/.locks_temp",
-  output_root = "output/claim_scores"
+  lock_dir = out_factcheck(".locks_temp"),
+  output_root = out_factcheck("claim_scores"),
+  # Which chain this is. A HIVE PARTITION LEVEL above assessment=, not a
+  # column, and not below assessment= -- consolidate_claim_scores() globs with a
+  # $-anchored "/assessment=/km=/bm=$" regex that an inserted level would break,
+  # and the two chains need separate .scratch roots because scratch files are
+  # named <claim_id>.parquet and would otherwise collide between a citing and a
+  # key-paper branch for the same claim.
+  keypaper = FALSE
 ) {
   cfg <- if (is.null(scorer_config)) list() else scorer_config
   assessment_id <- claim_unit$assessment
 
   this_claim_id <- claim_unit$claim_id
 
+  kp_level <- paste0("keypaper=", tolower(as.character(isTRUE(keypaper))))
   output_path <- file.path(
-    output_root, paste0("scorer_config=", scorer_name), paste0("assessment=", assessment_id)
+    output_root, paste0("scorer_config=", scorer_name), kp_level,
+    paste0("assessment=", assessment_id)
   )
   bm_dir <- file.path(
     output_path, paste0("km=", claim_unit$km), paste0("bm=", claim_unit$bm)
   )
   scratch_dir <- file.path(
-    output_root, ".scratch", paste0("scorer_config=", scorer_name),
+    output_root, ".scratch", paste0("scorer_config=", scorer_name), kp_level,
     paste0("assessment=", assessment_id),
     paste0("km=", claim_unit$km), paste0("bm=", claim_unit$bm)
   )

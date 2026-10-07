@@ -19,7 +19,7 @@
 # the one column you want a dropdown for -- so the column set below is
 # deliberately curated down to only what's useful to filter/read per row,
 # rather than including every column build_label_funnel_data() carries.
-build_label_funnel_tables <- function(label_funnel_data_path, output_root = "output/tables") {
+build_label_funnel_tables <- function(label_funnel_data_path, output_root = out_reporting("tables")) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(label_funnel_data_path)
   assessment_id <- x$assessment

@@ -127,7 +127,7 @@ library(dplyr)
 # verbatim quote (quote_is_verbatim() demotes anything else to
 # NOT_ENOUGH_INFO before this table is ever written) -- see
 # R/build_llm_verification_parquet.R.
-positives <- open_dataset("output/llm_verification/scores_keypaper") |>
+positives <- open_dataset("output/factchecker/llm_verification/scores_keypaper") |>
   filter(llm_label == "SUPPORTS") |>
   select(assessment, km, bm, claim, work_id, quote) |>
   collect()
@@ -172,8 +172,8 @@ real_negatives <- function(path) {
     collect()
 }
 negatives <- bind_rows(
-  real_negatives("output/llm_verification/scores"),
-  real_negatives("output/llm_verification/scores_keypaper")
+  real_negatives("output/factchecker/llm_verification/scores"),
+  real_negatives("output/factchecker/llm_verification/scores_keypaper")
 )
 negatives$hypothesis <- negatives$claim
 negatives$label <- "NOT_ENOUGH_INFO"
@@ -196,10 +196,10 @@ adjacent BMs within the same KM may genuinely overlap.
 ```r
 # Supplementary only -- see caution above
 set.seed(42)
-works <- open_dataset("output/works") |>
+works <- open_dataset("output/collection/works") |>
   select(assessment, km, bm, title, abstract) |>
   collect()
-bms <- open_dataset("output/key_messages") |>
+bms <- open_dataset("output/collection/key_messages") |>
   select(assessment, km, bm, bm_description) |>
   collect()
 cited <- works |> inner_join(bms, by = c("assessment", "km", "bm")) |>

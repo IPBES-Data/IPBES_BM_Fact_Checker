@@ -8,47 +8,50 @@ flowchart TD
 
   %% Conceptual workflow for the FACT-CHECKING project (_targets_factcheck.R).
   %% --
-  %% One of four hand-authored workflow diagrams, one per targets project
+  %% One of three hand-authored workflow diagrams, one per targets project
   %% (see _targets.yaml and TD_targets.qmd):
   %% --
-  %%   workflow_main.mmd        collection: LOD -> refs -> zotero -> works ->
+  %%   workflow_collection.mmd  collection: LOD -> refs -> zotero -> works ->
   %%                            snowball -> works_citing
   %%   workflow_factcheck.mmd   this file
   %%   workflow_reporting.mmd   everything that renders
   %% --
-  %% This is the expensive arm: the citing-works corpus, millions of pairs,
-  %% GPU hours and real OpenRouter spend. The former training project's chart
-  %% scores the far smaller key-paper set through the same two phases.
+  %% Phase 1 has ONE backend on this branch: the Jev decisions API. The RunPod
+  %% zero-shot pool and its fine-tune were retired on 2026-10-05 -- measured
+  %% against refutations confirmed by three independent reviewers, they scored
+  %% AUC 0.50 for REFUTES and 0.38 for SUPPORTS (chance and below) where Jev
+  %% reached 0.737 [0.63, 0.84] on the same rows. The remnants live on the
+  %% NLI_dirty branch; see design_notes.md points 3 and 5-8.
 
-  %% Configuration. There is no global `active:` any more -- each project reads
-  %% its own purpose block, so this one's selections come from `fact_checking:`.
+  %% Configuration. There is no global `active:` -- each project reads its own
+  %% purpose block, so this one's selections come from `fact_checking:`.
   config_file@{ shape: doc, label: "Configuration <br><tt>input/config.yaml</tt>" }
   purpose_fc@{ shape: rect, label: "Purpose block<br/><tt>fact_checking:</tt><br/>assessments · nli · llm · claim_completion" }
-  nli_active@{ shape: rect, label: "NLI profile<br/><tt>fact_checking.nli</tt>" }
+  scorer_name@{ shape: rect, label: "Phase 1 scorer profile<br/><tt>fact_checking.nli</tt>" }
   llm_active@{ shape: rect, label: "LLM verification profile<br/><tt>fact_checking.llm</tt>" }
 
   config_file --> purpose_fc
-  purpose_fc --> nli_active
+  purpose_fc --> scorer_name
   purpose_fc --> llm_active
 
   %% Inputs produced by the collection project. Declared here as format = "file"
   %% targets keeping the producing project's names, so a genuine upstream change
   %% still invalidates this chain through content hashing.
-  subgraph collected["From the collection project (workflow_main.mmd)"]
+  subgraph collected["From the collection project (workflow_collection.mmd)"]
     direction TB
 
-    key_messages_db@{ shape: lin-cyl, label: "Key + Background Messages DB<br/><tt>output/key_messages/assessment=&lt;id&gt;/</tt>" }
-    refs_db@{ shape: lin-cyl, label: "References DB<br/><tt>output/refs/assessment=&lt;id&gt;/</tt>" }
-    works_db@{ shape: lin-cyl, label: "OpenAlex Works DB (seed / key papers)<br/><tt>output/works/assessment=&lt;id&gt;/</tt>" }
-    snowball_db@{ shape: lin-cyl, label: "Snowball DB (nodes / edges / keypaper)<br/><tt>output/snowball/{nodes,edges,keypaper}/assessment=&lt;id&gt;/</tt>" }
-    citing_db@{ shape: lin-cyl, label: "Citing Works DB (mapping + metadata)<br/><tt>output/works_citing{,_meta}/assessment=&lt;id&gt;/</tt>" }
+    key_messages_db@{ shape: lin-cyl, label: "Key + Background Messages DB<br/><tt>output/collection/key_messages/assessment=&lt;id&gt;/</tt>" }
+    refs_db@{ shape: lin-cyl, label: "References DB<br/><tt>output/collection/refs/assessment=&lt;id&gt;/</tt>" }
+    works_db@{ shape: lin-cyl, label: "OpenAlex Works DB (seed / key papers)<br/><tt>output/collection/works/assessment=&lt;id&gt;/</tt>" }
+    snowball_db@{ shape: lin-cyl, label: "Snowball DB (nodes / edges / keypaper)<br/><tt>output/collection/snowball/{nodes,edges,keypaper}/assessment=&lt;id&gt;/</tt>" }
+    citing_db@{ shape: lin-cyl, label: "Citing Works DB (mapping + metadata)<br/><tt>output/collection/works_citing{,_meta}/assessment=&lt;id&gt;/</tt>" }
   end
 
   subgraph scope["Evidence scope (no LLM call for naive_bm/complete_bm)"]
     direction TB
 
     llm_scope@{ shape: rect, label: "Match citing works per claim via evidence sub-chapter refs<br/>{5.4.1} → refs sm → seed dois → snowball edges → citing works<br/>(naive_bm/atomic_bm only — complete_bm has no per-sub-claim tokens to match)<br/><tt>[llm_candidate_scope_parquet]</tt>" }
-    llm_scope_db@{ shape: lin-cyl, label: "Candidate Scope DB<br/><tt>output/llm_candidate_scope/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    llm_scope_db@{ shape: lin-cyl, label: "Candidate Scope DB<br/><tt>output/factchecker/llm_candidate_scope/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
     llm_scope --> llm_scope_db
   end
@@ -58,57 +61,50 @@ flowchart TD
   works_db --> llm_scope
   snowball_db --> llm_scope
 
-  %% ⚠ PHASE 1 HAS TWO BACKENDS, chosen by `backend:` on the active nli config.
-  %% This diagram shows what the code RUNS; both paths exist today.
-  %% --
-  %% The NLI pool is the incumbent and is under challenge. Measured 2026-10-05
-  %% against refutations confirmed by three independent reviewers: AUC 0.50 for
-  %% REFUTES and 0.38 for SUPPORTS -- chance and below -- while Jev reached
-  %% 0.737 [0.63, 0.84] on the same rows. The slice the NLI routes on is also
-  %% DEPLETED of refutations relative to the buckets it discards.
-  %% --
-  %% Nothing has been swapped. Each backend writes its own nli_config= tree, so
-  %% they score the same rows side by side and the human review round decides.
-  %% See design_notes.md points 6 and 8.
-  subgraph nli_assessment["Phase 1 — classify each citing work against each BM claim"]
+  %% ══ PHASE 1 ══════════════════════════════════════════════════════════════
+  %% Citing works and key papers run through ONE chain, split by a keypaper=
+  %% hive partition rather than duplicated targets. keypaper= sits ABOVE
+  %% assessment= deliberately: consolidate_claim_scores() globs with a
+  %% $-anchored ".../assessment=/km=/bm=$" regex, which inserting a level
+  %% between those three would break silently.
+  subgraph phase1["Phase 1 — classify each work against each BM claim"]
     direction TB
 
     %% Nodes
-    nli_segment@{ shape: rect, label: "Segment each BM into claims — per granularity:<br/>naive_bm: evidence-delimited, one claim per sentence-group ending in a {ref} (+ a separate bm_label claim) — 2-17 claims per BM<br/>complete_bm: whole bm_description/bm_label as one claim each — 2 per BM (1 if identical)<br/>atomic_bm: split at EVERY evidence brace, then LLM-complete elliptical fragments into self-contained claims (confidence qualifiers extracted to their own column, same as naive_bm)<br/><tt>[nli_ready_evidence_parquet]</tt>" }
-    nli_ready_db@{ shape: lin-cyl, label: "NLI-Ready DB (claim × citing-work premise)<br/><tt>output/nli_ready_evidence/granularity=&lt;gran&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
-    nli_server@{ shape: cloud, label: "BACKEND A — RunPod NLI pool<br/>bge-m3-zeroshot-v2.0-c, or the fine-tune (nli_config=bge_m3_ft_ga1)<br/>3 forward passes per pair, cross-normalised<br/>GPU time · AUC 0.50 REFUTES / 0.38 SUPPORTS<br/><tt>external/runpod/docker/nli-runpod-bge-m3/</tt>" }
-    jev_server@{ shape: cloud, label: "BACKEND B — Jev decisions API<br/>typesafe/jev-1.13 · one Choice question per pair<br/>returns the 3-way distribution + confidence NATIVELY<br/>$1.43e-05/pair · no pod, no GPU<br/><tt>input/prompts/jev_claim_questions.json</tt>" }
-    nli_scoring@{ shape: rect, label: "Classify each citing work vs one BM claim<br/>premise = clean(title + abstract) · hypothesis = one BM claim<br/>→ SUPPORTS / REFUTES / NEI + full distribution<br/>one branch per claim; resumable at WORK granularity (delta dispatch)<br/>backend chosen by nli_config$backend — same output schema either way<br/><tt>[nli_claim_units_evidence -> ..._flat -> nli_scores_by_claim_evidence]</tt><br/><tt>score_one_claim() | score_one_claim_jev()</tt>" }
-    nli_consolidate@{ shape: rect, label: "Merge per-claim scratch files into one parquet per (km, bm)<br/>and prune rows whose claim_id is gone<br/><tt>[nli_scores_evidence_consolidated]</tt>" }
-    nli_scores_db@{ shape: lin-cyl, label: "NLI Scores DB<br/><tt>output/nli_scores_evidence/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    segment@{ shape: rect, label: "Segment each BM into claims — per granularity:<br/>naive_bm: evidence-delimited, one claim per sentence-group ending in a {ref} (+ a separate bm_label claim) — 2-17 claims per BM<br/>complete_bm: whole bm_description/bm_label as one claim each — 2 per BM (1 if identical)<br/>atomic_bm: split at EVERY evidence brace, then LLM-complete elliptical fragments into self-contained claims (confidence qualifiers extracted to their own column, same as naive_bm)<br/>then cross-join against each work's premise = clean(title + abstract)<br/><tt>[claim_work_pairs]</tt> · <tt>[claim_work_pairs_keypaper]</tt>" }
+    pairs_db@{ shape: lin-cyl, label: "Claim × Work Pairs DB<br/><tt>output/factchecker/claim_work_pairs/granularity=&lt;gran&gt;/keypaper=&lt;t|f&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    jev_server@{ shape: cloud, label: "Jev decisions API<br/>typesafe/jev-1.13 · POST /api/alpha/decisions<br/>three typed questions per pair — supports / contradicts / bears-on<br/>cross-normalised to (p_supports, p_refutes, p_nei)<br/>~$0.00005/pair · no pod, no GPU<br/><tt>input/prompts/jev_claim_questions.json</tt>" }
+    scoring@{ shape: rect, label: "Score each work against one BM claim<br/>premise = clean(title + abstract) · hypothesis = one BM claim<br/>→ SUPPORTS / REFUTES / NEI + full distribution<br/>one branch per claim; resumable at WORK granularity (delta dispatch)<br/><tt>[claim_units -> ..._flat -> claim_scores_by_claim]</tt><br/><tt>score_one_claim_jev()</tt>" }
+    consolidate@{ shape: rect, label: "Merge per-claim scratch files into one parquet per (km, bm)<br/>and prune rows whose claim_id is gone<br/><tt>[claim_scores_consolidated]</tt> · <tt>[claim_scores_keypaper_consolidated]</tt>" }
+    scores_db@{ shape: lin-cyl, label: "Claim Scores DB<br/><tt>output/factchecker/claim_scores/granularity=&lt;gran&gt;/scorer_config=&lt;cfg&gt;/keypaper=&lt;t|f&gt;/assessment=&lt;id&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
     %% Edges
-    nli_segment --> nli_ready_db
-    nli_ready_db --> nli_scoring
-    nli_server <--> nli_scoring
-    jev_server <--> nli_scoring
-    nli_scoring --> nli_consolidate
-    nli_consolidate --> nli_scores_db
+    segment --> pairs_db
+    pairs_db --> scoring
+    jev_server <--> scoring
+    scoring --> consolidate
+    consolidate --> scores_db
   end
 
-  %% Inputs to Phase 1: BM text, segmented into claims first, + citing works
-  %% (premise) joined against every claim independently.
-  key_messages_db --> nli_segment
-  citing_db --> nli_ready_db
+  %% Inputs to Phase 1: BM text, segmented into claims first, then joined
+  %% against citing works (keypaper=false) and seed papers (keypaper=true).
+  key_messages_db --> segment
+  citing_db --> pairs_db
+  works_db --> segment
+  snowball_db --> segment
 
-  %% The selected NLI profile determines model config AND output partition.
-  nli_active --> nli_scoring
+  %% The selected scorer profile determines model config AND output partition.
+  scorer_name --> scoring
 
   %% ══ RELEVANCE SCREEN ═════════════════════════════════════════════════════
-  %% Sits between the phases and is MISSING from earlier versions of this
-  %% diagram although it is a real target. It asks one cheap question per routed
-  %% pair -- does this paper bear on the claim at all? -- because
-  %% quote_is_verbatim() checks a quote EXISTS, never that it BEARS on the claim.
+  %% Sits between the phases. It asks one cheap question per routed pair --
+  %% does this paper bear on the claim at all? -- because quote_is_verbatim()
+  %% checks a quote EXISTS, never that it BEARS on the claim.
   subgraph screen["Relevance screen — scores, does NOT filter"]
     direction TB
 
     relevance@{ shape: rect, label: "One Jev question per routed pair<br/>typesafe/jev-1.13 · $0.0000172/pair<br/><tt>[relevance_screen]</tt> · <tt>[relevance_screen_keypaper]</tt>" }
-    relevance_db@{ shape: lin-cyl, label: "Relevance DB<br/><tt>output/llm_relevance/assessment=&lt;id&gt;/keypaper=&lt;t|f&gt;/</tt>" }
+    relevance_db@{ shape: lin-cyl, label: "Relevance DB<br/><tt>output/factchecker/llm_relevance/assessment=&lt;id&gt;/keypaper=&lt;t|f&gt;/</tt>" }
     relevance --> relevance_db
   end
 
@@ -126,104 +122,56 @@ flowchart TD
   %%    only shared context in state); until then these are chunk-level scores.
   %%    See design_notes.md point 6, Finding B.
 
-  subgraph llm_verification["Phase 2 — LLM verification of flagged pairs"]
+  subgraph llm_verification["Phase 2 — LLM verification"]
     direction TB
 
     %% Nodes
     llm_server@{ shape: cloud, label: "OpenRouter LLM<br/>(gpt-4o-mini / gemini-2.5-flash / gpt-5)" }
-    llm_verify@{ shape: rect, label: "Route NLI-scored pairs (label = REFUTES or SUPPORTS, certain only), tag each with direct_evidence_match from the candidate scope above<br/>then call the LLM per (claim, work) — every routed pair reviewed, none filtered — NLI label + confidence as prior<br/>→ SUPPORTS / REFUTES / NEI + verbatim quote, demoted to NEI if the quote is not actually in the premise<br/><tt>[llm_verification_parquet]</tt>" }
-    llm_scores_db@{ shape: lin-cyl, label: "LLM Verification Scores DB<br/><tt>output/llm_verification/scores/llm_config=&lt;cfg&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
+    llm_verify@{ shape: rect, label: "Route scored pairs (citing works: label = REFUTES or SUPPORTS, certain only; key papers: EVERY pair, no routing)<br/>tag each with direct_evidence_match from the candidate scope above<br/>then call the LLM per (claim, work) — every routed pair reviewed, none filtered — Phase 1 label + confidence as prior<br/>→ SUPPORTS / REFUTES / NEI + verbatim quote, demoted to NEI if the quote is not actually in the premise<br/><tt>[llm_verification_parquet]</tt> · <tt>[llm_verification_keypaper_parquet]</tt>" }
+    llm_scores_db@{ shape: lin-cyl, label: "LLM Verification Scores DB<br/><tt>output/factchecker/llm_verification/scores/llm_config=&lt;cfg&gt;/keypaper=&lt;t|f&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/km=&lt;km&gt;/bm=&lt;bm&gt;/</tt>" }
 
     %% Edges
     llm_server <--> llm_verify
     llm_verify --> llm_scores_db
   end
 
-  nli_scores_db --> relevance
+  scores_db --> relevance
   jev_server <--> relevance
   relevance_db -.->|"scored, not applied"| llm_verify
 
   %% Inputs to Phase 2: Phase 1's own flagged output, plus the candidate-scope
   %% match set (used to TAG, never to filter).
-  nli_scores_db --> llm_verify
+  scores_db --> llm_verify
   llm_scope_db --> llm_verify
   llm_active --> llm_verify
 
-
-  %% ══ KEY-PAPER QA CHAIN ═══════════════════════════════════════════════════
-  %% Moved in from the training project on 2026-10-05. It asks the inverse
-  %% question to the citing-works chain above: do the papers IPBES ITSELF cites
-  %% as evidence for a BM actually support it? A key paper IS that evidence, so
-  %% it should land overwhelmingly in SUPPORTS -- when it does not, that is the
-  %% signal worth chasing. Measured 2026-10-05: 77.8% of key papers confirmed
-  %% against 18.9% of citing works, on the same claims.
+  %% ══ KEY-PAPER QA ═════════════════════════════════════════════════════════
+  %% Not a separate chain any more -- keypaper=true is a partition level inside
+  %% both phases above. It asks the inverse question to the citing-works rows:
+  %% do the papers IPBES ITSELF cites as evidence for a BM actually support it?
+  %% A key paper IS that evidence, so it should land overwhelmingly in
+  %% SUPPORTS -- when it does not, that is the signal worth chasing. Measured
+  %% 2026-10-05: 77.8% of key papers confirmed against 18.9% of citing works,
+  %% on the same claims.
   %% --
-  %% Entirely separate roots from the chain above, deliberately: the two score
-  %% DIFFERENT pairs and must run, re-run and be deleted independently.
-  subgraph keypaper["Key-paper QA — does a BM's own cited evidence support it?"]
-    direction TB
-
-    kp_ready@{ shape: rect, label: "Same segmentation, premise from the SEED papers instead of citing works<br/><tt>[nli_ready_evidence_keypaper_parquet]</tt>" }
-    kp_ready_db@{ shape: lin-cyl, label: "Key-paper NLI-Ready DB<br/><tt>output/nli_ready_evidence_keypaper/granularity=&lt;gran&gt;/assessment=&lt;id&gt;/</tt>" }
-    kp_scoring@{ shape: rect, label: "Score every key paper against its own BM's claims<br/><tt>[nli_claim_units_evidence_keypaper -> nli_scores_keypaper_evidence -> ..._consolidated]</tt>" }
-    kp_scores_db@{ shape: lin-cyl, label: "Key-paper NLI Scores DB<br/><tt>output/nli_scores_evidence_keypaper/granularity=&lt;gran&gt;/nli_config=&lt;cfg&gt;/assessment=&lt;id&gt;/</tt>" }
-    kp_verify@{ shape: rect, label: "Phase 2 over EVERY key paper, irrespective of NLI label or confidence<br/>(no routing: a small, bounded, high-importance set)<br/><tt>[llm_verification_keypaper_parquet]</tt>" }
-    kp_scores_llm_db@{ shape: lin-cyl, label: "Key-paper LLM Verification DB<br/><tt>output/llm_verification/scores_keypaper/llm_config=&lt;cfg&gt;/assessment=&lt;id&gt;/nli_route=&lt;route&gt;/</tt>" }
-
-    kp_ready --> kp_ready_db
-    kp_ready_db --> kp_scoring
-    kp_scoring --> kp_scores_db
-    kp_scores_db --> kp_verify
-    kp_verify --> kp_scores_llm_db
-  end
-
-  key_messages_db --> kp_ready
-  works_db --> kp_ready
-  snowball_db --> kp_ready
-  nli_server <--> kp_scoring
-  jev_server <--> kp_scoring
-  nli_active --> kp_scoring
-  llm_server <--> kp_verify
-  llm_active --> kp_verify
+  %% keypaper = every paper tagged relation == "keypaper"; citing = citing AND
+  %% NOT keypaper, so the two sets are disjoint by definition and need no
+  %% de-duplication. 70% of GA1's key papers do cite another key paper, but
+  %% pro_snowball() gives each node one relation tag with keypaper winning.
 
   %% ══ GOLD STANDARD ════════════════════════════════════════════════════════
-  %% Human labels. Moved in with the key-paper chain; it used to gate
-  %% fine-tuning and the benchmark, and is kept because it is now the only
-  %% thing that can test the decision that removed them -- every other
-  %% comparison in this project is models judging models.
+  %% Human labels. It used to gate fine-tuning and the benchmark, and is kept
+  %% because it is now the only thing that can test the decision that removed
+  %% them -- every other comparison in this project is models judging models.
   gold_dir@{ shape: doc, label: "Blinded reviewer instruments + filled reviews<br/><tt>input/goldstandard/R{1,2}_&lt;id&gt;.csv</tt>" }
   gold@{ shape: rect, label: "Adjudicate R1 vs R2 → gold_&lt;id&gt;.csv<br/>agreement becomes gold; disagreement is the human ceiling (Cohen's kappa)<br/><tt>[goldstandard_dir -> goldstandard]</tt>" }
   gold_dir --> gold
 
   %% Where this arm's output goes.
   consumers@{ shape: doc, label: "Consumed by<br/><tt>workflow_reporting.mmd</tt> (funnels, QA)" }
-  nli_scores_db --> consumers
+  scores_db --> consumers
   llm_scores_db --> consumers
-  kp_scores_llm_db --> consumers
   gold --> consumers
-
-  %% Workflow-diagram navigation (shiny_app/) -- see workflow_main.mmd's own
-  %% block for why these are href-style click directives and how
-  %% shiny_app/R/mod_workflow.R intercepts them. Config/helper nodes
-  %% (config_file, purpose_fc, nli_active, llm_active, nli_server, jev_server, llm_server)
-  %% are deliberately left non-clickable. Nodes shown here but PRODUCED by the
-  %% collection project keep their original ids, so a click resolves to the same
-  %% metadata row regardless of which diagram it was clicked in.
-  click key_messages_db href "#!key_messages_db" "Key + Background Messages DB"
-  click refs_db href "#!refs_db" "References DB"
-  click works_db href "#!works_db" "OpenAlex Works DB"
-  click snowball_db href "#!snowball_db" "Snowball DB"
-  click citing_db href "#!citing_db" "Citing Works DB"
-  click llm_scope_db href "#!llm_scope_db" "Candidate Scope DB"
-  click nli_ready_db href "#!nli_ready_db" "NLI-Ready DB"
-  click nli_scores_db href "#!nli_scores_db" "NLI Scores DB"
-  click llm_scores_db href "#!llm_scores_db" "LLM Verification Scores DB"
-
-  click llm_scope href "#!llm_scope" "Match citing works per claim"
-  click nli_segment href "#!nli_segment" "Segment each BM into claims"
-  click nli_scoring href "#!nli_scoring" "Classify each citing work vs one BM claim"
-  click nli_consolidate href "#!nli_consolidate" "Consolidate per-claim NLI scores"
-  click llm_verify href "#!llm_verify" "Route + LLM-review flagged pairs"
 
   %% Styles
   classDef input_file  fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
@@ -234,8 +182,8 @@ flowchart TD
   classDef handoff     fill:#f5f3ff,stroke:#7c3aed,color:#3b0764,stroke-width:1.5px,stroke-dasharray:4 3;
 
   class config_file input_file;
-  class purpose_fc,nli_active,llm_active config;
-  class relevance_db,key_messages_db,refs_db,works_db,snowball_db,citing_db,llm_scope_db,nli_ready_db,nli_scores_db,llm_scores_db database;
-  class llm_scope,nli_segment,nli_scoring,nli_consolidate,llm_verify,relevance processing;
-  class nli_server,jev_server,llm_server helper;
+  class purpose_fc,scorer_name,llm_active config;
+  class relevance_db,key_messages_db,refs_db,works_db,snowball_db,citing_db,llm_scope_db,pairs_db,scores_db,llm_scores_db database;
+  class llm_scope,segment,scoring,consolidate,llm_verify,relevance processing;
+  class jev_server,llm_server helper;
   class consumers handoff;

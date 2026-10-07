@@ -24,7 +24,7 @@ library(ggplot2)
 #
 # Inlined rather than sourced from R/branch_helpers.R's granularity_suffix()/
 # nli_model_suffix(): quarto::quarto_render() runs this file in its own
-# fresh R session, which doesn't inherit _targets.R's lapply(source) of
+# fresh R session, which doesn't inherit _targets_collection.R's lapply(source) of
 # R/*.R -- this qmd has never sourced project R/ helpers (only library()
 # calls), so a one-line inline copy is more consistent than introducing
 # that pattern here.
@@ -32,7 +32,7 @@ gran_suffix <- paste0("_", params$granularity)
 model_suffix <- if (identical(params$scorer_name, "deberta_zeroshot")) "" else paste0("_", params$scorer_name)
 # file.path("output/reports", ...) rather than a bare name: the qmd source
 # lives in input/reports/, but the rendered .html gets moved to
-# output/reports/ by the _targets.R target after this chunk runs (Quarto
+# output/reports/ by the _targets_collection.R target after this chunk runs (Quarto
 # renders next to the input regardless of execute_dir) -- writing the
 # sidecar directly into its final home means it's already correctly a
 # sibling of the .html once that move happens.

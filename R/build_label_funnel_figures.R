@@ -2,7 +2,7 @@
 # breakdown faceted by KM, and a normalized per-BM variant). Reads the rds
 # produced by build_label_funnel_data() rather than re-collecting the raw
 # parquet, same convention as build_claim_scores_overview_figures().
-build_label_funnel_figures <- function(label_funnel_data_path, output_root = "output/figures") {
+build_label_funnel_figures <- function(label_funnel_data_path, output_root = out_reporting("figures")) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(label_funnel_data_path)
   assessment_id <- x$assessment

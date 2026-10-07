@@ -9,7 +9,7 @@ build_claim_scores_overview_data <- function(
   nli_scores_path,
   scorer_name,
   works_citing_path,
-  output_root = "output/tables",
+  output_root = out_reporting("tables"),
   nli_scores_by_claim = NULL, # unused — establishes the DAG dependency on scoring
   granularity = "naive_bm"
 ) {

@@ -37,7 +37,9 @@ build_claim_work_pairs_keypaper <- function(
   works_path,
   snowball_path,
   workers = 1L,
-  output_root = "output/claim_work_pairs_keypaper",
+  # Folded into the citing tree 2026-10-07: the caller appends the
+  # keypaper=true level, so this writes into output/claim_work_pairs/.
+  output_root = out_factcheck("claim_work_pairs/keypaper=true"),
   granularity = "naive_bm",
   completion_model = NULL
 ) {
@@ -59,7 +61,7 @@ build_claim_work_pairs_keypaper <- function(
     completion_cfg <- list(model = completion_model %||% "openai/gpt-4o-mini")
     completion_api_key <- Sys.getenv("API_openrouter")
     if (!nzchar(completion_api_key)) {
-      stop("API_openrouter environment variable is required for granularity = \"atomic_bm\" (set from keyring in _targets.R)")
+      stop("API_openrouter environment variable is required for granularity = \"atomic_bm\" (set from keyring in _targets_collection.R)")
     }
   }
 
@@ -233,7 +235,12 @@ build_claim_work_pairs_keypaper <- function(
     dataset = dplyr::bind_rows(results),
     path = output_root,
     format = "parquet",
-    partitioning = "assessment",
+    # km/bm were ordinary columns while this tree stood alone. They are
+    # partition levels now, to match the citing tree it merged into -- and
+    # because per-KM funnel reporting needs them prunable. GA1's 32 (km, bm)
+    # groups over 29,496 pairs is ~920 rows/file, nowhere near the
+    # footer-overhead regime the old one-file layout was avoiding.
+    partitioning = c("assessment", "km", "bm"),
     existing_data_behavior = "overwrite"
   )
 

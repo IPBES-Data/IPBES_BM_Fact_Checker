@@ -2,19 +2,19 @@
 # the `reports:` section of input/config.yaml.
 #
 # WHY THIS IS NOT A TARGET. tarchetypes::tar_quarto() resolves the project's
-# file list AND its dependency edges when _targets.R is SOURCED, not when the
+# file list AND its dependency edges when _targets_collection.R is SOURCED, not when the
 # target runs: tar_quarto_raw() calls tar_quarto_files() in its own body, and
 # tar_quarto_command() computes `deps <- map(sources, knitr_deps)` there too,
 # baking both into the target's command. A wrapper produced by an upstream
 # target would therefore contribute nothing on the run that created it -- no
-# source, no dependency edge. So generation runs in _targets.R's preamble,
+# source, no dependency edge. So generation runs in _targets_collection.R's preamble,
 # after R/ is sourced and before the pipeline list is built.
 #
 # Consequences of running at definition time, all handled below:
 #   * it runs on every tar_make()/tar_outdated()/tar_visnetwork(), so it must
 #     be cheap and IDEMPOTENT -- write_if_changed() leaves bytes and mtimes
 #     alone when nothing moved;
-#   * a failure here makes _targets.R unsourceable, so every validation error
+#   * a failure here makes _targets_collection.R unsourceable, so every validation error
 #     names exactly what is wrong in config.yaml;
 #   * it must PRUNE, or a report dropped from config would keep rendering.
 #
@@ -229,7 +229,7 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
   qmd_name <- entry[["qmd_name"]]
   dims <- spec$dims
 
-  assessments <- vapply(cfg$assessments, function(a) a$id, character(1))
+  assessments <- vapply(config_assessments(cfg), function(a) a$id, character(1))
   nli_configs <- cfg$nli$configs
 
   vals <- list()
@@ -357,7 +357,7 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
 
 #' Generate the wrapper .qmd files declared by config.yaml's `reports:` section
 #'
-#' Called from _targets.R's preamble. Idempotent: rewrites nothing when the
+#' Called from _targets_collection.R's preamble. Idempotent: rewrites nothing when the
 #' resulting content is unchanged, and prunes generated wrappers that the
 #' current config no longer asks for.
 # Writes EVERY entry's wrappers, into whichever directory its `project:`

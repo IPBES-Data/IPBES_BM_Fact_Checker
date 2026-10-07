@@ -57,7 +57,9 @@ consolidate_claim_scores <- function(
   # existed. See the groups filter below for why this is not optional.
   assessments = NULL,
   km = NULL,
-  max_prune_fraction = 0.5
+  max_prune_fraction = 0.5,
+  # Which chain's subtree to consolidate. See the roots below.
+  keypaper = FALSE
 ) {
   # ---- current (authoritative) claim list ---------------------------------
   cu <- Filter(Negate(is.null), claim_units)
@@ -85,8 +87,11 @@ consolidate_claim_scores <- function(
   # and (c) would leave its rows on disk forever.
   recs <- Filter(function(r) is.list(r) && !is.null(r$km), scored_records)
 
-  scratch_root <- file.path(output_root, ".scratch", paste0("scorer_config=", scorer_name))
-  disk_root <- file.path(output_root, paste0("scorer_config=", scorer_name))
+  # keypaper= sits ABOVE assessment=, so each chain gets its own disk and
+  # scratch root and the $-anchored groups_from() regex below is untouched.
+  kp_level <- paste0("keypaper=", tolower(as.character(isTRUE(keypaper))))
+  scratch_root <- file.path(output_root, ".scratch", paste0("scorer_config=", scorer_name), kp_level)
+  disk_root <- file.path(output_root, paste0("scorer_config=", scorer_name), kp_level)
 
   groups_from <- function(root) {
     if (!dir.exists(root)) {

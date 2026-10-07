@@ -101,7 +101,7 @@ zotero_item_to_row <- function(item, group_id) {
 download_zotero <- function(
   assessment,
   refs_path,
-  output_root = "output/zotero"
+  output_root = out_collection("zotero")
 ) {
   output_path <- branch_output_dir(output_root, assessment$id)
   group_id <- infer_zotero_group_id(refs_path)

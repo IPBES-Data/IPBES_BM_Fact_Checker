@@ -116,7 +116,7 @@ Three assessments available in ttl format are currently:
 #| label: td_doc_paths
 #| include: false
 
-# Rendered by the td_doc_html target (see _targets.R) from the TD_<name>.qmd
+# Rendered by the td_doc_html target (see _targets_collection.R) from the TD_<name>.qmd
 # design docs (each this report's format/layout block followed by its own
 # prose) and copied into the report's own _files/ sidecar so the links
 # below work in a distributed copy of the report too.
@@ -139,7 +139,7 @@ pipeline as it stands today.
 - [TD_formatting](`r td_doc_link("TD_formatting")`) — archived report design system
 
 The figures and tables in the Results section below are all produced by
-`targets` pipeline targets — see `_targets.R` and the corresponding
+`targets` pipeline targets — see `_targets_collection.R` and the corresponding
 `R/build_*.R` files for the exact computation behind each one.
 
 # Results
@@ -661,7 +661,7 @@ label_funnel_html_paths <- rendered_report_html(
 # naive_bm, is explicit now). Both segments can contain underscores
 # themselves, so the combined trailing blob is split by checking whether it
 # ENDS in one of the fixed, known granularity values (same list
-# _targets.R's own nli_granularities uses) rather than a naive underscore
+# _targets_collection.R's own nli_granularities uses) rather than a naive underscore
 # split, which would be ambiguous for e.g. "bge_m3_zeroshot_complete_bm".
 known_granularities <- c("naive_bm", "complete_bm", "atomic_bm")
 for (p in label_funnel_html_paths) {

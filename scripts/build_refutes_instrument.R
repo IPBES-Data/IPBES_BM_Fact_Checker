@@ -37,7 +37,7 @@ jev <- jev |> inner_join(sc, by = c("km","bm","claim_id","work_id"), relationshi
 # away two thirds of the draw -- a row with no usable abstract is not a
 # candidate at all (a reviewer cannot judge what they cannot read), so it must
 # not occupy a slot in the ranking.
-meta_all <- open_dataset(file.path("output/works_citing_meta", paste0("assessment=", ASSESSMENT))) |>
+meta_all <- open_dataset(file.path(out_collection("works_citing_meta"), paste0("assessment=", ASSESSMENT))) |>
   select(id, title, abstract, doi) |> collect() |> distinct(id, .keep_all = TRUE) |>
   filter(!is.na(abstract), nzchar(trimws(abstract)))
 jev <- jev |> inner_join(meta_all, by = c("work_id" = "id"))
@@ -48,7 +48,7 @@ pick <- function(d, n, lab) d |> arrange(desc(p_contradicts)) |> head(n) |> muta
 a <- pick(jev |> filter(!uncertain), N[["jev_top"]],      "jev_top")
 b <- pick(jev |> filter(uncertain),  N[["jev_unrouted"]], "jev_unrouted")
 
-ver <- open_dataset(file.path("output/llm_verification/scores",
+ver <- open_dataset(file.path(out_factcheck("llm_verification/scores"),
         "llm_config=openrouter_cheap", paste0("assessment=", ASSESSMENT))) |>
   filter(llm_label == "REFUTES") |> select(km, bm, claim_id, claim, work_id, nli_label, nli_confidence) |>
   collect() |> distinct(km, bm, claim_id, work_id, .keep_all = TRUE)

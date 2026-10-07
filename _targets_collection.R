@@ -93,13 +93,13 @@ list(
   # comment warned that they must be recounted whenever edges change, and
   # removing the reporting edges invalidated every one of them.
   tar_target(
-    mmd_workflow_main,
-    "input/mmd/workflow_main.mmd",
+    mmd_workflow_collection,
+    "input/mmd/workflow_collection.mmd",
     format = "file"
   ),
   tar_target(
-    diagram_workflow_main,
-    render_mmd(mmd_workflow_main),
+    diagram_workflow_collection,
+    render_mmd(mmd_workflow_collection),
     format = "file"
   ),
 
@@ -120,18 +120,14 @@ list(
   # extractions make this graph partial too.
   # Pipeline diagram — auto-generated from the live tar_mermaid() DAG (TD
   # layout, no status colours). Writes input/mmd/pipeline_nli.mmd.
-  tar_target(
-    r_files,
-    c("_targets.R", list.files("R", full.names = TRUE)),
-    format = "file"
-  ),
+  tar_target(targets_script, "_targets_collection.R", format = "file"),
   tar_target(
     pipeline_mmd,
-    build_pipeline_mmd(r_files, "input/mmd/pipeline_main.mmd"),
+    build_pipeline_mmd(targets_script, "input/mmd/pipeline_collection.mmd"),
     format = "file"
   ),
   tar_target(
-    diagram_pipeline_main,
+    diagram_pipeline_collection,
     render_mmd(pipeline_mmd),
     format = "file"
   ),
@@ -145,7 +141,7 @@ list(
   # Fine-grained config targets: each reads only its own section from config_file.
   # This means changing e.g. nli.host only invalidates scorer_config (and thus
   # nli_scores_parquet), not sparql_url, assessments_list, or any upstream target.
-  tar_target(sparql_url, yaml::read_yaml(config_file)[["sparql_url"]]),
+  tar_target(sparql_url, yaml::read_yaml(config_file)[["collection"]][["sparql_url"]]),
   tar_target(
     assessments_list,
     lapply(yaml::read_yaml(config_file)[["assessments"]], function(a) {
@@ -197,7 +193,7 @@ list(
       assessment,
       ttl_path,
       refs_sparql,
-      "output/refs"
+      out_collection("refs")
     ),
     pattern = map(assessment, ttl_path),
     format = "file"
@@ -242,7 +238,7 @@ list(
       assessment,
       ttl_path,
       key_messages_sparql,
-      "output/key_messages"
+      out_collection("key_messages")
     ),
     pattern = map(assessment, ttl_path),
     format = "file"
@@ -264,7 +260,7 @@ list(
   # Target 2e: Snowball search — citing/cited papers per assessment/km/bm
   tar_target(
     snowball_parquet,
-    build_snowball_parquet(assessment, works_parquet, "output/snowball"),
+    build_snowball_parquet(assessment, works_parquet, out_collection("snowball")),
     pattern = map(assessment, works_parquet),
     format = "file",
     # One assessment's OpenAlex fetch failing must not abort the others.
@@ -283,7 +279,7 @@ list(
       assessment,
       works_parquet,
       snowball_parquet,
-      "output/works_citing"
+      out_collection("works_citing")
     ),
     pattern = map(assessment, works_parquet, snowball_parquet),
     format = "file"

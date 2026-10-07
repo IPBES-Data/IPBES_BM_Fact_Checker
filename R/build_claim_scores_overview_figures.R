@@ -1,7 +1,7 @@
 # Figures for one assessment's NLI overview (label split overall/per-KM/
 # per-BM, confidence density, alignment density). Reads the rds produced by
 # build_claim_scores_overview_data() rather than re-collecting the raw parquet.
-build_claim_scores_overview_figures <- function(nli_overview_data_path, output_root = "output/figures") {
+build_claim_scores_overview_figures <- function(nli_overview_data_path, output_root = out_reporting("figures")) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(nli_overview_data_path)
   assessment_id <- x$assessment

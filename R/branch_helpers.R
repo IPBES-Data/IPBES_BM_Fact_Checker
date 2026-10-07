@@ -1,5 +1,52 @@
+# ---------------------------------------------------------------------------
+# OUTPUT ROOTS, one per targets project.
+#
+# output/ used to be a flat list of ~18 directories with no indication of which
+# pipeline owned which. These three helpers name the owner, so the layout
+# matches _targets.yaml's projects:
+#
+#   output/collection/   main       LoD refs key_messages zotero works
+#                                   snowball works_citing works_citing_meta
+#   output/factchecker/  factcheck  claim_work_pairs claim_scores
+#                                   llm_candidate_scope llm_relevance
+#                                   llm_verification claim_completion
+#   output/reporting/    reporting  tables figures
+#   output/reports/      reporting  the rendered site -- DELIBERATELY NOT under
+#                                   reporting/, because .github/workflows/
+#                                   deploy-pages.yml rsyncs it to the gh-pages
+#                                   root and moving it would publish tables/
+#                                   and figures/ too.
+#
+# Call these rather than writing "output/<root>/..." literally. They exist
+# because the same path formula had already been hand-rolled five separate
+# times across _targets_reporting.R and the Phase 2 builders, and the copies
+# drifted -- one of them silently read the wrong tree. A root is now one edit.
+#
+# NOTE for .qmd authors: Quarto renders in a fresh session that never sources
+# R/*.R, so report bodies keep plain literals. Same reason
+# _IPBES_Label_Funnel_Report_body.qmd inlines granularity_suffix().
+out_collection <- function(...) file.path("output/collection", ...)
+out_factcheck <- function(...) file.path("output/factchecker", ...)
+out_reporting <- function(...) file.path("output/reporting", ...)
+
+# The assessment list moved under `collection:` on 2026-10-07, so that
+# input/config.yaml groups by targets project the way output/ and _targets.yaml
+# now do. Read it through here rather than reaching into the structure: it was
+# accessed from six places, and a silent NULL would read as "no assessments"
+# -- every branched target would simply produce nothing, which looks like a
+# successful empty run rather than a broken config.
+config_assessments <- function(config) {
+  a <- config[["collection"]][["assessments"]]
+  if (is.null(a)) {
+    stop("input/config.yaml: no `collection: assessments:` block. It moved under ",
+         "`collection:` on 2026-10-07; a top-level `assessments:` is no longer read.",
+         call. = FALSE)
+  }
+  a
+}
+
 assessment_ids <- function(config) {
-  vapply(config$assessments, `[[`, character(1), "id")
+  vapply(config_assessments(config), `[[`, character(1), "id")
 }
 
 # Shared SUPPORTS/REFUTES/NOT_ENOUGH_INFO palette for every NLI-label figure
@@ -223,10 +270,10 @@ purpose_config <- function(cfg, purpose) {
 
   nli_name <- pick("nli", cfg[["nli"]][["configs"]])
   llm_name <- pick("llm", cfg[["llm_verification"]][["configs"]])
-  cc_name  <- pick("claim_completion", cfg[["nli"]][["claim_completion"]][["configs"]])
+  cc_name  <- pick("claim_completion", cfg[["claim_completion"]][["configs"]])
 
   ids <- as.character(unlist(p[["assessments"]], use.names = FALSE))
-  known_ids <- vapply(cfg[["assessments"]], `[[`, character(1), "id")
+  known_ids <- vapply(config_assessments(cfg), `[[`, character(1), "id")
   unknown <- setdiff(ids, known_ids)
   if (length(unknown)) {
     stop(sprintf(
@@ -248,7 +295,7 @@ purpose_config <- function(cfg, purpose) {
     nli                    = nli_name,
     llm                    = llm_name,
     claim_completion       = cc_name,
-    claim_completion_model = cfg[["nli"]][["claim_completion"]][["configs"]][[cc_name]][["model"]],
+    claim_completion_model = cfg[["claim_completion"]][["configs"]][[cc_name]][["model"]],
     finetune_enabled       = isTRUE(p[["finetune"]][["enabled"]]),
     downsample_seed        = p[["finetune"]][["downsample_seed"]]
   )
@@ -260,7 +307,7 @@ purpose_config <- function(cfg, purpose) {
 # nothing downstream.
 purpose_assessments_list <- function(cfg, purpose) {
   ids <- purpose_config(cfg, purpose)$assessments
-  out <- lapply(cfg[["assessments"]], function(a) a[setdiff(names(a), "full_text")])
+  out <- lapply(config_assessments(cfg), function(a) a[setdiff(names(a), "full_text")])
   out[vapply(out, `[[`, character(1), "id") %in% ids]
 }
 

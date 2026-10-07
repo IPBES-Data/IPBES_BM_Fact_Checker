@@ -29,7 +29,7 @@ build_label_funnel_data <- function(
   works_citing_meta_path,
   nli_scores_evidence_path,
   llm_verification_path,
-  output_root = "output/tables",
+  output_root = out_reporting("tables"),
   granularity = "naive_bm",
   scorer_name = "deberta_zeroshot"
 ) {

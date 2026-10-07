@@ -1,7 +1,8 @@
 # Multi-project targets configuration -- see TD_targets.qmd.
 #
-# `main` is the COLLECTION project and deliberately keeps the original
-# _targets/ store: a fresh store would make every target outdated, and
+# `collection` (named `main` until 2026-10-07) deliberately keeps the original
+# store -- renamed _targets/ -> _targets_collection/, which is a MOVE, not a
+# fresh store: a fresh store would make every target outdated, and
 # download_works() unlink()s its output before refetching while
 # build_snowball_parquet() has no existence check at all, so re-running them
 # would cost days of OpenAlex time AND produce a different corpus from the one
@@ -13,12 +14,19 @@
 # the gold standard -- moved into `factcheck`. See design_notes.md and the
 # `NLI_dirty` branch for the state before.
 #
-#   tar_make()                                    # collection (default)
+# THERE IS NO `main` PROJECT AND NO _targets.R ANY MORE, deliberately. A bare
+# tar_make() now fails with "script does not exist" instead of silently running
+# the one pipeline that re-downloads: download_works() and download_zotero()
+# unlink before refetching and build_snowball_parquet() has no existence check,
+# so an accidental run costs days of OpenAlex time and yields a DIFFERENT corpus
+# from the one every existing score was computed against. Name the project.
+#
+#   Sys.setenv(TAR_PROJECT = "collection"); tar_make()
 #   Sys.setenv(TAR_PROJECT = "reporting"); tar_make()
 #   tar_make(script = "_targets_reporting.R", store = "_targets_reporting")
-main:
-  script: _targets.R
-  store: _targets
+collection:
+  script: _targets_collection.R
+  store: _targets_collection
 factcheck:
   script: _targets_factcheck.R
   store: _targets_factcheck

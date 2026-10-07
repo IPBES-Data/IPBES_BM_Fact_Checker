@@ -8,80 +8,69 @@ flowchart TD
 
   %% OVERVIEW -- which MODEL runs at which step, and what each step costs.
   %% --
-  %% The per-project diagrams (workflow_main / _factcheck / _reporting) show
-  %% what each pipeline DOES. This one shows what each step COSTS and which
-  %% model does it, because the price ladder that decides where a screening
-  %% step belongs only makes sense side by side.
+  %% The per-project diagrams (workflow_collection / _factcheck / _reporting)
+  %% show what each pipeline DOES. This one shows what each step COSTS and
+  %% which model does it, because the price ladder that decides where a
+  %% screening step belongs only makes sense side by side.
   %% --
-  %%   zero-shot NLI   $0.0000036 /pair   labels everything
-  %%   Jev             $0.0000172 /pair   one typed question, calibrated score
-  %%   gpt-4o-mini     $0.000149  /pair   judges, quotes, gets quote-checked
+  %%   Jev          $0.00005  /pair   Phase 1: three typed questions, scored
+  %%   Jev (screen) $0.0000172/pair   one typed question, relevance only
+  %%   gpt-4o-mini  $0.000149 /pair   judges, quotes, gets quote-checked
   %% --
-  %% REWRITTEN 2026-10-05. The previous version said "Jev only pays off BETWEEN
-  %% the other two: screening ahead of the NLI would cost more than simply
-  %% running the NLI (~$42 vs ~$9 for GA1's cross-join)". That reasoning was
-  %% about price alone and is now contradicted by measurement: the NLI is at or
-  %% below CHANCE at the job, so $9 of it buys nothing to be cheaper than.
-  %% See design_notes.md points 6 and 8, and the `NLI_dirty` branch for the
-  %% architecture this replaced.
+  %% REWRITTEN 2026-10-07. Earlier versions of this file argued a swap that has
+  %% since happened: the zero-shot NLI pool was Phase 1 and Jev was a proposal.
+  %% Measured 2026-10-05 against refutations confirmed by three independent
+  %% reviewers, the NLI scored AUC 0.50 for REFUTES and 0.38 for SUPPORTS --
+  %% chance and below -- against Jev's 0.737 [0.63, 0.84]. The NLI backend,
+  %% its pool and its fine-tune are gone from this branch; they survive on
+  %% NLI_dirty. See design_notes.md points 3 and 5-8.
 
-  collect@{ shape: lin-cyl, label: "COLLECTION (main)<br/>LOD → refs → works → snowball → works_citing<br/>no models" }
+  collect@{ shape: lin-cyl, label: "COLLECTION<br/>LOD → refs → works → snowball → works_citing<br/>no models" }
 
   subgraph fc["FACT CHECKING — the deliverable (GA1)"]
     direction TB
-    fc_pairs@{ shape: lin-cyl, label: "claims × CITING WORKS<br/>2.43M pairs (GA1, atomic_bm)" }
-    fc_nli@{ shape: rect, label: "PHASE 1 — NLI (incumbent, under challenge)<br/>bge-m3-zeroshot-v2.0-c · $0.0000036/pair on an L4<br/>labels every pair SUPPORTS/REFUTES/NEI<br/>MEASURED: AUC 0.50 for REFUTES, 0.38 for SUPPORTS" }
-    fc_route@{ shape: hex, label: "route: REFUTES or SUPPORTS, certain only<br/>190,759 of 2.43M — and the routed slice is DEPLETED<br/>of refutations: 0.058% vs 0.693% in SUPPORTS-uncertain" }
-    fc_llm@{ shape: rect, label: "PHASE 2 — LLM verification<br/>openai/gpt-4o-mini · $0.000149/pair<br/>verdict + verbatim quote + quote_is_verbatim()<br/>reproduces only 53% of its OWN verdicts" }
+    fc_pairs@{ shape: lin-cyl, label: "claims × works, keypaper=&lt;true|false&gt;<br/>2.43M citing-work pairs + 29,511 key-paper pairs (GA1, atomic_bm)" }
+    fc_phase1@{ shape: rect, label: "PHASE 1 — Jev decisions API<br/>typesafe/jev-1.13 · ~$0.00005/pair · ~$121 for all of GA1<br/>three typed questions per pair, cross-normalised<br/>supports / contradicts / bears-on-the-claim<br/>→ (p_supports, p_refutes, p_nei) + confidence" }
+    fc_screen@{ shape: rect, label: "RELEVANCE SCREEN — scores, does NOT filter<br/>typesafe/jev-1.13 · $0.0000172/pair<br/>⚠ current scores are CHUNK-level, not per-paper<br/>(design_notes.md point 6, Finding B)" }
+    fc_route@{ shape: hex, label: "route — citing works: REFUTES or SUPPORTS, certain only<br/>key papers: FULL COVERAGE, no routing<br/>(a small, bounded, high-importance set)" }
+    fc_llm@{ shape: rect, label: "PHASE 2 — LLM verification<br/>openai/gpt-4o-mini · $0.000149/pair<br/>verdict + verbatim quote + quote_is_verbatim()" }
     fc_out@{ shape: lin-cyl, label: "llm_verification/scores → funnel reports" }
-    fc_pairs --> fc_nli --> fc_route --> fc_llm --> fc_out
-  end
-
-  subgraph kp["KEY-PAPER QA — the control, same project"]
-    direction TB
-    kp_pairs@{ shape: lin-cyl, label: "claims × KEY PAPERS<br/>29,511 pairs · the evidence IPBES itself cited" }
-    kp_nli@{ shape: rect, label: "PHASE 1 — same model, same pool" }
-    kp_llm@{ shape: rect, label: "PHASE 2 — FULL COVERAGE, no routing<br/>a small, bounded, high-importance set" }
-    kp_pairs --> kp_nli --> kp_llm
-  end
-
-  subgraph prop["PROPOSED PHASE 1 — Jev, or a self-hosted equivalent"]
-    direction TB
-    pr_jev@{ shape: rect, label: "THREE typed questions per pair, cross-normalised<br/>supports / contradicts / bears-on-the-claim<br/>→ the SAME (p_supports, p_refutes, p_nei) schema<br/>exactly what passes:3 already does for the zero-shot head<br/>~$120 for all of GA1" }
-    pr_alt@{ shape: rect, label: "OR a self-hostable open-weight model on the existing pool<br/>llama-3.1-8b measured AUC 0.648 [0.56, 0.73]<br/>removes the alpha-API dependency entirely" }
+    fc_pairs --> fc_phase1 --> fc_screen --> fc_route --> fc_llm --> fc_out
   end
 
   collect --> fc_pairs
-  collect --> kp_pairs
 
-  %% --
-  %% Why the swap is proposed at all. Measured on the 179 triple-positive rows
-  %% against refutations confirmed by three independent models.
-  fc_nli -.->|"REPLACED BY — AUC 0.737 [0.63,0.83] vs 0.529<br/>and 97.7% of candidates lie OUTSIDE the NLI's REFUTES label"| pr_jev
+  %% The key-paper control. Not a separate chain any more -- it is the
+  %% keypaper=true side of the same partition, run through the same two
+  %% phases. It asks the inverse question: do the papers IPBES ITSELF cited
+  %% as evidence for a BM actually support it? Measured 2026-10-05: 77.8% of
+  %% key papers confirmed against 18.9% of citing works, on the same claims.
+  control@{ shape: doc, label: "CONTROL: keypaper=true is the same pipeline<br/>on the evidence IPBES itself cited.<br/>77.8% confirmed vs 18.9% for citing works." }
+  fc_out -.-> control
 
+  %% Still open, and the reason routing is worth revisiting rather than
+  %% treating as settled: the routed slice is a small fraction of what was
+  %% scored, and nothing has ever judged the rest.
   subgraph nei["NEVER REVIEWED — the recall blind spot"]
     direction TB
-    fc_nei@{ shape: rect, label: "1,232,027 pairs the NLI called NOT_ENOUGH_INFO<br/>plus 688,534 it called SUPPORTS-uncertain<br/>no judge has ever looked at them<br/>yet they hold the HIGHEST rate of contradiction candidates" }
+    fc_nei@{ shape: rect, label: "The pairs Phase 1 calls NOT_ENOUGH_INFO or SUPPORTS-uncertain<br/>are never sent to a judge. Under the retired NLI that was<br/>1,232,027 + 688,534 pairs, holding the HIGHEST rate of<br/>contradiction candidates. Re-measure under Jev before<br/>trusting the routing filter." }
   end
-  fc_nli --> fc_nei
-  fc_nei -.->|"a Phase 1 that ranks would reach these"| pr_jev
+  fc_phase1 --> fc_nei
 
-  gate@{ shape: doc, label: "GATE: every number above comes from models judging models.<br/>Jev and the review panel on one side, the NLI alone on the other.<br/>input/goldstandard/ is what breaks that circularity — nothing<br/>here is a decision until the human round reports." }
-  pr_jev -.-> gate
-  pr_alt -.-> gate
+  gate@{ shape: doc, label: "GATE: every number above comes from models judging models.<br/>input/goldstandard/ is what breaks that circularity —<br/>nothing here is settled until the human round reports." }
+  fc_phase1 -.-> gate
+  fc_llm -.-> gate
 
-  classDef zeroshot fill:#bbf7d0,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
-  classDef llm      fill:#fed7aa,stroke:#ea580c,color:#7c2d12,stroke-width:1.5px;
   classDef jev      fill:#e9d5ff,stroke:#7c3aed,color:#3b0764,stroke-width:2px;
+  classDef llm      fill:#fed7aa,stroke:#ea580c,color:#7c2d12,stroke-width:1.5px;
   classDef data     fill:#fff3b0,stroke:#b45309,color:#111827,stroke-width:1.5px;
   classDef gate     fill:#ecfccb,stroke:#65a30d,color:#14532d,stroke-width:1px;
   classDef blind    fill:#fecaca,stroke:#dc2626,color:#7f1d1d,stroke-width:1.5px;
   classDef note     fill:#f5f3ff,stroke:#7c3aed,color:#3b0764,stroke-dasharray:4 3;
 
-  class fc_nli,kp_nli zeroshot;
-  class fc_llm,kp_llm llm;
-  class pr_jev,pr_alt jev;
-  class collect,fc_pairs,kp_pairs,fc_out data;
+  class fc_phase1,fc_screen jev;
+  class fc_llm llm;
+  class collect,fc_pairs,fc_out data;
   class fc_route gate;
   class fc_nei blind;
-  class gate note;
+  class gate,control note;

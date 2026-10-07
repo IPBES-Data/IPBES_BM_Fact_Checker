@@ -223,7 +223,7 @@ build_llm_relevance_screen <- function(
   keypaper,
   model = "typesafe/jev-1.13",
   questions_file = "input/prompts/jev_relevance_question.json",
-  output_root = "output/llm_relevance",
+  output_root = out_factcheck("llm_relevance"),
   api_key = Sys.getenv("API_openrouter"),
   batch_size = 20L,
   max_active = 12L

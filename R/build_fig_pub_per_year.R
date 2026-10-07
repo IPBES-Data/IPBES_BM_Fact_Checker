@@ -9,7 +9,7 @@
 # Each element's own root is "assessment=<id>", which Arrow does NOT surface
 # as a column when it's the dataset's own root (only discovered subdirectories
 # below it are) — so `assessment` is parsed back out of the path per element.
-build_fig_pub_per_year <- function(works_citing_path, output_root = "output/figures") {
+build_fig_pub_per_year <- function(works_citing_path, output_root = out_reporting("figures")) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   figname <- file.path(output_root, "fig_pub_per_year")
 

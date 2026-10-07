@@ -83,13 +83,20 @@ score_one_claim_jev <- function(
   scorer_config,
   scorer_name,
   scorer_model,
-  output_root = "output/claim_scores",
+  output_root = out_factcheck("claim_scores"),
   questions_file = "input/prompts/jev_claim_questions.json",
   api_key = Sys.getenv("API_openrouter"),
   max_active = 100L,
   # kept for signature stability; chunking by token budget is meaningless when
   # each request carries exactly one premise.
-  papers_per_request = 20L
+  papers_per_request = 20L,
+  # Which chain this is. A HIVE PARTITION LEVEL above assessment=, not a
+  # column, and not below assessment= -- consolidate_claim_scores() globs with a
+  # $-anchored "/assessment=/km=/bm=$" regex that an inserted level would break,
+  # and the two chains need separate .scratch roots because scratch files are
+  # named <claim_id>.parquet and would otherwise collide between a citing and a
+  # key-paper branch for the same claim.
+  keypaper = FALSE
 ) {
   cfg <- if (is.null(scorer_config)) list() else scorer_config
   assessment_id <- claim_unit$assessment
@@ -97,10 +104,11 @@ score_one_claim_jev <- function(
   model <- cfg$model %||% "typesafe/jev-1.13"
   uncertain_threshold <- as.numeric(cfg$uncertain_threshold %||% 0.60)
 
-  output_path <- file.path(output_root, paste0("scorer_config=", scorer_name),
+  kp_level <- paste0("keypaper=", tolower(as.character(isTRUE(keypaper))))
+  output_path <- file.path(output_root, paste0("scorer_config=", scorer_name), kp_level,
                            paste0("assessment=", assessment_id))
   bm_dir <- file.path(output_path, paste0("km=", claim_unit$km), paste0("bm=", claim_unit$bm))
-  scratch_dir <- file.path(output_root, ".scratch", paste0("scorer_config=", scorer_name),
+  scratch_dir <- file.path(output_root, ".scratch", paste0("scorer_config=", scorer_name), kp_level,
                            paste0("assessment=", assessment_id),
                            paste0("km=", claim_unit$km), paste0("bm=", claim_unit$bm))
   scratch_file <- file.path(scratch_dir, paste0(this_claim_id, ".parquet"))

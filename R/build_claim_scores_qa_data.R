@@ -24,7 +24,7 @@ build_claim_scores_qa_data <- function(
   works_citing_path,
   scorer_config,
   granularity,
-  output_root = "output/tables",
+  output_root = out_reporting("tables"),
   per_claim_cap = 50L,
   keypaper_scores_path = NULL,
   claim_scores_keypaper = NULL, # unused -- establishes the DAG dependency on the key-paper scoring chain, same convention as build_llm_verification_parquet()'s own claim_scores_by_claim argument

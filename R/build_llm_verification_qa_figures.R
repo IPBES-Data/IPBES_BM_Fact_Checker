@@ -11,7 +11,7 @@
 # R/build_claim_scores_qa_figures.R or claim_scores_qa_ternary_plot() -- same
 # "duplicate, don't call" discipline protecting Phase-1-adjacent
 # (explicitly locked) code from unrelated invalidation.
-build_llm_verification_qa_figures <- function(llm_verification_qa_data_path, output_root = "output/figures") {
+build_llm_verification_qa_figures <- function(llm_verification_qa_data_path, output_root = out_reporting("figures")) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(llm_verification_qa_data_path)
 

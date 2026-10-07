@@ -227,7 +227,7 @@ build_llm_candidate_scope_parquet <- function(
                      # convention as build_claim_scores_overview_data.R's nli_scores_path);
                      # establishes the DAG dependency only.
   claim_work_pairs,
-  output_root = "output/llm_candidate_scope",
+  output_root = out_factcheck("llm_candidate_scope"),
   nli_granularity = "naive_bm",
   completion_model = NULL
 ) {
@@ -269,7 +269,7 @@ build_llm_candidate_scope_parquet <- function(
     completion_cfg <- list(model = completion_model %||% "openai/gpt-4o-mini")
     completion_api_key <- Sys.getenv("API_openrouter")
     if (!nzchar(completion_api_key)) {
-      stop("API_openrouter environment variable is required for nli_granularity = \"atomic_bm\" (set from keyring in _targets.R)")
+      stop("API_openrouter environment variable is required for nli_granularity = \"atomic_bm\" (set from keyring in _targets_collection.R)")
     }
   }
 
@@ -372,7 +372,7 @@ build_llm_candidate_scope_parquet <- function(
   }
 
   # ---- 5. seed work -> citing work, via the existing snowball edges -------
-  edges_path <- file.path("output/snowball/edges", paste0("assessment=", assessment_id))
+  edges_path <- file.path(out_collection("snowball/edges"), paste0("assessment=", assessment_id))
   if (!dir.exists(edges_path)) {
     return(empty_result(sprintf("no snowball edges found at %s", edges_path)))
   }

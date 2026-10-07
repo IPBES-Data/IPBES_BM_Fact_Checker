@@ -630,7 +630,7 @@ build_claim_scores_bm_explorer <- function(raw, assessment_id) {
 # cat()-ed knit_print() call, so the widget rendered as an empty div with no
 # chart. saveWidget(selfcontained = TRUE) sidesteps that entirely by bundling
 # the JS inline in its own standalone page.
-save_claim_scores_bm_explorer <- function(nli_overview_data_path, output_root = "output/tables") {
+save_claim_scores_bm_explorer <- function(nli_overview_data_path, output_root = out_reporting("tables")) {
   x <- readRDS(nli_overview_data_path)
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   fn <- file.path(

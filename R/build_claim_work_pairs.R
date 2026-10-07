@@ -283,7 +283,7 @@ build_claim_work_pairs <- function(
   key_messages_parquet,
   works_citing_parquet,
   workers = 1L,
-  output_root = "output/claim_work_pairs",
+  output_root = out_factcheck("claim_work_pairs"),
   granularity = "naive_bm",
   completion_model = NULL
 ) {
@@ -327,7 +327,7 @@ build_claim_work_pairs <- function(
     completion_cfg <- list(model = completion_model %||% "openai/gpt-4o-mini")
     completion_api_key <- Sys.getenv("API_openrouter")
     if (!nzchar(completion_api_key)) {
-      stop("API_openrouter environment variable is required for granularity = \"atomic_bm\" (set from keyring in _targets.R)")
+      stop("API_openrouter environment variable is required for granularity = \"atomic_bm\" (set from keyring in _targets_collection.R)")
     }
   }
 

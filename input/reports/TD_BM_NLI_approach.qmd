@@ -179,7 +179,7 @@ MNLI — so `server.py`'s already-dynamic `_entailment_id()` (derived from
 `_model.config.label2id`, not hardcoded) needs no changes to serve either
 model; only a different `NLI_MODEL` build arg
 (`external/runpod/docker/nli-runpod/Dockerfile`) and a new image tag,
-`ghcr.io/rkrug/nli-runpod-bge-m3` (see `input/nli_pods_bge_m3.conf`).
+`ghcr.io/rkrug/nli-runpod-bge-m3` (see `deep_archive/2026-10-07_handwritten_pod_confs/nli_pods_bge_m3.conf`).
 
 Not yet built, provisioned, or run at the time this section was written —
 `bge_m3_zeroshot`'s `uncertain_threshold: 0.60` was carried over unverified

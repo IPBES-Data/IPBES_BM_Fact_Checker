@@ -5,7 +5,33 @@ Everything under `output/` is gitignored and reproducible from source via
 flow). This file tracks *which* of the following folders are still
 produced by the live pipeline, and which are dead leftovers safe to delete.
 
-## Active — produced by a live target in `_targets.R`
+## Layout — one folder per targets project (since 2026-10-07)
+
+`output/` used to be a flat list of ~18 directories with no indication of which
+pipeline owned which. It is now grouped to match `_targets.yaml`:
+
+| Folder | Project | Holds |
+|---|---|---|
+| `collection/` | `collection` | `LoD/` `refs/` `key_messages/` `zotero/` `works/` `snowball/` `works_citing/` `works_citing_meta/` |
+| `factchecker/` | `factcheck` | `claim_work_pairs/` `claim_scores/` `llm_candidate_scope/` `llm_relevance/` `llm_verification/` `claim_completion/` |
+| `reporting/` | `reporting` | `tables/` `figures/` |
+| `reports/` | `reporting` | the rendered site |
+| `config/` | — | **empty.** Held generated RunPod `.conf` files; the pod wrappers that wrote them went to `deep_archive/2026-10-07_runpod_pod_wrappers/` with the NLI backend |
+
+**`reports/` is deliberately NOT inside `reporting/`.**
+`.github/workflows/deploy-pages.yml` rsyncs `output/reports/` to the gh-pages
+root with `--delete`; nesting it would have published `tables/` and `figures/`
+alongside the site, or needed a new exclusion.
+
+In R code the roots are `out_collection()`, `out_factcheck()` and
+`out_reporting()` (`R/branch_helpers.R`) — call those rather than writing
+`"output/<root>/..."`, so the next move is one edit. `.qmd` bodies keep plain
+literals, because Quarto renders in a fresh session that never sources `R/*.R`.
+
+**Folder names in the tables below are relative to their project folder** —
+e.g. `claim_scores/` is `output/factchecker/claim_scores/`.
+
+## Active — produced by a live target in `_targets_collection.R`
 
 | Folder | Produced by | Contents |
 |---|---|---|
@@ -16,18 +42,18 @@ produced by the live pipeline, and which are dead leftovers safe to delete.
 | `works/` | `works_parquet` (`R/download_works.R`) | OpenAlex metadata for GA1-reference works, partitioned by assessment/km/bm |
 | `snowball/` | `snowball_parquet` (`R/build_snowball_parquet.R`) | Snowball search nodes/edges/keypaper, partitioned by assessment/km/bm/relation |
 | `works_citing/` | `works_citing_parquet` (`R/build_works_citing_parquet.R`) | Papers citing the seed works, partitioned by assessment/km/bm |
-| `nli_ready_evidence/` | `nli_ready_evidence_parquet` (`R/build_nli_ready_evidence_parquet.R`) | Work × BM-claim cross-join, evidence-reference segmentation (2-17 claims per BM) — the **active** segmentation approach |
-| `nli_scores_evidence/` | `nli_scores_by_claim_evidence` (`R/score_one_claim.R`) | SUPPORTS/REFUTES/NEI scores per citing work per claim — the **active** scoring output, feeds the report |
-| `llm_candidate_scope/` | `llm_candidate_scope_parquet` (`R/build_llm_candidate_scope_parquet.R`) | Per-claim citing-work allow-list for `subset: "sm"` configs — derived from IPBES's own sub-chapter evidence references, not from download/snowball/NLI directly. Partitioned by assessment/km/bm. Always computed; `subset: "all"` configs never read it |
+| `claim_work_pairs/` | `claim_work_pairs` (`R/build_claim_work_pairs.R`) | Work × BM-claim cross-join, evidence-reference segmentation (2-17 claims per BM) — the **active** segmentation approach |
+| `claim_scores/` | `claim_scores_by_claim` (`R/score_one_claim_jev.R`) | SUPPORTS/REFUTES/NEI scores per citing work per claim — the **active** scoring output, feeds the report |
+| `llm_candidate_scope/` | `llm_candidate_scope_parquet` (`R/build_llm_candidate_scope_parquet.R`) | Per-claim citing-work allow-list for `subset: "sm"` configs — derived from IPBES's own sub-chapter evidence references, not from download/snowball/Phase 1 directly. Partitioned by assessment/km/bm. Always computed; `subset: "all"` configs never read it |
 | `llm_verification/raw/` | `llm_verification_parquet` (`R/build_llm_verification_parquet.R`) | Phase 2's resumable per-pair JSON cache, one file per `(claim_id, work_id)`, partitioned by `model=<model>/prompt=<hash>` |
-| `llm_verification/scores/` | `llm_verification_parquet` (`R/build_llm_verification_parquet.R`) | Phase 2 LLM review of whichever NLI slice the active config's `nli_labels`/`nli_certainty` select (currently `REFUTES`+`SUPPORTS`, both `certain`, on every shipped config), optionally narrowed by `llm_candidate_scope/` — see [TD_NLI_LLM_two_phase.qmd](../TD_NLI_LLM_two_phase.qmd). Partitioned by `llm_config` (the selected `input/config.yaml` `llm_verification.configs` entry name)/`subset` (`all` or `sm`)/assessment/`nli_route` (that row's own outcome, e.g. `REFUTES-certain` or `SUPPORTS-certain` — one subdirectory per distinct outcome actually present, even within a single config call)/km/bm. Not yet merged into `nli_overview_data`/the main report's own tables, but consumed by the label funnel reports below |
+| `llm_verification/scores/` | `llm_verification_parquet` (`R/build_llm_verification_parquet.R`) | Phase 2 LLM review of whichever Phase 1 slice the active config's `nli_labels`/`nli_certainty` select (currently `REFUTES`+`SUPPORTS`, both `certain`, on every shipped config), optionally narrowed by `llm_candidate_scope/` — see [TD_NLI_LLM_two_phase.qmd](../TD_NLI_LLM_two_phase.qmd). Partitioned by `llm_config` (the selected `input/config.yaml` `llm_verification.configs` entry name)/`subset` (`all` or `sm`)/assessment/`nli_route` (that row's own outcome, e.g. `REFUTES-certain` or `SUPPORTS-certain` — one subdirectory per distinct outcome actually present, even within a single config call)/km/bm. Not yet merged into `claim_scores_overview_data`/the main report's own tables, but consumed by the label funnel reports below |
 | `tables/` | Several targets (see below) | Rendered DT/plotly HTML tables + their rds caches |
 | `figures/` | Several targets (see below) | Rendered PNG/SVG figures and Mermaid diagrams |
 | `reports/` | `report_output_dir` (`R/build_report_output_dir.R`) | The deployable site: `IPBES_Fact_Checker.html` + every `TD_*.html` + every `IPBES_REFUTES_Report_<id>.html`/`IPBES_SUPPORTS_Report_<id>.html`, each with its `_files/` sidecar, plus `index.html`/`.nojekyll`. Published to `gh-pages` by `.github/workflows/deploy-pages.yml` |
 
 `tables/` breakdown:
-- `nli_bm_explorer_<id>.html` (+ `_files/`) — interactive per-BM explorer (`build_nli_bm_explorer`)
-- `nli_overview_data_<id>.rds` — cached summary tables (`build_nli_overview_data`)
+- `claim_scores_bm_explorer_<id>.html` (+ `_files/`) — interactive per-BM explorer (`build_claim_scores_bm_explorer`)
+- `claim_scores_overview_data_<id>.rds` — cached summary tables (`build_claim_scores_overview_data`)
 - `overlap_key_paper.html`/`.rds` (+ `_files/`) — key-paper overlap table (`build_overlap_key_paper_table`)
 - `overlap_after_2018_sub_messages.html`/`.rds` (+ `_files/`) and `overlap_after_2018_background_messages.html`/`.rds` (+ `_files/`) — post-2018 citing-paper overlap tables
 - `refutes_funnel_data_<id>.rds` / `supports_funnel_data_<id>.rds` — cached label-funnel counts, one per (assessment, label) (`build_label_funnel_data`)
@@ -35,34 +61,35 @@ produced by the live pipeline, and which are dead leftovers safe to delete.
 
 `figures/` breakdown:
 - `fig_pub_per_year.{png,svg,pdf}` — publications-per-year by BM (`build_fig_pub_per_year`)
-- `nli_overview_plot_*_<id>.png` — per-assessment label/confidence/alignment plots (`build_nli_overview_figures`)
+- `claim_scores_overview_plot_*_<id>.png` — per-assessment label/confidence/alignment plots (`build_claim_scores_overview_figures`)
 - `fig_{refutes,supports}_funnel_overall_<id>.png` / `fig_{refutes,supports}_funnel_by_bm_<id>.png` / `fig_{refutes,supports}_funnel_by_bm_normalized_<id>.png` — each label funnel's overall, per-BM, and normalized-per-BM (each BM's own corpus = 1) charts (`build_label_funnel_figures`)
-- `workflow_nli.{png,svg}` / `pipeline_nli.{png,svg}` — active-approach diagrams (rendered from `input/mmd/workflow_nli.mmd` and the auto-generated `input/mmd/pipeline_nli.mmd`)
+- `workflow_{collection,factcheck,reporting}.{png,svg}`, `overview.{png,svg}` — hand-authored per-project diagrams
+- `pipeline_{collection,factcheck,reporting}.{png,svg}` — auto-generated from each project's live `tar_mermaid()` DAG
 
 ## Orphaned — no active target, safe to delete
 
-Nothing in the current `_targets.R` reads from or writes to these; their
+Nothing in the current `_targets_collection.R` reads from or writes to these; their
 source `.R` files exist on disk but were never wired into the pipeline
 (fulltext/resolved_sections), or they're leftovers from before a naming
 split (figures listed below).
 
 | Folder / files | Size (as of 2026-08-12) | Superseded by / why dead |
 |---|---|---|
-| `fulltext/` | 8.5G | `R/build_fulltext.R` — never wired into `_targets.R` |
-| `resolved_sections/` | 51M | `R/resolve_citations.R` — never wired into `_targets.R` |
-| `figures/pipeline.{png,svg}`, `figures/workflow.{png,svg}`, `figures/layout_handdrawn.png` | small | Leftovers from before the diagrams split into `_nli`/`_lm` variants — nothing references the bare names anymore |
+| `fulltext/` | 8.5G | `R/build_fulltext.R` — never wired into `_targets_collection.R` |
+| `resolved_sections/` | 51M | `R/resolve_citations.R` — never wired into `_targets_collection.R` |
+| `figures/pipeline.{png,svg}`, `figures/workflow.{png,svg}`, `figures/layout_handdrawn.png` | small | Leftovers from before the diagrams split per project — nothing references the bare names anymore |
 
 Already removed (documented here so it doesn't get "rediscovered" as a mystery later):
-- `nli_scores/` — deleted 2026-08-12. Was the per-sentence scoring chain's output (`nli_scores_by_claim`, now commented out in `_targets.R` since it's not consumed by the report — see that target's comment for the full story).
-- `sections/` — deleted 2026-09-15, and `sections_parquet`/`sections_sparql` commented out in `_targets.R` at the same time. DB2 (section content, partitioned by assessment). Nothing consumed it: no target took `sections_parquet` as an argument and no qmd read the dataset — its only ever consumer was the long-orphaned `R/resolve_citations.R` — so it cost a SPARQL extraction and Fuseki round trip per assessment on every rebuild for output nothing read. `R/write_sections_parquet.R` and `queries/sections.sparql` still exist; uncomment the block in `_targets.R` to bring it back.
-- `overlap_key_paper_files/` (at the `output/` root, not inside `output/tables/`) — deleted 2026-08-12. Stale duplicate from before the code settled on writing to `output/tables/`; the real one lives at `tables/overlap_key_paper_files/`.
+- `nli_scores/` — deleted 2026-08-12. Was the per-sentence scoring chain's output (`nli_scores_by_claim`, now commented out in `_targets_collection.R` since it's not consumed by the report — see that target's comment for the full story).
+- `sections/` — deleted 2026-09-15, and `sections_parquet`/`sections_sparql` commented out in `_targets_collection.R` at the same time. DB2 (section content, partitioned by assessment). Nothing consumed it: no target took `sections_parquet` as an argument and no qmd read the dataset — its only ever consumer was the long-orphaned `R/resolve_citations.R` — so it cost a SPARQL extraction and Fuseki round trip per assessment on every rebuild for output nothing read. `R/write_sections_parquet.R` and `queries/sections.sparql` still exist; uncomment the block in `_targets_collection.R` to bring it back.
+- `overlap_key_paper_files/` (at the `output/` root, not inside `output/reporting/tables/`) — deleted 2026-08-12. Stale duplicate from before the code settled on writing to `output/reporting/tables/`; the real one lives at `tables/overlap_key_paper_files/`.
 - `prompts/` (653M) — deleted 2026-08-17, along with the truth/citing-document LLM-comparison chain it belonged to (`R/build_prompts_truth_parquet.R`, `R/build_prompts_citing_parquet.R`, `R/build_alignement_scores_parquet.R`, `R/alignement_schema.R`, `R/build_alignement_parquet.R`, all removed). That chain was the once-"parked" planned Phase 2 of the NLI → LLM pipeline; it was replaced outright by `llm_verification/` (below) rather than un-parked — see [TD_LLM_approach.qmd](../TD_LLM_approach.qmd) for the design record and [TD_NLI_LLM_two_phase.qmd](../TD_NLI_LLM_two_phase.qmd) for what actually shipped.
 
 ## A gray area — active target, but a dead-end downstream
 
 | Folder | Status |
 |---|---|
-| `nli_ready/` | `nli_ready_parquet` (the per-sentence segmentation source) is **still an active, uncommented target** — `tar_make()` keeps it up to date. But its only consumer chain (`nli_claim_units` → `nli_claim_units_flat` → `nli_scores_by_claim`) is commented out, so as of 2026-08-12 this folder (2.7G) is being maintained for no downstream purpose. Not "orphaned" in the same sense as the table above — it's one decision away from either being pruned (comment out the whole chain) or resurrected (uncomment `nli_scores_by_claim`) — see that target's comment in `_targets.R` for context. |
+| `nli_ready/` | `nli_ready_parquet` (the per-sentence segmentation source) is **still an active, uncommented target** — `tar_make()` keeps it up to date. But its only consumer chain (`nli_claim_units` → `nli_claim_units_flat` → `nli_scores_by_claim`) is commented out, so as of 2026-08-12 this folder (2.7G) is being maintained for no downstream purpose. Not "orphaned" in the same sense as the table above — it's one decision away from either being pruned (comment out the whole chain) or resurrected (uncomment `nli_scores_by_claim`) — see that target's comment in `_targets_collection.R` for context. |
 
 ## Details
 
@@ -124,7 +151,7 @@ confidence text.
 | `km_description` | string | KM free text from `ipbes:hasDescription` |
 | `bm` | string | Background Message identifier |
 | `bm_label` | string | BM `skos:prefLabel` |
-| `bm_description` | string | BM free text — this is the **hypothesis text used throughout NLI/LLM scoring** (segmented into claims by `build_nli_ready_evidence_parquet.R`) |
+| `bm_description` | string | BM free text — this is the **hypothesis text used throughout Phase 1/Phase 2 scoring** (segmented into claims by `build_claim_work_pairs.R`) |
 | `bm_well_established` | string | BM confidence annotation from `ipbes:hasWellestablished` |
 | `bm_established_incomplete` | string | BM confidence annotation from `ipbes:hasEstablishedIncomplete` |
 | `sm_id` | string | Sub-Message identifier |
@@ -175,10 +202,10 @@ not Work objects):
 | `assessment`, `km`, `bm` | string | Assessment/KM/BM this edge was discovered under |
 | `edge_type` | string | Snowball edge type |
 
-### `nli_ready_evidence/`
+### `claim_work_pairs/`
 
-Built by `R/build_nli_ready_evidence_parquet.R`: one row per
-`(citing work × BM-claim)` pair, ready to be scored by NLI.
+Built by `R/build_claim_work_pairs.R`: one row per
+`(citing work × BM-claim)` pair, ready to be scored by Phase 1.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -190,20 +217,20 @@ Built by `R/build_nli_ready_evidence_parquet.R`: one row per
 | `abstract_tokens`, `sentence_tokens`, `approx_tokens` | int | Rough token-count estimates used for largest-first claim ordering and truncation awareness downstream |
 | `assessment`, `km`, `bm` | string | Assessment/KM/BM this pair belongs to |
 
-### `nli_scores_evidence/`
+### `claim_scores/`
 
-Built by `R/score_one_claim.R`: Phase 1 NLI verdict for each
-`(claim, work)` pair in `nli_ready_evidence/`.
+Built by `R/score_one_claim_jev.R`: Phase 1 NLI verdict for each
+`(claim, work)` pair in `claim_work_pairs/`.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `nli_model` | string | Name of the zero-shot NLI model that produced this score (health-checked common model across the RunPod pool) |
-| `sentence_number`, `sentence_source`, `claim`, `work_id` | — | Same meaning as in `nli_ready_evidence/` |
-| `label` | string | NLI verdict: `SUPPORTS`, `REFUTES`, or `NOT_ENOUGH_INFO` (argmax of the three probabilities) |
+| `scorer_model` | string | Name of the model that produced this score — `typesafe/jev-1.13` for live data. Retired `scorer_config=bge_m3_*` trees still on disk carry their own zero-shot/fine-tune names |
+| `sentence_number`, `sentence_source`, `claim`, `work_id` | — | Same meaning as in `claim_work_pairs/` |
+| `label` | string | Phase 1 verdict: `SUPPORTS`, `REFUTES`, or `NOT_ENOUGH_INFO` (argmax of the three probabilities) |
 | `p_supports`, `p_refutes`, `p_nei` | double | Full softmax probability distribution over the three labels |
 | `confidence` | double | Probability of the winning label (`max(p_supports, p_refutes, p_nei)`) |
 | `uncertain` | bool | `TRUE` when `confidence` falls below the configured certainty threshold |
-| `nli_config` | string | Name of the active `input/config.yaml` `nli.configs` entry used for this score |
+| *(no `nli_config` column)* | — | The scorer is the `scorer_config=` **partition level**, not a column |
 | `assessment`, `km`, `bm` | string | Assessment/KM/BM |
 | `claim_id` | string | `sprintf("%s-%02d", sentence_source, sentence_number)` — unique only *within* a `(km, bm)` pair, reused across different BMs (see `apply_candidate_scope()`'s handling of this in `R/build_llm_verification_parquet.R`) |
 
@@ -226,14 +253,14 @@ for that claim, rather than excluding it.
 ### `llm_verification/scores/`
 
 Built by `R/build_llm_verification_parquet.R`: Phase 2 LLM review of
-whichever NLI-scored pairs the active config's `nli_labels`/`nli_certainty`
+whichever Phase 1-scored pairs the active config's `nli_labels`/`nli_certainty`
 select.
 
 | Column | Type | Meaning |
 |---|---|---|
 | `llm_config` | string | Name of the active `input/config.yaml` `llm_verification.configs` entry |
 | `subset` | string | `"all"` or `"sm"` — whether `llm_candidate_scope/` narrowed the candidates for this config |
-| `nli_config` | string | Name of the Phase 1 `nli.configs` entry that produced the NLI scores being reviewed |
+| `nli_config` | string | Name of the Phase 1 `nli.configs` entry that produced the scores being reviewed |
 | `assessment`, `km`, `bm` | string | Assessment/KM/BM |
 | `nli_route` | string | This row's own outcome, `paste(nli_label, certain\|uncertain, sep = "-")`, e.g. `"REFUTES-certain"` — one value per row, not per config (a config selecting multiple labels/certainties fans out into multiple `nli_route` values) |
 | `claim_id` | string | Claim reviewed (paired with `km`/`bm` for uniqueness) |
@@ -251,7 +278,7 @@ select.
 | `quote_verbatim` | bool | `TRUE` if `quote` was verified (via `quote_is_verbatim()`) to actually occur in the premise text shown to the LLM |
 | `explanation` | string | LLM's free-text rationale |
 
-The sibling `output/llm_verification/raw/model=<model>/prompt=<hash>/`
+The sibling `output/factchecker/llm_verification/raw/model=<model>/prompt=<hash>/`
 directory (not partitioned the same way — see the Active table above) holds
 one resumable JSON cache file per `(claim_id, work_id)` pair, keyed by a
 sanitized version of `paste(claim_id, work_id, sep = "__")`; it is not a
@@ -271,9 +298,9 @@ TRUE` for every row — a 4th level would always equal the 3rd. A list with:
 | Field | Type | Meaning |
 |---|---|---|
 | `assessment` | string | Assessment ID |
-| `label` | string | Which NLI label this funnel is for — `"REFUTES"` or `"SUPPORTS"` |
-| `empty` | bool | `TRUE` if the snowball, NLI, or LLM verification stage hasn't produced output yet for this assessment |
-| `funnel_overall` | tibble | One row per level (`level1`..`level3`), with a human-readable `label` (e.g. `"NLI SUPPORTS (certain)"`) and the assessment-wide distinct-work count `n` — the sum of `funnel_by_bm`'s per-BM counts for that level, not a globally-deduped-across-BMs count |
+| `label` | string | Which Phase 1 label this funnel is for — `"REFUTES"` or `"SUPPORTS"` |
+| `empty` | bool | `TRUE` if the snowball, Phase 1, or LLM verification stage hasn't produced output yet for this assessment |
+| `funnel_overall` | tibble | One row per level (`level1`..`level3`), with a human-readable `label` (e.g. `"SUPPORTS (certain)"`) and the assessment-wide distinct-work count `n` — the sum of `funnel_by_bm`'s per-BM counts for that level, not a globally-deduped-across-BMs count |
 | `funnel_by_bm` | tibble | One row per `(km, bm)`, with `n1`..`n3` (distinct works at each level) and `pct_2of1`/`pct_3of2` (conversion rate between consecutive levels, `NA` when the denominator is 0) |
 | `level3_detail` | tibble | One row per `(km, bm, work_id, claim_id)` surviving to level 3 (`llm_agrees == TRUE`), with `claim`, `nli_confidence`, `quote`, `explanation`, `doi` — the source data for the level-3 DT table |
 
@@ -286,7 +313,7 @@ and DOI/OpenAlex link formatting.
 | Column | Type | Meaning |
 |---|---|---|
 | `km`, `bm` | factor | Cast to `factor` specifically so DT's `filter = "top"` renders them as `<select>` dropdowns |
-| `work` | string (HTML) | Clickable link to the work's DOI, or OpenAlex if no DOI exists — same `work_link()` convention as `nli_bm_explorer_html`'s drill-down table |
+| `work` | string (HTML) | Clickable link to the work's DOI, or OpenAlex if no DOI exists — same `work_link()` convention as `claim_scores_bm_explorer_html`'s drill-down table |
 | `claim` | string | Claim hypothesis text shown to the LLM |
 | `nli_confidence` | double | Phase 1's confidence for this pair, rounded to 3 d.p. |
 | `quote` | string | Verbatim quote the LLM cited as justification |

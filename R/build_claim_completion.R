@@ -14,7 +14,7 @@
 #
 # Reuses build_llm_verification_chat()/load_text_file()/render_template()
 # from R/build_llm_verification_parquet.R rather than duplicating them --
-# both files are sourced into the same environment by _targets.R's
+# both files are sourced into the same environment by _targets_collection.R's
 # lapply(list.files("R", ...), source), same convention every other R/*.R
 # file in this project relies on for cross-file helpers.
 
@@ -100,7 +100,7 @@ complete_bm_fragments <- function(
   confidence = NA_character_,
   system_prompt_file = "input/prompts/claim_completion_system.md",
   user_prompt_file = "input/prompts/claim_completion_user.md",
-  cache_dir = "output/claim_completion/raw"
+  cache_dir = out_factcheck("claim_completion/raw")
 ) {
   # `confidence` (e.g. "well established", from segment_bm_atomic()'s own
   # extraction) is pure passthrough metadata here -- never shown to the LLM,

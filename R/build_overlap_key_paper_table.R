@@ -6,7 +6,7 @@
 #
 # works_path arrives as a vector — one directory per assessment branch
 # (works_parquet is pattern = map(assessment, ...) upstream).
-build_overlap_key_paper_table <- function(works_path, output_root = "output/tables") {
+build_overlap_key_paper_table <- function(works_path, output_root = out_reporting("tables")) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   fn_rds  <- file.path(output_root, "overlap_key_paper.rds")
   fn_html <- file.path(output_root, "overlap_key_paper.html")

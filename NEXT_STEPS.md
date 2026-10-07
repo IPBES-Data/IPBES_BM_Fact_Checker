@@ -75,7 +75,7 @@ Segmentation rule:
    metadata, not part of the assertion), but consider **retaining them separately** — the section
    numbers could later be joined against `sections_parquet` (**disabled 2026-09-15** because
    nothing consumed it — this idea is the one thing that would justify uncommenting it in
-   `_targets.R`; see that block) to fetch the actual backing text,
+   `_targets_collection.R`; see that block) to fetch the actual backing text,
    grounding a premise = citing-work-abstract vs. hypothesis = assessment-claim comparison in the
    specific evidence the authors cited. Note the reference content is heterogeneous (`{box 2.6;
    4.6}`, `{table 4.33}`, `{Figure …}`, mixing `,` and `;` separators), so that later join must

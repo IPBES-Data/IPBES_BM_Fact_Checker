@@ -1,5 +1,5 @@
 # READ-ONLY audit for Phase 1 (NLI scoring) output — NOT wired into
-# _targets.R as a target.
+# _targets_collection.R as a target.
 #
 # Orphaned claims (a since-changed segmentation boundary, a renumbered
 # sentence, ...) are now pruned automatically by consolidate_claim_scores()
@@ -21,7 +21,7 @@
 # One (assessment, granularity, scorer_config) combination. nli_ready_path and
 # nli_scores_path are the same assessment-scoped directories the pipeline
 # itself uses (see claim_work_pairs / claim_scores_by_claim
-# in _targets.R) — pass them in already resolved, same convention as the
+# in _targets_collection.R) — pass them in already resolved, same convention as the
 # rest of R/build_*.R.
 find_orphaned_claim_scores <- function(nli_ready_path, nli_scores_path) {
   empty <- dplyr::tibble(
@@ -102,7 +102,7 @@ find_orphaned_claim_scores_all <- function(
   nli_granularities = c("naive_bm", "complete_bm", "atomic_bm")
 ) {
   cfg <- yaml::read_yaml(config_path)
-  assessment_ids <- vapply(cfg[["assessments"]], `[[`, character(1), "id")
+  assessment_ids <- vapply(config_assessments(cfg), `[[`, character(1), "id")
   scorer_name <- purpose_config(cfg, "fact_checking")$nli
   scorer_configs_all <- cfg[["nli"]][["configs"]]
 
@@ -117,13 +117,18 @@ find_orphaned_claim_scores_all <- function(
     granularity   <- combos$granularity[[i]]
     nli_config_name <- nli_config_for_granularity(scorer_configs_all, granularity, scorer_name)
 
+    # Both pinned to keypaper=false. This function reports -- and with
+    # delete = TRUE removes -- scores whose pair is absent from the premise
+    # corpus. Comparing a citing pair list against the MERGED scores tree would
+    # mark every key-paper score an orphan and invite deleting the lot.
     nli_ready_path <- file.path(
-      "output/claim_work_pairs", paste0("granularity=", granularity),
-      paste0("assessment=", assessment_id)
+      out_factcheck("claim_work_pairs"), paste0("granularity=", granularity),
+      "keypaper=false", paste0("assessment=", assessment_id)
     )
     nli_scores_path <- file.path(
-      "output/claim_scores", paste0("granularity=", granularity),
-      paste0("scorer_config=", nli_config_name), paste0("assessment=", assessment_id)
+      out_factcheck("claim_scores"), paste0("granularity=", granularity),
+      paste0("scorer_config=", nli_config_name), "keypaper=false",
+      paste0("assessment=", assessment_id)
     )
 
     out <- find_orphaned_claim_scores(nli_ready_path, nli_scores_path)

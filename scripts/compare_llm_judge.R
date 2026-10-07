@@ -36,7 +36,7 @@ suppressMessages({library(dplyr); library(arrow); library(httr2); library(jsonli
 n_pairs <- as.integer(commandArgs(trailingOnly = TRUE)[1] %||% "200")
 if (is.na(n_pairs)) n_pairs <- 200L
 model <- "typesafe/jev-1.13"
-out_path <- "output/tables/llm_judge_comparison.parquet"
+out_path <- out_reporting("tables/llm_judge_comparison.parquet")
 
 key <- keyring::key_get("API_openrouter")
 

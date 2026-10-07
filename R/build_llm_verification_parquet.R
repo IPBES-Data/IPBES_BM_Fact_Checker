@@ -349,8 +349,12 @@ build_llm_verification_parquet <- function(
   # labels, because a wrongly dropped pair is never reviewed and leaves no trace.
   relevance_path = NULL,
   relevance_threshold = NULL,
-  cache_dir = "output/llm_verification/raw",
-  output_root = "output/llm_verification/scores"
+  cache_dir = out_factcheck("llm_verification/raw"),
+  output_root = out_factcheck("llm_verification/scores"),
+  # Which chain this is -- a hive level between llm_config= and assessment=, so
+  # each chain owns a disjoint subtree and the unconditional unlink() below can
+  # never delete the other chain's verified rows.
+  keypaper = FALSE
 ) {
   assessment_id <- assessment$id
 
@@ -367,6 +371,7 @@ build_llm_verification_parquet <- function(
   # rewritten each call (below), and what's returned as this target's value.
   output_path <- file.path(
     output_root, paste0("llm_config=", llm_active),
+    paste0("keypaper=", tolower(as.character(isTRUE(keypaper)))),
     paste0("assessment=", assessment_id)
   )
 
@@ -382,8 +387,10 @@ build_llm_verification_parquet <- function(
   # been run for real before that was caught (output/llm_verification/raw
   # and scores/ didn't exist on disk until then).
   nli_scores_path <- file.path(
-    "output/claim_scores", paste0("granularity=", granularity),
-    paste0("scorer_config=", scorer_name), paste0("assessment=", assessment_id)
+    out_factcheck("claim_scores"), paste0("granularity=", granularity),
+    paste0("scorer_config=", scorer_name),
+    paste0("keypaper=", tolower(as.character(isTRUE(keypaper)))),
+    paste0("assessment=", assessment_id)
   )
 
   candidates <- select_llm_verification_candidates(
@@ -417,7 +424,7 @@ build_llm_verification_parquet <- function(
 
   api_key <- Sys.getenv("API_openrouter")
   if (!nzchar(api_key)) {
-    stop("API_openrouter environment variable is required (set from keyring in _targets.R)")
+    stop("API_openrouter environment variable is required (set from keyring in _targets_collection.R)")
   }
 
   system_prompt <- load_text_file(system_prompt_file)

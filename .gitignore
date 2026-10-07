@@ -104,3 +104,7 @@ input/ai_refutes_probe/.cache/
 input/ai_filter_comparison/.cache/
 .github/instructions/mermaid.instructions.md
 .github/copilot-instructions.md
+
+# Rollback copy of the pre-fold key-paper trees (scripts/migrate_keypaper_fold.R).
+# Kept on disk for rollback, never committed.
+.premigration_keypaper_fold/

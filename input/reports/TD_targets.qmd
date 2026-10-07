@@ -20,7 +20,7 @@ that respect** — it does not describe the `claim_work_pairs` →
 `claim_units` → `claim_scores_by_claim` chain, or the
 downstream `nli_overview_data`, `nli_overview_figures`, `nli_bm_explorer_html`,
 `reports_project`, and `report_fact_checker` targets, all of which exist and run
-today. See `_targets.R` and [CLAUDE.md](CLAUDE.md)'s R-files table for the
+today. See `_targets_collection.R` and [CLAUDE.md](CLAUDE.md)'s R-files table for the
 current, authoritative target list.
 
 ## Overview
@@ -42,7 +42,7 @@ that used to rest on remembering `shortcut = TRUE`.
 
 | Project | Script / store | Holds | Credentials |
 |---|---|---|---|
-| `main` | `_targets.R` / `_targets/` | collection: LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
+| `main` | `_targets_collection.R` / `_targets_collection/` | collection: LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
 | `factcheck` | `_targets_factcheck.R` / `_targets_factcheck/` | citing works → NLI (Phase 1) → LLM verification (Phase 2); **also** the key-paper QA chain and the gold standard | `API_openrouter` |
 | `reporting` | `_targets_reporting.R` / `_targets_reporting/` | everything else that renders | **none** |
 
@@ -88,12 +88,12 @@ targets::tar_outdated()
 targets::tar_load(refs_parquet)
 ```
 
-`main` deliberately keeps the **original** `_targets/` store. A fresh store
+`main` deliberately keeps the **original** `_targets_collection/` store. A fresh store
 would make every target outdated by definition, and `download_works()`
 `unlink()`s its output before refetching while `build_snowball_parquet()` has no
 existence check at all — re-running them would cost days of OpenAlex time *and*
 produce a different corpus from the one every existing score was computed
-against. Targets were therefore *deleted from* `_targets.R` as they moved out.
+against. Targets were therefore *deleted from* `_targets_collection.R` as they moved out.
 
 Each consumer declares the upstream outputs it reads as `format = "file"`
 targets **keeping the producing project's target names**, so the moved targets
@@ -261,7 +261,7 @@ no longer a single DAG to draw, so each project renders its own:
 `build_pipeline_mmd()` depicts whatever graph it is run inside. These can be
 combined into one overview later.
 
-#### `main` — collection (`_targets.R`)
+#### `main` — collection (`_targets_collection.R`)
 
 ![Pipeline: main](../../output/figures/pipeline_main.png)
 
@@ -429,7 +429,7 @@ expensive actually rebuilds.
 
 ## Target 0: `assessment` — Assessment Specs
 
-**Source:** `_targets.R`
+**Source:** `_targets_collection.R`
 
 Creates a named list of assessment specifications from `assessments_list`. Each element gains an `index` field used for deterministic Fuseki port assignment. Branch names are the assessment IDs — adding a new assessment creates a new branch without invalidating existing ones.
 
@@ -449,14 +449,14 @@ Returns a character vector of local TTL file paths (`format = "file"`).
 
 ## Target 2a: `refs_parquet` — DB1
 
-**Source:** `R/write_refs_parquet.R` → `build_refs_parquet(sparql_url, assessment, ttl_path, refs_sparql, "output/refs")`
+**Source:** `R/write_refs_parquet.R` → `build_refs_parquet(sparql_url, assessment, ttl_path, refs_sparql, "output/collection/refs")`
 
 Builds the refs dataset for one assessment branch and writes to `output/refs/assessment=<id>/`. When `sparql_url: fuseki`, starts a local Fuseki session, POSTs the TTL into the named graph, runs the SPARQL query, and stops Fuseki on exit.
 
 ### Reading DB1
 
 ```r
-arrow::open_dataset("output/refs") |>
+arrow::open_dataset("output/collection/refs") |>
   dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
   dplyr::collect()
 ```
@@ -481,7 +481,7 @@ arrow::open_dataset("output/refs") |>
 ::: {.callout-warning}
 ## Disabled 2026-09-15 — no longer part of the pipeline
 
-`sections_parquet` and `sections_sparql` are commented out in `_targets.R`, and
+`sections_parquet` and `sections_sparql` are commented out in `_targets_collection.R`, and
 `output/sections/` has been deleted. Nothing consumed the dataset: no target
 took `sections_parquet` as an argument and no `.qmd` read it — its only ever
 consumer was `R/resolve_citations.R`, itself long orphaned — so it cost a SPARQL
@@ -489,7 +489,7 @@ extraction and Fuseki round trip per assessment on every rebuild for output
 nothing read.
 
 `R/write_sections_parquet.R` and `queries/sections.sparql` both still exist.
-Re-enabling is uncommenting the block in `_targets.R`. The description below is
+Re-enabling is uncommenting the block in `_targets_collection.R`. The description below is
 kept as a record of what it produced.
 :::
 
@@ -519,14 +519,14 @@ arrow::open_dataset("output/sections") |>
 
 ## Target 2b2: `key_messages_parquet` — DB3
 
-**Source:** `R/write_key_messages_parquet.R` → `build_key_messages_parquet(sparql_url, assessment, ttl_path, key_messages_sparql, "output/key_messages")`
+**Source:** `R/write_key_messages_parquet.R` → `build_key_messages_parquet(sparql_url, assessment, ttl_path, key_messages_sparql, "output/collection/key_messages")`
 
 Builds the key/background/sub-messages dataset for one assessment branch. Written to `output/key_messages/assessment=<id>/`.
 
 ### Reading DB3
 
 ```r
-arrow::open_dataset("output/key_messages") |>
+arrow::open_dataset("output/collection/key_messages") |>
   dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
   dplyr::collect()
 ```
@@ -564,7 +564,7 @@ Reads DOIs from the Zotero branch, fetches OpenAlex works with `openalexPro::pro
 ### Reading DB4
 
 ```r
-arrow::open_dataset("output/works") |>
+arrow::open_dataset("output/collection/works") |>
   dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
   dplyr::select(id, doi, title) |>
   dplyr::collect()
@@ -585,7 +585,7 @@ arrow::open_dataset("output/works") |>
 
 ## Target 2e: `snowball_parquet` — Snowball Search
 
-**Source:** `R/build_snowball_parquet.R` → `build_snowball_parquet(assessment, works_parquet, "output/snowball")`
+**Source:** `R/build_snowball_parquet.R` → `build_snowball_parquet(assessment, works_parquet, "output/collection/snowball")`
 
 For each assessment branch, iterates over all km/bm combinations in `works_parquet` and calls `openalexSnowball::pro_snowball()` to retrieve all papers that cite or are cited by the seeds. Writes to three shared parquet roots:
 
@@ -596,7 +596,7 @@ For each assessment branch, iterates over all km/bm combinations in `works_parqu
 ### Reading
 
 ```r
-arrow::open_dataset("output/snowball/nodes") |>
+arrow::open_dataset("output/collection/snowball/nodes") |>
   dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
   dplyr::select(id, doi, title, relation) |>
   dplyr::collect()
@@ -630,14 +630,14 @@ arrow::open_dataset("output/snowball/nodes") |>
 
 ## Target 2f: `works_citing_parquet` — Citing Works
 
-**Source:** `R/build_works_citing_parquet.R` → `build_works_citing_parquet(assessment, snowball_parquet, "output/works_citing")`
+**Source:** `R/build_works_citing_parquet.R` → `build_works_citing_parquet(assessment, snowball_parquet, "output/collection/works_citing")`
 
 Copies snowball nodes with `relation == "citing"` into `output/works_citing/assessment=<id>/km=<km>/bm=<bm>/`. File-copy approach is required because OpenAlex's nested struct columns can have inconsistent schemas across km/bm partitions.
 
 ### Reading
 
 ```r
-arrow::open_dataset("output/works_citing") |>
+arrow::open_dataset("output/collection/works_citing") |>
   dplyr::filter(assessment == "GA1", km == "A.", bm == "A1") |>
   dplyr::select(id, doi, title, publication_year) |>
   dplyr::collect()
@@ -907,7 +907,7 @@ every row — a 4th level would always equal the 3rd, never narrowing
 anything further.
 
 `build_label_funnel_data(assessment, target_label, ..., granularity)` is
-one shared implementation called twice from `_targets.R` — once with
+one shared implementation called twice from `_targets_collection.R` — once with
 `target_label = "REFUTES"` (target `refutes_funnel_data`), once with
 `"SUPPORTS"` (target `supports_funnel_data`) — rather than two
 near-identical copies. Each branches over `pattern = cross(map(assessment,
@@ -995,7 +995,7 @@ Switching backends is a one-line change in `input/config.yaml` (`sparql_url:`).
 
 ## Orphaned / Deprecated Source Files
 
-Not wired into the current `_targets.R`; kept for reference:
+Not wired into the current `_targets_collection.R`; kept for reference:
 
 - `R/build_fulltext.R` — legacy Grobid XML / PDF download for citing works
 - `R/resolve_citations.R` — replace `(Author, Year)` with OpenAlex W-IDs in section content
@@ -1004,7 +1004,7 @@ Not wired into the current `_targets.R`; kept for reference:
 
 - All parquet targets are assessment-branched; there is no cached combined object.
 - Each assessment branch rewrites only its own partition directory.
-- Credentials (`API_openalex`, `API_openrouter`) are read from the macOS keyring by `_targets.R` at session start via `keyring::key_get()`.
+- Credentials (`API_openalex`, `API_openrouter`) are read from the macOS keyring by `_targets_collection.R` at session start via `keyring::key_get()`.
 
 ## Required R Packages
 

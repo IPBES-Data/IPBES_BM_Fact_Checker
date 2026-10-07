@@ -3,7 +3,7 @@
 # produced by build_claim_scores_qa_data() rather than re-collecting the raw
 # parquet -- same convention as
 # build_claim_scores_overview_figures.R/build_label_funnel_figures.R.
-build_claim_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = "output/figures") {
+build_claim_scores_qa_figures <- function(nli_scores_qa_data_path, output_root = out_reporting("figures")) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(nli_scores_qa_data_path)
 

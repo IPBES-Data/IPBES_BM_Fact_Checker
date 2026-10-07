@@ -10,28 +10,28 @@ We use snowballing to identify the literature. The key-papers are the publicatio
 
 ## Building
 
-The work is split across **four** [`targets`](https://books.ropensci.org/targets/)
+The work is split across **three** [`targets`](https://books.ropensci.org/targets/)
 projects, defined in `_targets.yaml`. Each has its own script and its own store,
-so rendering a report can no longer reach a target that spends GPU time or API
-credit:
+so rendering a report can no longer reach a target that spends API credit:
 
 | Project | Holds | Credentials |
 |---|---|---|
-| `main` | collection: LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
-| `factcheck` | citing works → NLI (Phase 1) → LLM verification (Phase 2) | `API_openrouter` |
-| `training` | key papers → NLI → LLM → training set → fine-tune | `API_openrouter` |
+| `collection` | LOD → refs → zotero → works → snowball → works_citing | `API_openalex` |
+| `factcheck` | Phase 1 (Jev) → relevance screen → Phase 2 (LLM verification) | `API_openrouter` |
 | `reporting` | everything that renders | **none** |
 
 ```r
-targets::tar_make()                                    # main (the default project)
-
-Sys.setenv(TAR_PROJECT = "factcheck"); targets::tar_make()
-Sys.setenv(TAR_PROJECT = "training");  targets::tar_make()
+Sys.setenv(TAR_PROJECT = "collection"); targets::tar_make()
+Sys.setenv(TAR_PROJECT = "factcheck");  targets::tar_make()
 
 # or address a project directly, without changing the environment:
 targets::tar_make(script = "_targets_reporting.R", store = "_targets_reporting")
-targets::tar_visnetwork()                              # dependency graph of the current project
+targets::tar_visnetwork()                   # dependency graph of the current project
 ```
+
+There is deliberately **no default project and no `_targets.R`**: a bare
+`tar_make()` fails rather than silently running the collection pipeline, whose
+download targets unlink before refetching. Name the project.
 
 Which named configuration each project uses — and which assessments it covers —
 comes from a **purpose block** in `input/config.yaml` — `fact_checking:`, which
@@ -41,9 +41,12 @@ global `active:` setting. A second block, `training:`, existed until 2026-10-05;
 
 Two cautions worth knowing before a first run:
 
-- The scoring projects need a live NLI pod for their pool health check, even for
-  a pass that will skip every claim.
-- `factcheck`'s first run rebuilds its claim × premise cross-join from scratch.
+- **Do not run `collection`.** 16 of its 18 targets are outdated after the
+  2026-10-07 output restructure, and all five download/network targets would
+  fire — days of OpenAlex time, and a different corpus from the one every
+  existing score was computed against. See the warning in [CLAUDE.md](CLAUDE.md).
+- `factcheck` spends real money on every scoring and verification target. Use
+  `tar_make(names = ..., shortcut = TRUE)` to render against on-disk data.
 
 See [CLAUDE.md](CLAUDE.md) for build system details (credentials, system
 dependencies) and the full pipeline architecture, and

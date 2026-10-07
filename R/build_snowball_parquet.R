@@ -1,7 +1,7 @@
 build_snowball_parquet <- function(
   assessment,
   works_path,
-  output_root = "output/snowball"
+  output_root = out_collection("snowball")
 ) {
   assessment_id <- assessment$id
   nodes_root <- file.path(output_root, "nodes")

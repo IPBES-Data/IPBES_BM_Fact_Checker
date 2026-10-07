@@ -348,7 +348,7 @@ build_bm_split_highlighted <- function(
   claim_work_pairs,
   key_messages_parquet,
   granularity,
-  output_root = "output/tables",
+  output_root = out_reporting("tables"),
   completion_model = NULL
 ) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
