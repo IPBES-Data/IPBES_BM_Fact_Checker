@@ -204,18 +204,38 @@ list(
   # (the default, byte-identical path to before this partition was added --
   # existing data was migrated under granularity=naive_bm/ rather than
   # recomputed) and complete_bm never collide. See NEXT_STEPS.md.
+  # ONE target for BOTH chains since 2026-10-07 -- it returns two roots, the same
+  # "one target, several paths, split by name" convention snowball_parquet and
+  # works_citing_parquet already use. Split with claim_work_pairs_path(x, keypaper=).
+  #
+  # The two sides still call DIFFERENT builders, because they genuinely read
+  # different work sources: citing works come from works_citing_parquet, key
+  # papers from works_parquet + the snowball's keypaper nodes. What was duplicated
+  # and is now gone is the target declaration, which is where the drift was.
   tar_target(
     claim_work_pairs,
-    build_claim_work_pairs(
-      assessment,
-      key_messages_parquet,
-      works_citing_parquet,
-      workers,
-      file.path(out_factcheck("claim_work_pairs"), paste0("granularity=", granularity), "keypaper=false"),
-      granularity,
-      claim_completion_model
+    c(
+      build_claim_work_pairs(
+        assessment,
+        key_messages_parquet,
+        works_citing_parquet,
+        workers,
+        file.path(out_factcheck("claim_work_pairs"), paste0("granularity=", granularity), "keypaper=false"),
+        granularity,
+        claim_completion_model
+      ),
+      build_claim_work_pairs_keypaper(
+        assessment,
+        key_messages_parquet,
+        works_parquet,
+        snowball_parquet,
+        workers,
+        file.path(out_factcheck("claim_work_pairs"), paste0("granularity=", granularity), "keypaper=true"),
+        granularity,
+        claim_completion_model
+      )
     ),
-    pattern = map(assessment, key_messages_parquet, works_citing_parquet),
+    pattern = map(assessment, key_messages_parquet, works_citing_parquet, works_parquet, snowball_parquet),
     format = "file",
     # Same reasoning as nli_ready_parquet just above: internally forks its
     # own `workers` mclapply processes over a full-text cross-join, so
@@ -284,9 +304,20 @@ list(
   # (output/claim_scores) differ. Shares the same scorer_model and,
   # via score_one_claim()'s default lock_dir, the same per-host locks, so the
   # two approaches never hit one host concurrently if run together.
+  # Both chains' claims in one list, each unit tagged with its own `keypaper`.
+  # km_scope applies to BOTH -- it did not when the key-paper arm lived in the
+  # training project (no km: field there to thread), so `km: ["C."]` scoped the
+  # citing works while silently scoring every key paper of every KM. Cheap but
+  # wrong, and wrong in the direction that is hard to notice: the extra rows look
+  # like legitimate output.
   tar_target(
     claim_units,
-    build_claim_units(assessment, claim_work_pairs, max_length, km_scope),
+    c(
+      build_claim_units(assessment, claim_work_pairs_path(claim_work_pairs, FALSE),
+                        max_length, km_scope, keypaper = FALSE),
+      build_claim_units(assessment, claim_work_pairs_path(claim_work_pairs, TRUE),
+                        max_length, km_scope, keypaper = TRUE)
+    ),
     pattern = map(assessment, claim_work_pairs),
     iteration = "list"
   ),
@@ -323,10 +354,13 @@ list(
           scorer_name, scorer_config$backend %||% "<unset>"
         ), call. = FALSE)
       }
+      # keypaper is NOT passed: score_one_claim_jev() defaults it to the unit's
+      # own tag, so one branch set covers both chains and no branch can be sent
+      # to the wrong partition by a stale literal here.
       score_one_claim_jev(
         claim_units_flat, scorer_config, scorer_name, scorer_model,
         output_root = file.path(out_factcheck("claim_scores"), paste0("granularity=", granularity)),
-        questions_file = jev_questions_file, keypaper = FALSE
+        questions_file = jev_questions_file
       )
     },
     pattern = map(claim_units_flat),
@@ -339,7 +373,7 @@ list(
   # so nothing can observe a half-merged tree.
   tar_target(
     claim_scores_consolidated,
-    consolidate_claim_scores(
+    consolidate_claim_scores_both(
       claim_scores_by_claim,
       claim_units_flat,
       output_root = file.path(out_factcheck("claim_scores"), paste0("granularity=", granularity)),
@@ -350,8 +384,7 @@ list(
       # hypothetical: assessment=IAS still holds 9 scored groups from before
       # the GA1 rescope. Out-of-scope groups are left untouched, not pruned.
       assessments = vapply(assessments_list, function(a) a$id, character(1)),
-      km = km_scope,
-      keypaper = FALSE
+      km = km_scope
     ),
     format = "file",
     deployment = "main"
@@ -419,20 +452,22 @@ list(
   # Duplicated from _targets_training.R deliberately -- see the note there.
   tar_target(
     relevance_screen,
-    build_llm_relevance_screen(
+    # BOTH sides, with DIFFERENT routing, which is the whole reason this cannot
+    # be one undifferentiated call: citing works are screened only over the
+    # routed subset (what nli_labels/nli_certainty select -- 190,759 of GA1's
+    # 2.43M, ~$3), key papers over everything, because Phase 2 reviews every
+    # key-paper pair unconditionally and so has no upstream routing to narrow.
+    #
+    # claim_scores_consolidated IS this tree's root; taking it as the path rather
+    # than recomputing the formula is what puts a real edge from Phase 1 scoring
+    # into this target. Without it the screen depended only on config and ran
+    # BEFORE scoring, against an empty tree, writing 0 bytes that targets then
+    # recorded as up to date and would never re-dispatch.
+    relevance_screen_both(
       assessment,
-      # claim_scores_consolidated IS this tree's root -- taking it as the path
-      # rather than recomputing the same formula is what puts a real edge from
-      # Phase 1 scoring into this target. Without it the screen depends only on
-      # config and ran BEFORE scoring, against an empty tree, writing 0 bytes
-      # that targets then recorded as up to date and would never re-dispatch.
-      pairs = select_llm_verification_candidates(
-        file.path(claim_scores_consolidated, paste0("assessment=", assessment$id)),
-        claim_work_pairs,
-        nli_labels = llm_verification_config$nli_labels,
-        nli_certainty = llm_verification_config$nli_certainty
-      ),
-      keypaper = FALSE,
+      consolidated = claim_scores_consolidated,
+      pairs_roots = claim_work_pairs,
+      llm_config = llm_verification_config,
       model = relevance_config$model,
       questions_file = jev_relevance_question_file,
       batch_size = relevance_config$batch_size
@@ -444,207 +479,71 @@ list(
   # dependency on Phase 1 scoring, same convention as nli_overview_data.
   tar_target(
     llm_verification_parquet,
-    build_llm_verification_parquet(
+    # BOTH sides. The two builders stay separate functions with their own
+    # explicit routing -- citing works filtered by nli_labels/nli_certainty, key
+    # papers reviewed in full -- rather than being merged behind a conditional
+    # candidate filter. That conditional was the single highest-risk line in this
+    # whole change: wrong one way and key papers silently stop being reviewed,
+    # wrong the other and 2.43M citing pairs go to full OpenRouter coverage.
+    # llm_verification_both() asserts the routed count per side afterwards, so
+    # neither mistake can be silent. See R/claim_chain.R.
+    llm_verification_both(
       assessment,
-      claim_work_pairs,
-      scorer_name,
-      llm_verification_active,
-      llm_verification_config,
-      llm_verification_system_prompt_file,
-      llm_verification_user_prompt_file,
-      llm_candidate_scope_parquet,
-      granularity,
-      claim_scores_consolidated,
-      relevance_path = relevance_screen,
-      relevance_threshold = relevance_config$threshold,
-      keypaper = FALSE
+      pairs_roots = claim_work_pairs,
+      consolidated = claim_scores_consolidated,
+      scope_path = llm_candidate_scope_parquet,
+      scorer_name = scorer_name,
+      llm_active = llm_verification_active,
+      llm_config = llm_verification_config,
+      system_prompt_file = llm_verification_system_prompt_file,
+      user_prompt_file = llm_verification_user_prompt_file,
+      granularity = granularity,
+      relevance_roots = relevance_screen,
+      relevance_threshold = relevance_config$threshold
     ),
     pattern = map(assessment, claim_work_pairs, llm_candidate_scope_parquet, relevance_screen),
     format = "file",
     # select_llm_verification_candidates() collect()s both the routed Phase 1
-    # scores AND the full nli_ready_evidence premise table (title+abstract
-    # per work x claim) per assessment before joining in R — multi-GB for a
-    # single assessment. Running GA1's and IAS's branches on separate crew
-    # workers holds both in memory at once; deployment = "main" processes
-    # them one at a time. ellmer's own max_active concurrency (OpenRouter
-    # calls within one assessment) is unaffected. Contributed to an
-    # observed OOM alongside nli_overview_data/nli_ready_parquet running
-    # concurrently.
+    # scores AND the full premise table per assessment before joining in R --
+    # multi-GB for one assessment. deployment = "main" processes branches one at
+    # a time; ellmer's own max_active concurrency within an assessment is
+    # unaffected. Contributed to an observed OOM when run concurrently.
     deployment = "main",
     garbage_collection = TRUE
   ),
 
-  # ══ KEY-PAPER QA CHAIN ═══════════════════════════════════════════════════
-  # Moved here from _targets_training.R on 2026-10-05, when the fine-tuning arm
-  # was retired (design_notes.md points 3, 6, 7, 8). It never belonged to
-  # training logically: it asks whether the papers IPBES itself cites as
-  # evidence for a Background Message actually support it, which is a
-  # fact-checking sanity check. It lived there because that is where the
-  # training set's positive class came from.
+  # ══ KEY PAPERS ═══════════════════════════════════════════════════════════
+  # NO TARGETS OF THEIR OWN since 2026-10-07. The key-paper QA chain asks the
+  # inverse question to the citing-works one -- do the papers IPBES itself cites
+  # as evidence for a Background Message actually support it? A key paper IS that
+  # evidence, so it should land overwhelmingly in SUPPORTS; when it does not,
+  # that is the signal worth chasing. Measured 2026-10-05: 77.8% of key papers
+  # confirmed against 18.9% of citing works, on the same claims.
   #
-  # FOLDED INTO THE CITING TREES 2026-10-07. It used to carry its own premise
-  # root (output/claim_work_pairs_keypaper/), scores root
-  # (output/claim_scores_keypaper/) and Phase 2 output (scores_keypaper/). All
-  # three now live in the citing trees under a `keypaper=true` hive level,
-  # matching what output/llm_relevance/ already did.
+  # It used to be seven duplicate targets alongside their citing twins. Phase 1
+  # of the fold made keypaper=<true|false> a hive partition level above
+  # assessment= in all three trees; phase 2, here, removed the duplicate targets.
+  # Each stage above now handles both sides and returns both roots, split with
+  # claim_work_pairs_path() / claim_scores_consolidated_path() /
+  # claim_relevance_path() from R/claim_chain.R.
   #
-  # The separation it replaced was real but accidental: the two chains' claims
-  # are byte-identical and their premise construction is byte-identical code,
-  # so they differed only in work source and output root -- and the duplication
-  # had already drifted (this chain's consolidator passed neither assessments=
-  # nor km=, and its relevance screen is consumed aggregated rather than
-  # mapped). The requirement it was protecting still holds and is now met by the
-  # partition level instead: the two score DIFFERENT pairs and must be runnable,
-  # re-runnable and deletable independently.
+  # The requirement the separation protected still holds and is still met: the
+  # two score DIFFERENT pairs (1.35% overlap -- 399 of 29,496 on GA1) and must be
+  # runnable, re-runnable and deletable independently. The partition level does
+  # that, and gives each side its own .scratch root, which is what stops a citing
+  # branch and a key-paper branch for the same claim racing on one
+  # <claim_id>.parquet.
   #
-  # keypaper= sits ABOVE assessment= deliberately -- see
-  # scripts/migrate_keypaper_fold.R for why (a $-anchored regex in
-  # consolidate_claim_scores() and a <claim_id>.parquet scratch-file collision).
+  # What the duplication cost while it lasted: claim_scores_keypaper_consolidated
+  # passed neither assessments= nor km=, so its prune glob visited every group
+  # under the scorer root; and claim_units_keypaper needed km_scope retro-fitted
+  # after the move out of the training project, until which `km: ["C."]` scoped
+  # the citing works and silently scored every key paper of every KM.
   #
-  # ONE BEHAVIOUR CHANGE in the move: it now follows fact_checking's nli config
-  # rather than training's. The reason it was pinned to zero-shot -- "avoid
-  # training on labels the model itself shaped" -- was about protecting the
-  # training set, which no longer exists. A QA check on the fact-checking
-  # pipeline should use the model that pipeline actually runs.
-  # Scores the actual seed/reference papers IPBES cites as evidence for a BM
-  # (relation == "keypaper" in the snowball nodes) against their OWN BM's claim
-  # text. Mirrors the citing-works chain exactly -- same
-  # build_claim_units()/score_one_claim() reused unchanged -- with only the
-  # premise source and the output roots differing, so it can never collide with
-  # or invalidate that chain.
-  tar_target(
-    claim_work_pairs_keypaper,
-    build_claim_work_pairs_keypaper(
-      assessment,
-      key_messages_parquet,
-      works_parquet,
-      snowball_parquet,
-      workers,
-      file.path(out_factcheck("claim_work_pairs"), paste0("granularity=", granularity), "keypaper=true"),
-      granularity,
-      claim_completion_model
-    ),
-    pattern = map(assessment, key_messages_parquet, works_parquet, snowball_parquet),
-    format = "file",
-    deployment = "main",
-    garbage_collection = TRUE
-  ),
-  tar_target(
-    claim_units_keypaper,
-    # km_scope applies here too, which it did NOT when this chain lived in the
-    # training project -- that block had no km: field, so there was nothing to
-    # thread. Moving it into factcheck without this made the two chains
-    # inconsistent under the same config: `km: ["C."]` scoped the citing works
-    # and silently scored every key paper of every KM. Cheap (29,511 pairs for
-    # all of GA1) but wrong, and wrong in the direction that is hard to notice,
-    # since the extra rows look like legitimate output.
-    build_claim_units(assessment, claim_work_pairs_keypaper, max_length, km_scope),
-    pattern = map(assessment, claim_work_pairs_keypaper),
-    iteration = "list"
-  ),
-  tar_target(
-    claim_units_keypaper_flat,
-    unlist(claim_units_keypaper, recursive = FALSE),
-    iteration = "list"
-  ),
-  # Same scratch-then-consolidate split as the citing-works chain.
-  tar_target(
-    claim_scores_keypaper,
-    # Jev only, same as the citing-works chain above. The key-paper corpus is
-    # 29,496 pairs against 2.3M, so it costs ~$1.50 at jev rates -- and it is
-    # the control: key papers ARE the evidence a BM was written from, so a
-    # first-stage model that cannot separate them from citing works is telling
-    # you something. Measured: Jev separates the two by 4.62x where the
-    # zero-shot NLI managed 1.26x.
-    score_one_claim_jev(
-      claim_units_keypaper_flat, scorer_config, scorer_name, scorer_model,
-      output_root = file.path(out_factcheck("claim_scores"), paste0("granularity=", granularity)),
-      questions_file = jev_questions_file, keypaper = TRUE
-    ),
-    pattern = map(claim_units_keypaper_flat),
-    error = "continue"
-  ),
-  tar_target(
-    claim_scores_keypaper_consolidated,
-    consolidate_claim_scores(
-      claim_scores_keypaper,
-      claim_units_keypaper_flat,
-      output_root = file.path(out_factcheck("claim_scores"), paste0("granularity=", granularity)),
-      scorer_name = scorer_name,
-      # Scoped exactly like the citing twin above. It passed NEITHER before,
-      # so its prune glob visited every group under the scorer root -- harmless
-      # only while it had a root to itself, which it no longer does.
-      assessments = vapply(assessments_list, function(a) a$id, character(1)),
-      km = km_scope,
-      keypaper = TRUE
-    ),
-    format = "file",
-    deployment = "main"
-  ),
-
-  # ---- relevance screen ----------------------------------------------------
-  # Screens EVERY key-paper pair, because this chain has no routing: Phase 2
-  # here reviews every pair unconditionally. That was right while key papers
-  # were "a small, bounded, high-importance set"; at 968,534 pairs (945k still
-  # unreviewed, ~$140 at gpt-4o-mini rates) it is no longer small, which is
-  # what a screen is for.
-  #
-  # Duplicated rather than shared with the fact-checking project, deliberately:
-  # the two chains score DIFFERENT pairs (claims x key papers vs claims x
-  # citing works, 1.35% overlap -- 399 of 29,496 on GA1), so neither chain's
-  # result can stand in for the other's. They ran different models while the
-  # training project existed; since it was retired both follow
-  # fact_checking's selection, and the duplication is now only the ~8-line
-  # declaration -- the function lives once in R/.
-  tar_target(
-    relevance_screen_keypaper,
-    build_llm_relevance_screen(
-      assessment,
-      # Same missing-edge fix as relevance_screen above.
-      pairs = select_llm_verification_candidates(
-        file.path(claim_scores_keypaper_consolidated, paste0("assessment=", assessment$id)),
-        claim_work_pairs_keypaper,
-        nli_labels = NULL, nli_certainty = NULL
-      ),
-      keypaper = TRUE,
-      model = relevance_config$model,
-      questions_file = jev_relevance_question_file,
-      batch_size = relevance_config$batch_size
-    ),
-    pattern = map(assessment, claim_work_pairs_keypaper),
-    format = "file", deployment = "main"
-  ),
-
-  # ---- key-paper Phase 2 LLM verification ----------------------------------
-  # Reviews EVERY key paper's scored pair, irrespective of
-  # nli_labels/nli_certainty -- unlike the citing-works chain, which routes by
-  # those fields purely for cost control. Key papers are a small, bounded,
-  # high-importance set where every one is worth an independent check.
-  tar_target(
-    llm_verification_keypaper_parquet,
-    build_llm_verification_keypaper_parquet(
-      assessment,
-      claim_work_pairs_keypaper,
-      file.path(
-        out_factcheck("claim_scores"), paste0("granularity=", granularity),
-        paste0("scorer_config=", scorer_name), "keypaper=true",
-        paste0("assessment=", assessment$id)
-      ),
-      scorer_name,
-      llm_verification_active,
-      llm_verification_config,
-      llm_verification_system_prompt_file,
-      llm_verification_user_prompt_file,
-      claim_scores_keypaper_consolidated,
-      relevance_path = relevance_screen_keypaper,
-      relevance_threshold = relevance_config$threshold,
-      keypaper = TRUE
-    ),
-    pattern = map(assessment, claim_work_pairs_keypaper),
-    format = "file",
-    deployment = "main",
-    garbage_collection = TRUE
-  ),
+  # ONE BEHAVIOUR CHANGE from the 2026-10-05 move still applies: key papers now
+  # follow fact_checking's nli config rather than training's. The reason they were
+  # pinned to zero-shot -- "avoid training on labels the model itself shaped" --
+  # was about protecting a training set that no longer exists.
 
   # ══ GOLD STANDARD ════════════════════════════════════════════════════════
   # Moved here from _targets_training.R on 2026-10-05. It used to gate
@@ -668,5 +567,13 @@ list(
   # which is enough to adjudicate and score the instrument that was already
   # drawn, but a NEW sample would need that fold definition rebuilding.
   tar_target(goldstandard_dir, "input/goldstandard", format = "file"),
-  tar_target(goldstandard, build_goldstandard(goldstandard_dir))
+  # error = "continue" so an unreviewed round does not fail the whole pipeline.
+  # Verified 2026-10-07: NOTHING depends on this target -- the fine-tune and
+  # benchmark it used to gate were retired 2026-10-05, and reporting does not
+  # declare it. So its stop() could only turn "the humans have not reviewed yet",
+  # which is the ordinary state between drawing the instruments and getting them
+  # back, into a failed tar_make() that hides whatever else the run did.
+  # It still errors visibly in the run summary; it just no longer takes the
+  # pipeline down with it.
+  tar_target(goldstandard, build_goldstandard(goldstandard_dir), error = "continue")
 )

@@ -16,7 +16,14 @@
 # no scorer_config= level, so the cross-join is shared by every config, and
 # build_claim_work_pairs() unlink()s the whole assessment= subtree
 # before writing -- filtering there would delete out-of-scope premises outright.
-build_claim_units <- function(assessment, nli_ready_path, max_length, km = NULL) {
+# `keypaper` tags every unit this call produces. Since the two chains merged
+# into one set of targets (2026-10-07) a single claim_units branch holds both
+# sides, and everything downstream -- the scorer's output partition, the
+# consolidator's subtree, the relevance screen's routing, Phase 2's coverage --
+# keys off this field. It is NOT inferred from the path: a wrong inference would
+# write key papers into the citing partition under the right-looking name.
+build_claim_units <- function(assessment, nli_ready_path, max_length, km = NULL,
+                              keypaper = FALSE) {
   assessment_id <- assessment$id
   filter_limit <- if (!is.null(max_length)) as.integer(max_length) else 512L
 
@@ -67,7 +74,8 @@ build_claim_units <- function(assessment, nli_ready_path, max_length, km = NULL)
       sentence_source = row$sentence_source,
       claim           = row$claim,
       claim_id        = row$claim_id,
-      n_pairs         = row$n_pairs
+      n_pairs         = row$n_pairs,
+      keypaper        = isTRUE(keypaper)
     )
   })
 }

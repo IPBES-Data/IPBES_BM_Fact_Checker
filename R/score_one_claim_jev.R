@@ -96,7 +96,11 @@ score_one_claim_jev <- function(
   # and the two chains need separate .scratch roots because scratch files are
   # named <claim_id>.parquet and would otherwise collide between a citing and a
   # key-paper branch for the same claim.
-  keypaper = FALSE
+  #
+  # Defaults to the unit's OWN tag, set by build_claim_units(). One merged
+  # claim_scores_by_claim target branches over both chains' units, so a fixed
+  # argument here would send every branch to the same partition.
+  keypaper = isTRUE(claim_unit$keypaper)
 ) {
   cfg <- if (is.null(scorer_config)) list() else scorer_config
   assessment_id <- claim_unit$assessment
@@ -115,6 +119,7 @@ score_one_claim_jev <- function(
 
   record <- function(status, n_rows = 0L, n_new = 0L) {
     list(scorer_config = scorer_name, assessment = assessment_id,
+         keypaper = isTRUE(keypaper),
          km = claim_unit$km, bm = claim_unit$bm, claim_id = this_claim_id,
          claim = claim_unit$claim, scratch_file = scratch_file,
          status = status, n_rows = as.integer(n_rows), n_new = as.integer(n_new))

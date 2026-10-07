@@ -303,11 +303,27 @@ build_llm_verification_keypaper_parquet <- function(
   # dataset on them at the Arrow level (nli_route IS filtered on -- see
   # build_label_funnel_data.R -- so that level stays).
   if (dir.exists(output_path)) unlink(output_path, recursive = TRUE, force = TRUE)
+  # keypaper is a PARTITION LEVEL, added here as a column so write_dataset() can
+  # place it. Phase 1 of the keypaper fold migrated the data on disk into
+  # llm_config=/keypaper=/assessment=/... but did NOT update this write, so the
+  # builder went on emitting the pre-fold layout while RETURNING a keypaper=
+  # path. Three consequences, all of which were live on 2026-10-07:
+  #   * targets' format = "file" check failed on the path it was handed, which is
+  #     the only reason this surfaced at all;
+  #   * the rows landed at llm_config=/assessment=/..., invisible to every reader
+  #     that now opens the keypaper= tree;
+  #   * and because the two sides then shared partition keys, the key-paper
+  #     write's existing_data_behavior = "delete_matching" DELETED the citing
+  #     rows written minutes earlier -- 11,537 of them, leaving exactly the
+  #     4,418 key-paper rows behind.
+  # The level sits between llm_config= and assessment=, matching the tree
+  # scripts/migrate_keypaper_fold.R produced.
+  out$keypaper <- isTRUE(keypaper)
   arrow::write_dataset(
     dataset = out,
     path = output_root,
     format = "parquet",
-    partitioning = c("llm_config", "assessment", "nli_route"),
+    partitioning = c("llm_config", "keypaper", "assessment", "nli_route"),
     existing_data_behavior = "delete_matching"
   )
 

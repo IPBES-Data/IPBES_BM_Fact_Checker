@@ -160,12 +160,38 @@ would `stop()`. Above `assessment=`, the terminal three levels are untouched. It
 side its own `disk_root` and `.scratch` root, which is what stops a citing branch and a keypaper
 branch for the same claim racing on the same `<claim_id>.parquet` scratch file.
 
-The merge was done in two phases; **phase 1 (storage) is complete, phase 2 (collapsing the seven
-duplicate targets) is not** — `claim_work_pairs_keypaper`, `claim_units_keypaper{,_flat}`,
-`claim_scores_keypaper{,_consolidated}`, `relevance_screen_keypaper` and
-`llm_verification_keypaper_parquet` still exist. See `TODO_AFTER_BREAK.md`; the riskiest line is
-Phase 2's routing filter, where getting it wrong one way silently stops reviewing key papers and
-the other way sends 2.3M citing pairs to full coverage.
+**Both phases are done** (2026-10-07). Phase 1 made `keypaper=` a partition level; phase 2 removed
+the seven duplicate targets — `claim_work_pairs_keypaper`, `claim_units_keypaper{,_flat}`,
+`claim_scores_keypaper{,_consolidated}`, `relevance_screen_keypaper`,
+`llm_verification_keypaper_parquet`. **46 → 39 targets.** Each stage now handles both sides and
+returns both roots, split by `claim_work_pairs_path()` / `claim_scores_consolidated_path()` /
+`claim_relevance_path()` in `R/claim_chain.R` — always by the `keypaper=` level in the path, never
+by position.
+
+Units carry their own `keypaper` tag from `build_claim_units()`, and `score_one_claim_jev()`
+defaults to the unit's tag rather than taking a literal, so one branch set covers both chains and no
+branch can be sent to the wrong partition by a stale argument.
+
+**The two Phase 2 builders are still separate functions**, called side by side with their own
+explicit routing. The plan proposed merging them behind a conditional candidate filter —
+`keypaper | (label %in% nli_labels & uncertain %in% allowed)` — and named that the single
+highest-risk line in the change: wrong one way and key papers silently stop being reviewed, wrong
+the other and 2.43M citing pairs go to full OpenRouter coverage. Calling the two functions with
+explicit routing removes the duplicate target without ever writing that line.
+`llm_verification_both()` asserts the routed count per side afterwards and warns loudly on zero, so
+neither mistake can be silent. Merging the two functions is still worth doing — their real
+duplication is a shared chunking/retry/cache/assembly loop — but that is a refactor of two large
+functions, not a target-graph change.
+
+What the duplication had already cost: `claim_scores_keypaper_consolidated` passed neither
+`assessments=` nor `km=`, so its prune glob visited every group under the scorer root; and
+`claim_units_keypaper` needed `km_scope` retro-fitted after the move out of the training project,
+until which `km: ["C."]` scoped the citing works while silently scoring every key paper of every KM.
+
+Note `_targets_reporting.R` still has targets *named* `claim_scores_keypaper{,_consolidated}` and
+`llm_verification_keypaper_parquet`. Those are reporting's own `format = "file"` path declarations
+and already point at the merged tree, but the names no longer mirror a producing factcheck target,
+which is the one place the "keep the producing project's target names" convention is now broken.
 
 ### targets Pipeline (primary)
 

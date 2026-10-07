@@ -1,7 +1,17 @@
-# Adjudicates the two reviewers' files into the gold standard, and is the HARD
-# GATE on the expensive half of the training project: nli_finetuned_model and
-# nli_benchmark_qa_data both take it as a required argument, so neither can run
-# against an unreviewed corpus.
+# Adjudicates the two reviewers' files into the gold standard.
+#
+# IT GATES NOTHING AUTOMATICALLY ANY MORE. It was the hard gate on the expensive
+# half of the training project -- nli_finetuned_model and nli_benchmark_qa_data
+# both took it as a required argument -- and both were retired on 2026-10-05.
+# Verified 2026-10-07: no target in factcheck depends on it and reporting does
+# not declare it. So its stop() could only fail the whole tar_make(), which is
+# why the target now carries error = "continue": an unreviewed round is the
+# ordinary state between drawing the instruments and getting them back, not a
+# pipeline failure.
+#
+# It is kept because it is now the ONLY thing that can test the decision that
+# removed those targets. Every other comparison in this project is models
+# judging models.
 #
 # R1_*.csv and R2_*.csv are NOT the gold standard -- they are the blinded
 # instruments (R/build_goldstandard_sample.R writes the templates). The gold
@@ -18,6 +28,19 @@
 # two reviewers who both default to NEI agree over 90% of the time while
 # carrying no information at all. Kappa prices that baseline in.
 
+# stop()'s message is truncated at getOption("warning.length"), which defaults to
+# 1000 -- against ~2,600 here, so 62% of the guidance was being cut mid-sentence
+# and the draw instructions were exactly the part that disappeared.
+#
+# message() is not truncated, but targets SWALLOWS it when the target errors, and
+# erroring through targets is how anyone actually meets this. So raise the limit
+# instead (8170 is R's maximum, comfortably above this text) and put the whole
+# thing in stop(), restoring the option afterwards so nothing else inherits it.
+goldstandard_stop <- function(reason, goldstandard_dir, reviewers) {
+  stop(sprintf("%s\n\n%s", reason,
+               goldstandard_gate_message(goldstandard_dir, reviewers)), call. = FALSE)
+}
+
 build_goldstandard <- function(
   goldstandard_dir = "input/goldstandard",
   reviewers = c("R1", "R2"),
@@ -25,25 +48,32 @@ build_goldstandard <- function(
 ) {
   if (is.null(output_dir)) output_dir <- goldstandard_dir
   if (!dir.exists(goldstandard_dir)) {
-    stop(sprintf(
-      "build_goldstandard: %s does not exist.\n%s",
-      goldstandard_dir, goldstandard_gate_message()
-    ))
+    goldstandard_stop(
+      sprintf("build_goldstandard: %s does not exist", goldstandard_dir),
+      goldstandard_dir, reviewers
+    )
   }
 
+  # Accepts BOTH namings: Rx_<assessment>.csv (v1/v2, one set) and
+  # Rx_<assessment>_<set>.csv (v3, sets A and B). The old pattern required
+  # exactly one token after the reviewer, so it silently matched nothing once the
+  # v3 instruments arrived -- the round would have read as "no reviews" forever
+  # while the filled files sat right there.
+  #
+  # _template.csv is excluded explicitly rather than by token count, because
+  # counting tokens is what broke when the set letter was added.
   filled <- list.files(
     goldstandard_dir,
-    pattern = sprintf("^(%s)_[^_]+\\.csv$", paste(reviewers, collapse = "|")),
+    pattern = sprintf("^(%s)_[^_]+(_[^_]+)?\\.csv$", paste(reviewers, collapse = "|")),
     full.names = TRUE
   )
-  # _template.csv files are excluded by the pattern above (they carry a second
-  # underscore-separated token), so an un-started round reads as "no reviews",
-  # which is exactly what it is.
+  filled <- filled[!grepl("_template\\.csv$", filled)]
   if (!length(filled)) {
-    stop(sprintf(
-      "build_goldstandard: no completed reviewer files in %s.\n%s",
-      goldstandard_dir, goldstandard_gate_message()
-    ))
+    goldstandard_stop(
+      sprintf("build_goldstandard: no completed reviewer files in %s",
+              goldstandard_dir),
+      goldstandard_dir, reviewers
+    )
   }
 
   parse_one <- function(path) {
@@ -64,6 +94,11 @@ build_goldstandard <- function(
     }
     dplyr::tibble(
       reviewer_file = parts[[1]], assessment = parts[[2]],
+      # Sets A and B are different populations (citing works vs key papers) and
+      # must never be pooled into one kappa: B is ~92% NOT_ENOUGH_INFO by
+      # construction, so pooling would drag the agreement baseline and make the
+      # combined figure meaningless.
+      set = if (length(parts) >= 3L) parts[[3]] else NA_character_,
       id = as.character(d$id), verdict = d$verdict,
       note = if ("note" %in% names(d)) d$note else NA_character_
     )
@@ -78,7 +113,7 @@ build_goldstandard <- function(
   reviews <- reviews[!is.na(reviews$verdict), ]
 
   wide <- reviews |>
-    dplyr::select(assessment, id, reviewer_file, verdict) |>
+    dplyr::select(assessment, set, id, reviewer_file, verdict) |>
     tidyr::pivot_wider(names_from = reviewer_file, values_from = verdict)
 
   present <- intersect(reviewers, names(wide))
@@ -95,7 +130,7 @@ build_goldstandard <- function(
   wide$agreed <- both & a == b
   wide$verdict <- ifelse(wide$agreed, a, NA_character_)
 
-  gold <- wide[wide$agreed, c("assessment", "id", "verdict")]
+  gold <- wide[wide$agreed, c("assessment", "set", "id", "verdict")]
   # CANNOT_JUDGE is a property of the instrument, not of the paper -- both
   # reviewers agreeing that a row is unjudgeable is a real finding about the
   # SAMPLE, worth keeping in the file, but it is not a label any model can be
@@ -104,11 +139,25 @@ build_goldstandard <- function(
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   for (aid in unique(gold$assessment)) {
-    utils::write.csv(
-      gold[gold$assessment == aid, ],
-      file.path(output_dir, sprintf("gold_%s.csv", aid)),
-      row.names = FALSE, na = ""
-    )
+    for (st in unique(gold$set[gold$assessment == aid])) {
+      sel <- gold$assessment == aid & (if (is.na(st)) is.na(gold$set) else
+                                       !is.na(gold$set) & gold$set == st)
+      utils::write.csv(
+        gold[sel, ], file.path(output_dir,
+          if (is.na(st)) sprintf("gold_%s.csv", aid) else sprintf("gold_%s_%s.csv", aid, st)),
+        row.names = FALSE, na = ""
+      )
+    }
+  }
+
+  # Per-set kappa as well as the pooled figure, for the reason given at parse_one.
+  for (st in unique(wide$set)) {
+    sel <- both & (if (is.na(st)) is.na(wide$set) else !is.na(wide$set) & wide$set == st)
+    if (sum(sel) > 1L) {
+      message(sprintf("[goldstandard] set %s: %d double-reviewed | agreement %.1f%% | kappa %.3f",
+                      if (is.na(st)) "-" else st, sum(sel),
+                      100 * mean(a[sel] == b[sel]), cohens_kappa(a[sel], b[sel])))
+    }
   }
 
   k <- cohens_kappa(a[both], b[both])
@@ -144,15 +193,55 @@ cohens_kappa <- function(a, b) {
   (p_obs - p_exp) / (1 - p_exp)
 }
 
-goldstandard_gate_message <- function() {
-  paste(
-    "The gold standard is a REQUIRED input to fine-tuning and benchmarking: without human",
-    "labels, every reported number measures only agreement with gpt-4o-mini, which is the",
-    "thing being questioned. To produce it:",
-    "  1. source(\"R/build_goldstandard_sample.R\"); build_goldstandard_sample()",
-    "  2. each reviewer copies Rx_<assessment>_template.csv to Rx_<assessment>.csv and fills in `verdict`",
-    "  3. commit the filled files; this target then writes gold_<assessment>.csv",
-    "See input/goldstandard/REVIEWER_GUIDE.md and TD_NLI_training.qmd.",
-    sep = "\n"
-  )
+# What to do next, kept SHORT on purpose.
+#
+# targets truncates an error message with its own limit, on top of R's
+# getOption("warning.length"). A 2,600-char version lost 62% to R and was still
+# cut by targets after raising that -- and the draw instructions were the part
+# that disappeared both times. So this stays under ~900 characters and the long
+# form lives in REVIEWER_GUIDE.md, which is where a reviewer looks anyway.
+#
+# It leads with whichever step is actually next, because telling someone to
+# re-draw when the templates are already sitting there is how a half-finished
+# round gets thrown away.
+goldstandard_gate_message <- function(goldstandard_dir = "input/goldstandard",
+                                      reviewers = c("R1", "R2")) {
+  templates <- if (dir.exists(goldstandard_dir)) {
+    list.files(goldstandard_dir,
+               pattern = sprintf("^(%s)_.*_template\\.csv$", paste(reviewers, collapse = "|")))
+  } else character(0)
+  # A template with no set letter predates the A/B split and cannot be
+  # adjudicated -- gold is written per (assessment, set).
+  current <- templates[grepl("^[^_]+_[^_]+_[^_]+_template\\.csv$", templates)]
+
+  draw <- paste(
+    "DRAW (by hand -- NOT a target: a target would redraw over reviewer work):",
+    "    source(\"R/build_goldstandard_sample.R\")",
+    "    build_goldstandard_sample_sets(force = TRUE)   # force only to replace templates",
+    "  -> Rx_<id>_A_template.csv  240 citing works, balanced 40 x (3 labels x 2 bands)",
+    "     Rx_<id>_B_template.csv  100 key papers, proportional to their own label ratio",
+    "  Draw ONLY once the pipeline is final for the scope you want: the sample is",
+    "  frozen on write, the pipeline is not.",
+    sep = "\n")
+
+  fill <- paste(
+    "FILL: each reviewer copies Rx_<id>_<set>_template.csv -> Rx_<id>_<set>.csv and",
+    sprintf("  fills `verdict` with one of: %s.", paste(GOLDSTANDARD_VERDICTS, collapse = ", ")),
+    "  Both reviewers must do the SAME set. Re-run this target to adjudicate into",
+    "  gold_<id>_<set>.csv. Definitions: input/goldstandard/REVIEWER_GUIDE.md",
+    sep = "\n")
+
+  head <- if (length(current)) {
+    sprintf("Templates are drawn (%s); no filled copy has come back yet.",
+            paste(current, collapse = ", "))
+  } else if (length(templates)) {
+    sprintf("Found template(s) from BEFORE the A/B split (%s) -- these cannot be\nadjudicated. Re-draw with force = TRUE.",
+            paste(templates, collapse = ", "))
+  } else {
+    "No templates have been drawn yet."
+  }
+
+  body <- if (length(current)) paste(fill, "", draw, sep = "\n")
+          else paste(draw, "", fill, sep = "\n")
+  paste(head, "", body, sep = "\n")
 }

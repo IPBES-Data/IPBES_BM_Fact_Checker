@@ -1,58 +1,3 @@
-# ⚠️ DO NOT RUN THE `main` PIPELINE (as of 2026-10-07)
-
-`targets::tar_make()` on `main` would **delete and re-download** the collection
-corpus. Measured: **16 of 18 targets outdated**, including every download target.
-
-| target | guard | cost if run |
-|---|---|---|
-| `snowball_parquet` | unlinks, **no existence check** | 16 GB deleted, **days** of OpenAlex time |
-| `works_parquet` | `download_works.R:9` — `if (file.exists()) unlink()` then refetch | 573 MB deleted, refetched |
-| `zotero_parquet` | `download_zotero.R:123` — unlink then refetch | re-downloaded |
-| `works_citing_parquet` | — | full DuckDB rebuild |
-| `ttl_path` | SHA-checked against GitHub | cheap, skips if unchanged |
-
-And a fresh snowball yields a **different corpus** from the one every existing
-score was computed against.
-
-**Cause.** `targets` hashes the function bodies a target depends on, and the
-2026-10-07 `output/` restructure edited a path literal inside each of main's
-builders. The move compounds it, but the code edit alone was enough — this is a
-standing hazard of this repo, not specific to that change: *any* edit to
-`download_works.R` or `build_snowball_parquet.R`, even a comment, invalidates
-them and triggers a refetch.
-
-**Decision: option C — keep the new structure, simply never run `main`.** Its
-outputs are complete and correct on disk, and the consumer projects read them
-through `format = "file"` path stubs, so `main` has nothing to produce. The two
-alternatives, both still open:
-
-- **A — revert `collection/` only.** Move `LoD refs key_messages zotero works
-  snowball works_citing works_citing_meta` back to the `output/` top level and
-  revert the path edits in main's seven builders, keeping `factchecker/` and
-  `reporting/`. Main's store goes clean; nothing re-downloads.
-- **B — repair the metadata.** Rewrite the recorded paths and function hashes in
-  `_targets/meta/` so targets accepts the current outputs. Correct in principle
-  (the data is byte-identical, only the path literal changed) but it is surgery
-  on targets internals, and the failure mode is the refetch it exists to avoid.
-
-**If `main` ever IS re-run, factcheck survives — it does not re-pay.** Its five
-upstream stubs (`works_parquet`, `snowball_parquet`, `works_citing_parquet`,
-`refs_parquet`, `key_messages_parquet`) are all `format = "file"`, so they hash
-CONTENT and a changed corpus does invalidate them. But the scorers resume at
-**work** granularity — `score_one_claim_jev.R:164`,
-`todo_ids <- setdiff(work_ids, already)` — so existing scores are kept and only
-newly-discovered works are dispatched, and Phase 2 replays its per-pair JSON
-cache. Real cost of a main re-run would be: the `claim_work_pairs` cross-join
-(hours, local, free) plus GPU/API for the delta.
-
-**The exception that would make it expensive:** the scoring cache is discarded
-**outright** on a claim-text or model mismatch (`score_one_claim_jev.R:126-148`),
-forcing a full rescore. Claim text comes from `key_messages_parquet` ← the LOD
-TTLs, which are SHA-checked, so a re-run alone does not change it — but an
-upstream TTL revision by IPBES would.
-
----
-
 # Simplify Jev even more by combining the questions
 
 In Jev, multiple questions can be combined, i.e. the `noul` could be done at the same time as the `choice`.
@@ -471,6 +416,170 @@ splitting it before setting a real value — but `training:` was retired
 
 ---
 
+## DONE 2026-10-07 (part 5) — Phase 2 partition bug, v3 gold standard
+
+### The Phase 2 output was landing outside its own tree
+
+Surfaced as `Error resolving output location: missing files: .../keypaper=true/assessment=GA1`,
+which looked like a directory that needed creating. It was not.
+
+**Neither** Phase 2 builder had `keypaper` in its `write_dataset()` partitioning,
+or as a column. Phase 1 of the keypaper fold migrated the data on disk into
+`llm_config=/keypaper=/assessment=/...` and never updated the writes, so both
+builders went on emitting the pre-fold layout while RETURNING a `keypaper=` path.
+Three consequences, all live:
+
+1. `format = "file"` failed on the path it was handed — the only reason this
+   surfaced at all.
+2. Rows landed at `llm_config=/assessment=GA1/`, invisible to every reader that
+   now opens the `keypaper=` tree.
+3. Both sides then shared partition keys, so the key-paper write's
+   `existing_data_behavior = "delete_matching"` **deleted the 11,537 citing rows
+   written minutes earlier**, leaving exactly the 4,418 key-paper rows.
+
+Fixed by adding `keypaper` as a column and placing the level between
+`llm_config=` and `assessment=`. Re-ran: **0 API calls**, both sides fully
+cached. Now 193,156 citing + 4,418 key-paper, correctly partitioned. The
+misplaced rows are parked in `llm_verification/.misplaced_2026-10-07/` with a
+README; safe to delete.
+
+### Gold standard v3 — Jev stage 1 only, two sets
+
+v2 drew from the Phase 1 three-way common set (Jev inner-joined with the two
+retired NLI backends) and stratified on agreement between the three. Two of
+those three no longer run, so most of the instrument's power went on a question
+already settled by removing them.
+
+| set | source | design | n |
+|---|---|---|---|
+| A | citing works, `keypaper=false` | balanced, 40 × (3 labels × 2 bands) | 240 |
+| B | key papers, `keypaper=true` | proportional to their own label ratio | 101 |
+
+**Phase 2 is not a stratum and does not need to be.** Routing is a deterministic
+function of stage-1 label + band, so two of A's six cells ARE the routed set:
+80 of 240 rows arrive with an LLM verdict at no extra reviewing cost, and the
+other 160 are what measures stage-1 recall. Stratifying ON Phase 2 is what
+produced v1's failure — it covers 0.5% of rows, and conditioning on it makes
+recall unmeasurable.
+
+**B is proportional, not balanced, deliberately**: a key paper IS the evidence
+its BM was written from, so the SHAPE of the distribution is the finding under
+test. It comes out 92 NEI / 8 SUPPORTS / 1 REFUTES — only 19 REFUTES exist in
+the whole key-paper corpus, so B gives essentially no REFUTES signal. If that is
+wanted it needs its own over-sampled slice.
+
+**Sets are lettered A/B, never named by content.** A reviewer who knew B was key
+papers would expect SUPPORTS and drift toward it, and 92% of B is rows the scorer
+calls NOT_ENOUGH_INFO — precisely the disputed cell.
+
+Key papers take their metadata from `works_parquet`, not `works_citing_meta`:
+seeds are not in the citing dataset, and the wrong source yields an empty join
+that looks like "nothing to review".
+
+### Three bugs in the adjudication gate, found before they bit
+
+1. **The filename pattern would not have matched the v3 instruments.**
+   `^(R1|R2)_[^_]+\.csv$` wanted one token after the reviewer, so `R1_GA1_A.csv`
+   failed. The round would have read as "no reviews" forever with the filled
+   files sitting there. Now accepts both namings and excludes `_template`
+   explicitly rather than by counting tokens — counting tokens is what broke.
+2. **A and B would have been pooled into one kappa.** Different populations, and
+   B is ~92% NEI by construction, so pooling drags the agreement baseline. Set is
+   now carried through, adjudicated separately, written as
+   `gold_<id>_<set>.csv`, with a per-set kappa alongside the pooled one.
+3. **The gate failed the whole `tar_make()` to protect nothing.** Verified: no
+   factcheck target depends on `goldstandard` and reporting does not declare it;
+   the fine-tune and benchmark it used to gate were retired 2026-10-05. Now
+   `error = "continue"` — still errors visibly, no longer takes the run down.
+
+### The error message, and two truncation traps
+
+The gate message now says how to draw the instruments and leads with whichever
+step is actually next (nothing drawn / pre-A/B templates / current templates),
+because telling someone to re-draw when templates already exist is how a
+half-finished round gets thrown away.
+
+Getting it to display took three attempts, worth recording:
+
+- `stop()` truncates at `getOption("warning.length")`, **1000 by default**. The
+  first version was 2,624 chars, so 62% vanished — and the draw instructions
+  were the part that disappeared.
+- `message()` is not truncated, but **targets swallows it when the target
+  errors**, which is the only way anyone meets this.
+- Raising `warning.length` to R's maximum of 8170 still got cut, because
+  **targets applies its own limit on top**.
+
+So the message is now **942 chars** and the long form stays in
+`REVIEWER_GUIDE.md`. Verified through `tar_make()`, not standalone — standalone
+printed fine every time and told me nothing about what the user would see.
+
+---
+
+## DONE 2026-10-07 (part 4) — keypaper fold phase 2: 46 -> 39 targets
+
+Phase 1 (storage) landed earlier: `keypaper=<true|false>` as a hive level above
+`assessment=`. Phase 2 removed the seven duplicate targets that wrote into the
+two sides of it.
+
+| removed | absorbed by |
+|---|---|
+| `claim_work_pairs_keypaper` | `claim_work_pairs` (returns both roots) |
+| `claim_units_keypaper`, `_flat` | `claim_units`, `claim_units_flat` |
+| `claim_scores_keypaper` | `claim_scores_by_claim` |
+| `claim_scores_keypaper_consolidated` | `claim_scores_consolidated` |
+| `relevance_screen_keypaper` | `relevance_screen` |
+| `llm_verification_keypaper_parquet` | `llm_verification_parquet` |
+
+**How the two sides stay distinct.** `build_claim_units()` tags every unit with
+its own `keypaper`, and `score_one_claim_jev()` now DEFAULTS to the unit's tag
+instead of taking a literal — so one branch set covers both chains and no branch
+can be sent to the wrong partition by a stale argument at the call site. Paths
+are split by the `keypaper=` level in the path (`R/claim_chain.R`), never by
+position: position works today and would silently pick the wrong side the first
+time a builder returned its paths in a different order.
+
+**What was deliberately NOT merged: the two Phase 2 builders.** The plan proposed
+collapsing them behind a conditional candidate filter,
+
+    keypaper | (label %in% nli_labels & uncertain %in% allowed)
+
+and called it the single highest-risk line in the change. Wrong one way and key
+papers silently stop being reviewed; wrong the other and 2.43M citing pairs go to
+full OpenRouter coverage. Calling the two existing functions side by side with
+their own explicit routing removes the duplicate TARGET without ever writing that
+line. `llm_verification_both()` then asserts the routed count per side and warns
+loudly on zero, so neither mistake can be silent.
+
+Merging the two functions is still worth doing — the real duplication is their
+shared chunking/retry/cache/assembly loop — but it is a refactor of two large
+functions, not a target-graph change, and it does not block anything.
+
+**Verified against real on-disk GA1 data, no API calls:**
+
+| check | result |
+|---|---|
+| path splitter, order-independent, rejects a missing side | pass |
+| units tagged, `km: ["C."]` respected on BOTH sides | 38 citing + 38 keypaper |
+| `claim_side()` partition is total | 76 = 38 + 38 |
+| each unit routes to its own existing partition | pass |
+| **delta dispatch — would a re-run rescore?** | **0 on both sides** |
+
+The last row is the one that matters: citing wants 2,303,513 pairs against
+2,307,101 already scored, keypaper 4,418 against 4,418. A re-run costs no Jev
+calls. (The 3,588-row citing surplus is claims no longer in the current list; the
+consolidator prunes them as orphans, 0.16% — far under its 0.5 `max_prune_fraction`
+guard.)
+
+**Known loose end.** `_targets_reporting.R` still has targets NAMED
+`claim_scores_keypaper{,_consolidated}` and `llm_verification_keypaper_parquet`.
+They are reporting's own `format = "file"` path declarations and already point at
+the merged tree, so they work — but the names no longer mirror a producing
+factcheck target, which breaks the "keep the producing project's target names"
+convention. Renaming them means touching the reporting store and several builder
+argument names, so it was left out of this change.
+
+---
+
 ## DONE 2026-10-07 (part 3) — collection is runnable
 
 Content-key guards on the three expensive external fetches, so the pipeline can
@@ -728,9 +837,6 @@ corpus against the wrong thing, under the right `scorer_config=` name.
   the gold-standard instrument is drawn with all three models' labels frozen
   into `sample_manifest_GA1.csv`, and the comparison artifact is published.
 
-# MANUAL:
-
-Assess the costs to run Jev for the whole assessment and run it manually if fine.
 
 # Reasoning switch NLI -> Jev
 
@@ -748,9 +854,9 @@ Input should also be `input/reports/PIPELINE_NAME_QA/`.
 Reasoning: the QA reports should be available after the pipeline is completed, not only 
 after all pipelines are completed.
 
-Do this for the main pipeline as well as the `factchecker`.
+Do this for the main pipeline as well as the `factcheck`.
 
-Revise the `factchecker` reports so that they fit to the current Jev based setup. Move 
+Revise the `factcheck` reports so that they fit to the current Jev based setup. Move 
 non-needed reports to the deep_archive.
 Write the remaining ones in an understandable language for ecologists / non AI experts. Even I have 
 problems following the current versions. 
