@@ -211,14 +211,37 @@ keyring::key_set("API_openalex")      # collection
 keyring::key_set("API_openrouter")    # factcheck
 ```
 
-**What a `tar_make()` on `factcheck` can spend.** Three surfaces, none of them prompting first:
+**What a `tar_make()` on `factcheck` can spend — MEASURED 2026-10-07**, not estimated. The figures
+that were here before came from the `nli:` config comment and were wrong by **2.3x on cost** and
+**4x on time**, in opposite directions. Base new estimates on this table.
 
-| Surface | Trigger | Cost |
-|---|---|---|
-| Jev decisions API | `claim_scores_by_claim`, `claim_scores_keypaper` | ~$0.00005/pair; ~$121 for GA1's 2.43M citing pairs, ~$1.50 for its 29,511 key-paper pairs |
-| Relevance screen | `relevance_screen`, `relevance_screen_keypaper` | $0.0000172/pair, routed subset only |
-| OpenRouter Phase 2 | `llm_verification_parquet`, `llm_verification_keypaper_parquet` | $0.000149/pair at `gpt-4o-mini` rates |
-| Claim completion | `claim_work_pairs` under `granularity: atomic_bm` | per-token; usually a cache replay from `output/factchecker/claim_completion/raw/` |
+| Surface | Trigger | Measured price | Measured throughput |
+|---|---|---|---|
+| Jev Phase 1 | `claim_scores_by_claim` | **$0.0000199/pair** | **~1,900 pairs/s** at 4 crew workers (~480/s per worker) |
+| Relevance screen | `relevance_screen` | **$0.0000184/pair** | **99 pairs/s** single-stream |
+| OpenRouter Phase 2 | `llm_verification_parquet` | $0.000149/pair at `gpt-4o-mini` | **~8 pairs/s** sustained |
+| Claim completion | `claim_work_pairs` under `atomic_bm` | per-token, normally a cache replay | — |
+
+**The validating run** (GA1, `km: ["B.", "C."]`, 2026-10-07): 2,809,245 new pairs scored,
+**$62 actual against $60-62 predicted**, **1 h 51 m wall-clock**. Phase 1 took 98 min of *worker*
+time over 4 workers (~25 min wall); **Phase 2 was the bottleneck at 84 min**, not Phase 1.
+
+**Where the old numbers came from, so the mistake is not repeated:**
+
+- **Cost.** The `nli:` comment says Phase 1 asks "three typed questions per pair". It does not:
+  `jev_request()` builds ONE `choice` question per paper with the three criteria inside it, and
+  batches 20 papers per request with the claim in shared `state`. Costing it as three un-batched
+  calls gave $0.00005/pair against a real $0.0000199.
+- **Time.** Extrapolating from the relevance screen's 99 pairs/s ignored that the screen is
+  single-stream while Phase 1 runs 4 crew workers. A 40-request burst gave 293 pairs/s, which
+  overstated *sustained* single-stream by 3x. Only the full run settled it.
+- Both errors came from extrapolating a narrower measurement than the thing being predicted.
+  Prefer `tar_meta(fields = "seconds")` from a real run, and the per-pair `relevance_cost` column
+  (the API's own `usage$cost`, persisted in `output/factchecker/llm_relevance/`).
+
+**Routing varies ~3x between Key Messages** and is what drives Phase 2's cost and time: measured
+**KM C. 0.50%**, **KM B. 1.54%** of scored pairs routed. A forecast built on one KM will be wrong —
+KM A.'s Phase 2 was projected at $7/1 h from C.'s rate and is ~$23/5 h at B.'s.
 
 Use `tar_make(names = ..., shortcut = TRUE)` to render reports against on-disk data without
 triggering any of them.

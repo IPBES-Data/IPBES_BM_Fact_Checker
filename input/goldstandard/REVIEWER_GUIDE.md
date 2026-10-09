@@ -20,14 +20,32 @@ or use the same words. It does have to report something that bears on it.
 likely to be true*: a contrary result, a reversed direction of effect, a failure
 to find what the claim asserts.
 
+> **A contradiction does not have to be total.** Most IPBES claims are
+> generalisations — "X is declining", "Y drives Z". A paper that reports the
+> opposite **for one region, taxon, time period or scale** makes a general claim
+> less likely to be true, and that is `REFUTES`, not `NOT_ENOUGH_INFO`. Say in
+> `note` how far the contradiction reaches ("only for boreal systems", "only
+> 1990–2005"). Use `NOT_ENOUGH_INFO` when the paper simply does not speak to the
+> claim — not when it speaks to part of it and disagrees.
+>
+> This matters because we are specifically measuring whether the system finds
+> refutations at all. Earlier rounds produced almost none, and partial
+> contradictions being filed as `NOT_ENOUGH_INFO` was the main reason.
+
 **`NOT_ENOUGH_INFO`** — you have read the abstract and it does not settle the
-claim either way. This is the correct answer for most rows, and it is a real
+claim either way. This is the correct answer for many rows, and it is a real
 judgement, not a fallback. It covers:
 
 - the paper is on a related topic but reports nothing that bears on this claim;
 - the abstract is descriptive or methodological and reports no finding;
-- the finding is about a different taxon, region, driver or timescale than the
-  claim, so it cannot be carried over.
+- the finding concerns a different taxon, region, driver or timescale **and
+  nothing in it points either way** on the claim as stated.
+
+On that last point, note the asymmetry with `REFUTES` above: a result from
+outside the claim's scope that simply *does not reach* the claim is
+`NOT_ENOUGH_INFO`, but a result from inside part of the claim's scope that
+*runs against* it is `REFUTES`. "Different scope" is not by itself a reason to
+withhold a verdict.
 
 **`CANNOT_JUDGE`** — something is wrong with the *row*, not with the paper. Use
 it when the abstract is not in English, is truncated or garbled, is clearly not
@@ -39,7 +57,7 @@ all. Please say which in `note`.
 the question". Folding one into the other would hide a problem with how the
 material was assembled.
 
-## Three rules that matter more than they look
+## Four rules that matter more than they look
 
 **1. Judge only from the abstract in front of you.** Not from the full paper,
 not from what you know about the topic, not from what you know about the authors.
@@ -53,10 +71,23 @@ single most common error, and it is the specific failure we are trying to
 measure — so a row that feels "obviously relevant" deserves a second look before
 you write `SUPPORTS`.
 
-**3. Judge the whole claim.** Some claims bundle several assertions, or attach a
-mechanism to an observation. If the abstract supports one part and says nothing
-about the rest, that is `NOT_ENOUGH_INFO`, not `SUPPORTS`. Note which part it
-did address.
+**3. Judge the whole claim — for `SUPPORTS`, but not for `REFUTES`.** Some
+claims bundle several assertions, or attach a mechanism to an observation. If
+the abstract supports one part and says nothing about the rest, that is
+`NOT_ENOUGH_INFO`, not `SUPPORTS` — note which part it did address.
+
+The reverse is **not** symmetric. To support a compound claim the paper has to
+reach all of it; to refute one it only has to break a part, because a claim with
+a false component is not true as stated. One contradicted assertion out of three
+is `REFUTES`, with the part named in `note`.
+
+**4. The `SUPPORTS` / `NOT_ENOUGH_INFO` line.** This is where reviewers and
+models disagree most, so one test to apply consistently: *would someone writing
+this claim have been able to cite this paper for it?* If the abstract reports a
+result you could put in a bracket after the sentence, it is `SUPPORTS`. If you
+would be citing it for background, framing or an adjacent fact, it is
+`NOT_ENOUGH_INFO`. Agreement in the same direction is not support — the paper
+must report a **finding**, not merely a compatible view.
 
 ## Filling in the file
 

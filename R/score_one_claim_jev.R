@@ -87,8 +87,10 @@ score_one_claim_jev <- function(
   questions_file = "input/prompts/jev_claim_questions.json",
   api_key = Sys.getenv("API_openrouter"),
   max_active = 100L,
-  # kept for signature stability; chunking by token budget is meaningless when
-  # each request carries exactly one premise.
+  # ACCEPTED AND IGNORED since 2026-10-09, the same way build_llm_relevance_screen()
+  # treats its own batch_size: chunking by count cannot respect a token limit, and
+  # respecting the token limit is the whole point. Kept so existing call sites and
+  # the signature stay valid.
   papers_per_request = 20L,
   # Which chain this is. A HIVE PARTITION LEVEL above assessment=, not a
   # column, and not below assessment= -- consolidate_claim_scores() globs with a
@@ -173,10 +175,22 @@ score_one_claim_jev <- function(
   # Filtering on p_supports costs at most a second attempt at pairs that were
   # probably never billed anyway -- a 402 or an exhausted retry returns no usage
   # -- and trades that against a permanent, silent coverage hole.
-  already <- if (is.null(cached)) character(0) else {
-    scored <- cached[!is.na(cached$p_supports), , drop = FALSE]
-    unique(scored$work_id)
+  # Drop unscored rows from `cached` ENTIRELY, not just from `already`.
+  #
+  # The first version of this fix filtered only `already`, so the failed pairs
+  # were correctly re-sent -- but `cached` still held their NA rows, and the
+  # scratch write below binds `cached` to the new scores. Every recovered pair
+  # therefore landed TWICE: once NA, once scored. Measured on 2026-10-09: the
+  # corpus grew by exactly the NA count (A. +580, B. +2,280) while the NA count
+  # itself did not move, which is the signature of that duplication.
+  #
+  # One filter, one source of truth: a row with no score is not evidence of
+  # anything and must not survive into the output.
+  if (!is.null(cached) && nrow(cached)) {
+    cached <- cached[!is.na(cached$p_supports), , drop = FALSE]
+    if (!nrow(cached)) cached <- NULL
   }
+  already <- if (is.null(cached)) character(0) else unique(cached$work_id)
 
   claim_rows <- function(cols) {
     arrow::open_dataset(claim_unit$nli_ready_path) |>
@@ -199,7 +213,29 @@ score_one_claim_jev <- function(
 
   # ---- score ---------------------------------------------------------------
   spec <- jev_question_spec(questions_file)
-  parts <- split(cw, ceiling(seq_len(nrow(cw)) / max(1L, papers_per_request)))
+  # CHUNK BY TOKEN BUDGET, not by a fixed count. chunk_by_tokens() is the one
+  # build_llm_relevance_screen.R already uses against this same endpoint, and it
+  # is here for the reason that file documents: premise length is wildly uneven,
+  # so a fixed batch of 20 carries ~8k tokens at the median and breaches the
+  # API's 32k `state` limit whenever it happens to collect a few long ones. The
+  # request then 400s, on_error = "continue" turns the whole batch into NA rows,
+  # and because the batching is deterministic it fails identically on every
+  # retry and every re-run.
+  #
+  # That was not hypothetical: 2,860 pairs across 28 claims and 7 BMs sat
+  # permanently unscored on 2026-10-09, in counts that were all exact multiples
+  # of 20 -- whole requests, never individual pairs. Their premises were of
+  # ordinary length (median 378 against the corpus's 392); it took only a couple
+  # of the 0.29% above 1,600 tokens to push one batch over.
+  #
+  # A single over-budget premise still gets its own chunk rather than being
+  # dropped -- the server truncates, which is lossy but recoverable, where
+  # dropping is neither.
+  #
+  # Side effect: at a ~390-token median the budget fits ~60 papers per request
+  # rather than 20, so this makes ~3x FEWER requests. The screen measured the
+  # same thing (15 requests -> 3 on a 294-work claim) and got faster.
+  parts <- chunk_by_tokens(cw)
   resps <- httr2::req_perform_parallel(
     lapply(parts, function(part) jev_request(claim_unit$claim, part, spec, model, api_key)),
     max_active = max_active, on_error = "continue")

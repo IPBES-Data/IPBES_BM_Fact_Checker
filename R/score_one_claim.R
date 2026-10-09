@@ -253,10 +253,22 @@ score_one_claim <- function(
   # Filtering on p_supports costs at most a second attempt at pairs that were
   # probably never billed anyway -- a 402 or an exhausted retry returns no usage
   # -- and trades that against a permanent, silent coverage hole.
-  already <- if (is.null(cached)) character(0) else {
-    scored <- cached[!is.na(cached$p_supports), , drop = FALSE]
-    unique(scored$work_id)
+  # Drop unscored rows from `cached` ENTIRELY, not just from `already`.
+  #
+  # The first version of this fix filtered only `already`, so the failed pairs
+  # were correctly re-sent -- but `cached` still held their NA rows, and the
+  # scratch write below binds `cached` to the new scores. Every recovered pair
+  # therefore landed TWICE: once NA, once scored. Measured on 2026-10-09: the
+  # corpus grew by exactly the NA count (A. +580, B. +2,280) while the NA count
+  # itself did not move, which is the signature of that duplication.
+  #
+  # One filter, one source of truth: a row with no score is not evidence of
+  # anything and must not survive into the output.
+  if (!is.null(cached) && nrow(cached)) {
+    cached <- cached[!is.na(cached$p_supports), , drop = FALSE]
+    if (!nrow(cached)) cached <- NULL
   }
+  already <- if (is.null(cached)) character(0) else unique(cached$work_id)
 
   # ---- delta dispatch -----------------------------------------------------
   #

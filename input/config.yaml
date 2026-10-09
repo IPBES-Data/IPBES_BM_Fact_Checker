@@ -164,7 +164,7 @@ fact_checking:
     # missing. Do not move them until that round is finished.
     ga1_jev:
       assessments: [GA1]
-      km: ["B.", "C."]
+      km: ~
       nli: jev_atomic_bm
       llm: openrouter_cheap
       claim_completion: haiku_completion
@@ -269,8 +269,19 @@ nli:
     # reviewers: AUC 0.737 [0.63, 0.84] where the zero-shot NLI scores 0.529,
     # and 0.95 vs 0.38 for SUPPORTS.
     #
-    # Cost: ~$0.00005/pair, so ~$121 for GA1's 2.43M citing-work pairs and
-    # ~$1.50 for its 29,511 key-paper pairs. No pod, no GPU, no host list --
+    # Cost: MEASURED $0.0000199/pair on 2026-10-07 (60 real pairs, 3 requests),
+    # corroborated by the relevance screen's own persisted usage$cost at
+    # $0.0000184/pair over 15,955 rows. So ~$48 for GA1's 2.43M citing-work
+    # pairs and ~$0.60 for its 29,511 key-paper pairs.
+    #
+    # This comment USED TO SAY $0.00005/pair by describing the call as "three
+    # typed questions per pair". That is not what the code does -- jev_request()
+    # builds ONE choice question per paper with the three criteria inside it and
+    # batches 20 papers per request -- and the 2.5x overestimate was taken at
+    # face value for a budget. See the measured table in CLAUDE.md.
+    #
+    # Throughput: ~1,900 pairs/s at the 4 crew workers configured in
+    # _targets_factcheck.R, ~480/s per worker. No pod, no GPU, no host list --
     # concurrency is per-request inside the scorer.
     jev_atomic_bm:
       backend: jev
