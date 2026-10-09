@@ -15,12 +15,12 @@ name: Deploy report to GitHub Pages
 # isn't needed anyway since Pages is in branch-source mode, not
 # Actions-source mode.
 #
-# Checking out main here is safe despite main having a git submodule
-# (external/runpod, a private repo): actions/checkout@v4 defaults to
-# submodules: false, so it never attempts to clone it. That default is
-# what GitHub's own auto-generated "pages build and deployment" workflow
-# does NOT use (it hardcodes submodules: recursive) - the actual reason
-# Pages deploys failed before this workflow existed.
+# This repo had a git submodule (external/runpod) until 2026-10-09, and that
+# is why this workflow exists at all: GitHub's own auto-generated "pages build
+# and deployment" workflow hardcodes submodules: recursive, which failed
+# against a private submodule. actions/checkout@v4 defaults to
+# submodules: false, so this one never tried. The submodule is gone now, but
+# the workflow stays - re-introducing one must not silently break Pages again.
 on:
   push:
     branches: [main]
