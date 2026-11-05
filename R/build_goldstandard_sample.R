@@ -7,8 +7,8 @@
 # a tracked directory is what freezes them. Hence also the refuse-to-overwrite
 # guard below, which refuses on a FILLED file as well as a template.
 #
-#   source("R/build_goldstandard_sample.R")
-#   build_goldstandard_sample_sets()     # draws both sets
+#   source("R/build_goldstandard_sample.R"); source("R/write_review_workbook.R")
+#   build_goldstandard_sample_sets()     # draws both sets, CSV + .xlsx workbooks
 #
 # WHY THIS EXISTS: every number this project reports comes from models judging
 # models. Human labels are the only thing that breaks the circularity.
@@ -73,7 +73,8 @@
 GOLDSTANDARD_VERDICTS <- c("SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO", "CANNOT_JUDGE")
 
 goldstandard_template_cols <- function() {
-  c("id", "claim", "title", "abstract", "doi", "verdict", "note", "reviewer", "date")
+  # No doi: the reviewer gets exactly what the model gets. It is in the manifest.
+  c("id", "claim", "title", "abstract", "verdict", "note", "reviewer", "date")
 }
 
 goldstandard_labels <- function() c("SUPPORTS", "REFUTES", "NOT_ENOUGH_INFO")
@@ -206,8 +207,8 @@ build_goldstandard_sample <- function(
   manifest_path <- file.path(output_dir, sprintf("sample_manifest_%s_%s.csv", assessment, set))
   paths <- c(
     manifest_path,
-    file.path(output_dir, sprintf("%s_%s_%s_template.csv", reviewers, assessment, set)),
-    file.path(output_dir, sprintf("%s_%s_%s.csv", reviewers, assessment, set))
+    file.path(output_dir, sprintf("%s_%s_%s_template.%s", reviewers, assessment, set, rep(c("csv", "xlsx"), each = length(reviewers)))),
+    file.path(output_dir, sprintf("%s_%s_%s.%s", reviewers, assessment, set, rep(c("csv", "xlsx"), each = length(reviewers))))
   )
   clash <- paths[file.exists(paths)]
   if (length(clash) && !force) {
@@ -238,7 +239,7 @@ build_goldstandard_sample <- function(
   instrument <- sample_df |>
     dplyr::transmute(
       id = .data$id, claim = .data$claim, title = .data$title,
-      abstract = .data$abstract, doi = .data$doi,
+      abstract = .data$abstract,
       verdict = NA_character_, note = NA_character_,
       reviewer = NA_character_, date = NA_character_
     )
@@ -248,11 +249,13 @@ build_goldstandard_sample <- function(
     # correlate between them: two reviewers tiring on the same row would inflate
     # agreement without either being more right, and agreement is the measurement.
     set.seed(seed + match(r, reviewers))
-    utils::write.csv(
-      instrument[sample.int(nrow(instrument)), goldstandard_template_cols()],
-      file.path(output_dir, sprintf("%s_%s_%s_template.csv", r, assessment, set)),
-      row.names = FALSE, na = ""
-    )
+    tpl <- instrument[sample.int(nrow(instrument)), goldstandard_template_cols()]
+    tpl_path <- file.path(output_dir, sprintf("%s_%s_%s_template.csv", r, assessment, set))
+    utils::write.csv(tpl, tpl_path, row.names = FALSE, na = "")
+    # The workbook is what reviewers get (dropdown, locked text); the CSV stays
+    # as the frozen plain-text record of the same rows in the same order.
+    write_review_workbook(tpl, sub("\\.csv$", ".xlsx", tpl_path),
+                          file.path(output_dir, "REVIEWER_GUIDE.md"))
   }
 
   message(sprintf(

@@ -62,12 +62,21 @@ build_goldstandard <- function(
   #
   # _template.csv is excluded explicitly rather than by token count, because
   # counting tokens is what broke when the set letter was added.
+  #
+  # Reviewers return the .xlsx workbook (R/write_review_workbook.R); .csv is
+  # still read for rounds filled the old way. The same file in both formats
+  # would be counted twice, so that stops.
   filled <- list.files(
     goldstandard_dir,
-    pattern = sprintf("^(%s)_[^_]+(_[^_]+)?\\.csv$", paste(reviewers, collapse = "|")),
+    pattern = sprintf("^(%s)_[^_]+(_[^_]+)?\\.(csv|xlsx)$", paste(reviewers, collapse = "|")),
     full.names = TRUE
   )
-  filled <- filled[!grepl("_template\\.csv$", filled)]
+  filled <- filled[!grepl("_template\\.(csv|xlsx)$", filled)]
+  stems <- sub("\\.(csv|xlsx)$", "", filled)
+  if (anyDuplicated(stems)) {
+    stop(sprintf("build_goldstandard: both .csv and .xlsx present for %s -- keep one",
+                 paste(basename(unique(stems[duplicated(stems)])), collapse = ", ")))
+  }
   if (!length(filled)) {
     goldstandard_stop(
       sprintf("build_goldstandard: no completed reviewer files in %s",
@@ -77,9 +86,13 @@ build_goldstandard <- function(
   }
 
   parse_one <- function(path) {
-    stem <- sub("\\.csv$", "", basename(path))
+    stem <- sub("\\.(csv|xlsx)$", "", basename(path))
     parts <- strsplit(stem, "_", fixed = TRUE)[[1]]
-    d <- utils::read.csv(path, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+    d <- if (endsWith(path, ".xlsx")) {
+      openxlsx::read.xlsx(path, sheet = "Review", na.strings = c("", "NA"))
+    } else {
+      utils::read.csv(path, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+    }
     missing_cols <- setdiff(c("id", "verdict"), names(d))
     if (length(missing_cols)) {
       stop(sprintf("build_goldstandard: %s is missing column(s): %s",
@@ -225,8 +238,8 @@ goldstandard_gate_message <- function(goldstandard_dir = "input/goldstandard",
     sep = "\n")
 
   fill <- paste(
-    "FILL: each reviewer copies Rx_<id>_<set>_template.csv -> Rx_<id>_<set>.csv and",
-    sprintf("  fills `verdict` with one of: %s.", paste(GOLDSTANDARD_VERDICTS, collapse = ", ")),
+    "FILL: each reviewer saves Rx_<id>_<set>_template.xlsx as Rx_<id>_<set>.xlsx and",
+    "  picks a `verdict` from its dropdown on the Review sheet.",
     "  Both reviewers must do the SAME set. Re-run this target to adjudicate into",
     "  gold_<id>_<set>.csv. Definitions: input/goldstandard/REVIEWER_GUIDE.md",
     sep = "\n")

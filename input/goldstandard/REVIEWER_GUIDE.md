@@ -1,11 +1,13 @@
 # Reviewer guide — IPBES claim/paper verdicts
 
-You have a file called `R1_<assessment>.csv` or `R2_<assessment>.csv`. Each row
-pairs one **claim** taken from an IPBES assessment with one **paper** (title and
-abstract). Your job is to fill in the `verdict` column.
+You have two Excel workbooks, one per set: `R1_GA1_A_template.xlsx` (240 rows)
+and `R1_GA1_B_template.xlsx` (99 rows) — or the same with `R2`. Each row of a
+workbook's Review sheet pairs one **claim** taken from an IPBES assessment with
+one **paper** (title and abstract). Your job is to fill in the `verdict` column.
+The two sets are judged in exactly the same way, with the same rules.
 
 There are two of you, working **independently**. Please do not discuss
-individual rows until both files are finished. We measure how often you agree,
+individual rows until both of you have finished both workbooks. We measure how often you agree,
 and that number is only meaningful if the judgements were made separately.
 
 ## What the labels mean
@@ -59,11 +61,12 @@ material was assembled.
 
 ## Four rules that matter more than they look
 
-**1. Judge only from the abstract in front of you.** Not from the full paper,
-not from what you know about the topic, not from what you know about the authors.
-If the abstract does not say it, it is not there. This is the hardest rule to
-follow and the most important: the system being evaluated sees exactly this text
-and nothing else, so judging on extra knowledge measures the wrong thing.
+**1. Judge only from the title and abstract in front of you.** Not from the
+full paper, not from what you know about the topic, not from what you know about
+the authors — which is also why the workbook gives no DOI or link. If the title
+and abstract do not say it, it is not there. This is the hardest rule to follow
+and the most important: the system being evaluated sees exactly this text and
+nothing else, so judging on extra knowledge measures the wrong thing.
 
 **2. Being on-topic is not support.** A paper can be squarely about the right
 subject and still report nothing that bears on the specific claim. This is the
@@ -91,23 +94,30 @@ must report a **finding**, not merely a compatible view.
 
 ## Filling in the file
 
+The workbook opens on an Instructions sheet; this guide is repeated on the
+Guide sheet. The rows are on the Review sheet.
+
 | column | what to put |
 |---|---|
-| `verdict` | one of the four words above — **required** |
+| `verdict` | one of the four words above, chosen from the dropdown — **required** |
 | `note` | free text; always worth a line when you hesitated, and required for `CANNOT_JUDGE` |
-| `reviewer` | your initials — same value on every row |
-| `date` | the date you judged the row, `YYYY-MM-DD` |
 
-Edit `verdict`, `note`, `reviewer` and `date` only. Please do not reorder, add
-or delete rows, and do not change `id` — the two files are matched on it. The
-row order differs between the two of you on purpose.
+Only the yellow `verdict` and `note` cells can be edited; everything else is
+locked, and an empty verdict (or a `CANNOT_JUDGE` without a note) stays
+highlighted until you fill it. Put your initials once, on the Instructions
+sheet. The row order differs between the two of you on purpose — your workbook
+and the other reviewer's are matched on `id`.
 
-The file is plain CSV. If you open it in Excel, save it back as CSV (UTF-8), not
-as `.xlsx`.
+When you are done with a workbook, save it under the same name without
+`_template` (e.g. `R1_GA1_A.xlsx`; its Instructions sheet gives your exact name)
+and keep it as `.xlsx`. Send back both: `R1_GA1_A.xlsx` and `R1_GA1_B.xlsx` (or
+the `R2` pair).
 
 ## Pace, and when to stop
 
-Expect around 1.5 minutes per row, so roughly five hours for 200 rows. Please
+Expect around 1.5 minutes per row, so roughly eight and a half hours for the
+339 rows of both workbooks together (six hours for set A, two and a half for
+set B). Please
 spread it over several sittings — agreement drops measurably when reviewers
 tire, and the comparison is between the two of you.
 
@@ -118,7 +128,8 @@ something to avoid.
 
 ## What happens next
 
-The two files are compared row by row. Rows where you agree become the gold
+Your workbooks and the other reviewer's are compared row by row, set by set.
+Rows where you agree become the gold
 standard that every model is scored against. Rows where you disagree are
 reported as the *human ceiling* — the limit of how well any automated system
 could be expected to do — and are not used to score models.
