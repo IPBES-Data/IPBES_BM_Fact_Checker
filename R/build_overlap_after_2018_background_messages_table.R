@@ -18,7 +18,7 @@
 build_overlap_after_2018_background_messages_table <- function(
   works_citing_path,
   cutoff_year = 2018,
-  output_root = "output/tables"
+  output_root = out_reporting("tables")
 ) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   fn_rds  <- file.path(output_root, "overlap_after_2018_background_messages.rds")

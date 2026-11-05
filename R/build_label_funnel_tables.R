@@ -19,20 +19,20 @@
 # the one column you want a dropdown for -- so the column set below is
 # deliberately curated down to only what's useful to filter/read per row,
 # rather than including every column build_label_funnel_data() carries.
-build_label_funnel_tables <- function(label_funnel_data_path, output_root = "output/tables") {
+build_label_funnel_tables <- function(label_funnel_data_path, output_root = out_reporting("tables")) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   x <- readRDS(label_funnel_data_path)
   assessment_id <- x$assessment
   label_stem <- tolower(x$label)
   gran_suffix <- granularity_suffix(x$granularity %||% "naive_bm")
-  model_suffix <- nli_model_suffix(x$nli_active %||% "deberta_zeroshot")
+  model_suffix <- nli_model_suffix(x$scorer_name %||% "deberta_zeroshot")
 
   if (isTRUE(x$empty)) {
     return(character(0))
   }
 
   # Same DOI-preferred/OpenAlex-fallback link builder as
-  # build_nli_bm_explorer.R's drill-down table.
+  # build_claim_scores_bm_explorer.R's drill-down table.
   work_link <- function(work_id, doi) {
     id_short <- sub("^https://openalex\\.org/", "", work_id)
     if (!is.na(doi) && nzchar(doi)) {

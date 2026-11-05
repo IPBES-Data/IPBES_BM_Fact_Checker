@@ -1,0 +1,139 @@
+# Derived summary tables for one assessment's NLI scores (label distribution,
+# confidence, alignment), consumed by build_claim_scores_overview_figures() and by
+# IPBES_Fact_Checker.qmd's "NLI Alignment Scores" section. Reads the whole
+# per-assessment scored-output directory once and caches every summary table
+# needed downstream in a single rds, so neither the figures target nor the
+# report re-collect() the (potentially large) raw dataset repeatedly.
+build_claim_scores_overview_data <- function(
+  assessment,
+  nli_scores_path,
+  scorer_name,
+  works_citing_path,
+  output_root = out_reporting("tables"),
+  nli_scores_by_claim = NULL, # unused — establishes the DAG dependency on scoring
+  granularity = "naive_bm"
+) {
+  assessment_id <- assessment$id
+  dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
+  fn <- file.path(
+    output_root,
+    paste0(
+      "nli_overview_data_", assessment_id,
+      nli_model_suffix(scorer_name), granularity_suffix(granularity), ".rds"
+    )
+  )
+
+  # Not every assessment/granularity combination has been scored yet (e.g.
+  # no host pool has run for it, or a complete_bm config has never been
+  # active) — treat a missing directory the same as an empty dataset rather
+  # than erroring, so one un-scored combination doesn't break the whole target.
+  if (!dir.exists(nli_scores_path)) {
+    saveRDS(
+      list(assessment = assessment_id, scorer_name = scorer_name, granularity = granularity, empty = TRUE),
+      file = fn
+    )
+    return(fn)
+  }
+
+  d <- arrow::open_dataset(nli_scores_path) |>
+    dplyr::select(km, bm, work_id, label, p_supports, p_refutes, confidence, uncertain) |>
+    dplyr::mutate(alignment = p_supports - p_refutes) |>
+    dplyr::collect()
+
+  # DOI lookup for the BM explorer's drill-down table (prefer a clickable DOI
+  # link over the bare OpenAlex work_id where one exists). works_citing's id
+  # is the same "https://openalex.org/W..." string as nli_scores' work_id.
+  # A work can appear once per km/bm partition it's cited from, so collapse
+  # to exactly one row per work_id (picking any non-NA doi) before joining —
+  # otherwise a left_join could fan out and duplicate scored rows.
+  doi_lookup <- arrow::open_dataset(works_citing_path) |>
+    dplyr::select(work_id = id, doi) |>
+    dplyr::collect() |>
+    dplyr::group_by(work_id) |>
+    dplyr::summarise(doi = dplyr::first(doi[!is.na(doi)], default = NA_character_), .groups = "drop")
+  d <- dplyr::left_join(d, doi_lookup, by = "work_id")
+
+  if (!nrow(d)) {
+    saveRDS(
+      list(assessment = assessment_id, scorer_name = scorer_name, granularity = granularity, empty = TRUE),
+      file = fn
+    )
+    return(fn)
+  }
+
+  label_levels <- c("SUPPORTS", "NOT_ENOUGH_INFO", "REFUTES")
+
+  label_overall <- d |>
+    dplyr::count(label) |>
+    dplyr::mutate(pct = round(100 * n / sum(n), 1))
+
+  label_km <- d |>
+    dplyr::count(km, label) |>
+    dplyr::group_by(km) |>
+    dplyr::mutate(pct = round(100 * n / sum(n), 1)) |>
+    dplyr::ungroup() |>
+    dplyr::select(km, label, pct) |>
+    tidyr::pivot_wider(names_from = label, values_from = pct, values_fill = 0) |>
+    dplyr::select(km, dplyr::any_of(label_levels)) |>
+    dplyr::arrange(km)
+
+  table_bm <- d |>
+    dplyr::count(km, bm, label) |>
+    dplyr::group_by(km, bm) |>
+    dplyr::mutate(pct = round(100 * n / sum(n), 1)) |>
+    dplyr::ungroup() |>
+    dplyr::select(km, bm, label, pct) |>
+    tidyr::pivot_wider(names_from = label, values_from = pct, values_fill = 0) |>
+    dplyr::select(km, bm, dplyr::any_of(label_levels)) |>
+    dplyr::arrange(km, bm)
+
+  conf_table <- d |>
+    dplyr::group_by(label) |>
+    dplyr::summarise(
+      n = dplyr::n(),
+      mean = round(mean(confidence, na.rm = TRUE), 3),
+      median = round(stats::median(confidence, na.rm = TRUE), 3),
+      p25 = round(stats::quantile(confidence, 0.25, na.rm = TRUE), 3),
+      p75 = round(stats::quantile(confidence, 0.75, na.rm = TRUE), 3),
+      .groups = "drop"
+    ) |>
+    dplyr::arrange(factor(label, levels = label_levels))
+
+  align_table <- d |>
+    dplyr::group_by(km, bm) |>
+    dplyr::summarise(
+      n = dplyr::n(),
+      mean_aln = round(mean(alignment, na.rm = TRUE), 3),
+      sd_aln = round(stats::sd(alignment, na.rm = TRUE), 3),
+      pct_supp = round(100 * mean(label == "SUPPORTS"), 1),
+      pct_ref = round(100 * mean(label == "REFUTES"), 1),
+      pct_nei = round(100 * mean(label == "NOT_ENOUGH_INFO"), 1),
+      pct_unc = round(100 * mean(uncertain), 1),
+      .groups = "drop"
+    ) |>
+    dplyr::arrange(km, bm)
+
+  saveRDS(
+    list(
+      assessment    = assessment_id,
+      scorer_name    = scorer_name,
+      granularity   = granularity,
+      empty         = FALSE,
+      n_total       = nrow(d),
+      n_bm          = dplyr::n_distinct(d$bm),
+      n_km          = dplyr::n_distinct(d$km),
+      pct_unc       = round(100 * mean(d$uncertain), 1),
+      label_overall = label_overall,
+      label_km      = label_km,
+      table_bm      = table_bm,
+      conf_table    = conf_table,
+      align_table   = align_table,
+      # Trimmed raw rows — what plot-conf/plot-aln's density plots need, plus
+      # work_id/doi for the BM explorer's per-work drill-down table.
+      raw           = d |> dplyr::select(km, bm, work_id, doi, label, confidence, alignment)
+    ),
+    file = fn
+  )
+
+  fn
+}

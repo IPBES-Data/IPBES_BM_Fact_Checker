@@ -19,7 +19,7 @@
 #
 # The mapping keeps the original output/works_citing/assessment/km/bm path
 # and partitioning on purpose: consumers that walk those directories
-# (build_nli_ready_parquet.R, build_nli_ready_evidence_parquet.R) and
+# (build_nli_ready_parquet.R, build_claim_work_pairs.R) and
 # build_label_funnel_data.R's select(km, bm, work_id = id) keep working
 # against the same layout.
 #
@@ -104,7 +104,7 @@ works_citing_group <- function(map_path, km_val, bm_val, meta_path, columns) {
 }
 
 build_works_citing_parquet <- function(assessment, works_path, snowball_path,
-                                       output_root = "output/works_citing") {
+                                       output_root = out_collection("works_citing")) {
   assessment_id <- assessment$id
   meta_root     <- works_citing_meta_root(output_root)
   output_path   <- file.path(output_root, paste0("assessment=", assessment_id))

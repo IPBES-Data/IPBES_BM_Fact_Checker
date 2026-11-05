@@ -14,7 +14,7 @@ write_key_messages_parquet <- function(key_messages, output_path, reset = TRUE) 
   output_path
 }
 
-build_key_messages_parquet <- function(sparql_url, assessment, ttl_path, sparql_file, output_root = "output/key_messages") {
+build_key_messages_parquet <- function(sparql_url, assessment, ttl_path, sparql_file, output_root = out_collection("key_messages")) {
   output_path <- branch_output_dir(output_root, assessment$id)
 
   with_fuseki_session(

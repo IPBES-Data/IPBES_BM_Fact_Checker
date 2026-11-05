@@ -60,7 +60,7 @@ pct_with_confidence <- if (has_confidence) {
 # input was an error rather than a rendered explanation.
 if (isTRUE(x$empty)) {
   cat(sprintf(
-    "No BM-split QA data for `%s` at granularity `%s` -- that granularity has not been segmented/scored yet. Run the `nli_ready_evidence_parquet` chain for it and re-render.\n\n",
+    "No BM-split QA data for `%s` at granularity `%s` -- that granularity has not been segmented/scored yet. Run the `claim_work_pairs` chain for it and re-render.\n\n",
     params$assessment_id, params$granularity
   ))
   knitr::knit_exit()
@@ -72,7 +72,7 @@ if (isTRUE(x$empty)) {
 ## Methodology
 
 Every Background Message (BM) in this assessment is split into claims by
-`nli_ready_evidence_parquet` under the `granularity` of the NLI config
+`claim_work_pairs` under the `granularity` of the NLI config
 selected by `input/config.yaml`'s `fact_checking.nli`. This report is a
 **QA check on that split, not a scoring result** — for every BM field, it
 shows the original `bm_description`/`bm_label` text with each resulting

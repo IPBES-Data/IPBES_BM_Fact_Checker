@@ -1,6 +1,6 @@
 # LLM-based completion of elliptical `atomic_bm` fragments.
 #
-# segment_bm_atomic() (R/build_nli_ready_evidence_parquet.R) splits a BM
+# segment_bm_atomic() (R/build_claim_work_pairs.R) splits a BM
 # field at EVERY evidence brace, which routinely produces fragments that
 # only make grammatical sense as a continuation of an earlier fragment
 # (e.g. "can help to regulate disease and the immune system" has no
@@ -14,7 +14,7 @@
 #
 # Reuses build_llm_verification_chat()/load_text_file()/render_template()
 # from R/build_llm_verification_parquet.R rather than duplicating them --
-# both files are sourced into the same environment by _targets.R's
+# both files are sourced into the same environment by _targets_collection.R's
 # lapply(list.files("R", ...), source), same convention every other R/*.R
 # file in this project relies on for cross-file helpers.
 
@@ -83,7 +83,7 @@ claim_completion_is_faithful <- function(completed, source_fragments_text) {
 # segment_bm_atomic()) -> a tibble of completion results, one row per
 # fragment: original_fragment, needs_completion, completed_claim,
 # faithfulness_flagged, explanation. Callers building claim text
-# (build_nli_ready_evidence_parquet()) use $completed_claim; the
+# (build_claim_work_pairs()) use $completed_claim; the
 # atomic_bm validation report (Atomic_BM_Split_Report.qmd) uses every
 # column.
 #
@@ -100,7 +100,7 @@ complete_bm_fragments <- function(
   confidence = NA_character_,
   system_prompt_file = "input/prompts/claim_completion_system.md",
   user_prompt_file = "input/prompts/claim_completion_user.md",
-  cache_dir = "output/claim_completion/raw"
+  cache_dir = out_factcheck("claim_completion/raw")
 ) {
   # `confidence` (e.g. "well established", from segment_bm_atomic()'s own
   # extraction) is pure passthrough metadata here -- never shown to the LLM,

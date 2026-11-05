@@ -14,7 +14,7 @@ write_refs_parquet <- function(refs, output_path, reset = TRUE) {
   output_path
 }
 
-build_refs_parquet <- function(sparql_url, assessment, ttl_path, sparql_file, output_root = "output/refs") {
+build_refs_parquet <- function(sparql_url, assessment, ttl_path, sparql_file, output_root = out_collection("refs")) {
   output_path <- branch_output_dir(output_root, assessment$id)
 
   with_fuseki_session(

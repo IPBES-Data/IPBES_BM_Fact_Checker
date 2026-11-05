@@ -2,19 +2,19 @@
 # the `reports:` section of input/config.yaml.
 #
 # WHY THIS IS NOT A TARGET. tarchetypes::tar_quarto() resolves the project's
-# file list AND its dependency edges when _targets.R is SOURCED, not when the
+# file list AND its dependency edges when _targets_collection.R is SOURCED, not when the
 # target runs: tar_quarto_raw() calls tar_quarto_files() in its own body, and
 # tar_quarto_command() computes `deps <- map(sources, knitr_deps)` there too,
 # baking both into the target's command. A wrapper produced by an upstream
 # target would therefore contribute nothing on the run that created it -- no
-# source, no dependency edge. So generation runs in _targets.R's preamble,
+# source, no dependency edge. So generation runs in _targets_collection.R's preamble,
 # after R/ is sourced and before the pipeline list is built.
 #
 # Consequences of running at definition time, all handled below:
 #   * it runs on every tar_make()/tar_outdated()/tar_visnetwork(), so it must
 #     be cheap and IDEMPOTENT -- write_if_changed() leaves bytes and mtimes
 #     alone when nothing moved;
-#   * a failure here makes _targets.R unsourceable, so every validation error
+#   * a failure here makes _targets_collection.R unsourceable, so every validation error
 #     names exactly what is wrong in config.yaml;
 #   * it must PRUNE, or a report dropped from config would keep rendering.
 #
@@ -36,6 +36,23 @@
 # from R/branch_helpers.R rather than re-derived, so they match exactly what
 # the nine former render targets produced.
 
+# Which Quarto project each `reports:` entry belongs to, and where that
+# project's sources live. The names match _targets.yaml's own project names,
+# since that is what decides which STORE a wrapper's tar_read() calls resolve
+# against -- a wrapper in the wrong directory names targets that do not exist
+# in the project that renders it.
+#
+# Two projects rather than one because Quarto gives a project exactly one
+# output-dir: output/reports/ is published to GitHub Pages at the site root,
+# output/reports_training/ under /training/. See input/reports_training/_quarto.yml.
+report_project_dirs <- function() {
+  # `training` was removed on 2026-10-05 with the project that rendered into it.
+  # Kept as a one-element vector rather than collapsed to a bare string: the
+  # `project:` key, the per-directory pruning and the both-preambles call all
+  # still work, so adding a second output directory back is adding an element.
+  c(reporting = "input/reports")
+}
+
 # Marker written into every generated file. Pruning only ever removes files
 # carrying it, so a hand-written .qmd in input/reports/ can never be deleted
 # by accident.
@@ -47,7 +64,7 @@ report_wrapper_marker <- "<!-- GENERATED FILE -- edit config.yaml `reports:` ins
 report_wrapper_spec <- function() {
   list(
     IPBES_Label_Funnel_Report = list(
-      dims = c("assessment", "granularity", "label", "nli_config"),
+      dims = c("assessment", "granularity", "label", "scorer_config"),
       # Only this wrapper's own label's targets, not both.
       deps = function(p) {
         stem <- tolower(p$label)
@@ -62,13 +79,13 @@ report_wrapper_spec <- function() {
           assessment_id = p$assessment,
           label = p$label,
           granularity = p$granularity,
-          nli_active = p$nli_config
+          scorer_name = p$scorer_config
         )
       },
       name = function(p) {
         paste0(
           "IPBES_", p$label, "_Report_", p$assessment,
-          nli_model_suffix(p$nli_config), granularity_suffix(p$granularity)
+          nli_model_suffix(p$scorer_config), granularity_suffix(p$granularity)
         )
       }
     ),
@@ -86,7 +103,7 @@ report_wrapper_spec <- function() {
       }
     ),
     QA_NLI_Scores_Report = list(
-      dims = c("assessment", "granularity", "nli_config"),
+      dims = c("assessment", "granularity", "scorer_config"),
       deps = function(p) {
         c(
           nli_scores_qa_data = "nli_scores_qa_data",
@@ -97,13 +114,13 @@ report_wrapper_spec <- function() {
         list(
           assessment_id = p$assessment,
           granularity = p$granularity,
-          nli_config = p$nli_config
+          scorer_config = p$scorer_config
         )
       },
       name = function(p) {
         paste0(
           "QA_NLI_Scores_Report_", p$assessment,
-          nli_model_suffix(p$nli_config), granularity_suffix(p$granularity)
+          nli_model_suffix(p$scorer_config), granularity_suffix(p$granularity)
         )
       }
     ),
@@ -120,34 +137,6 @@ report_wrapper_spec <- function() {
       },
       name = function(p) {
         paste0("QA_LLM_Verification_Report_", p$assessment, "_", p$llm_config)
-      }
-    ),
-    # Deliberately raw underscores rather than the two *_suffix() helpers:
-    # this is what the former nli_training_qa_report_html target produced, and
-    # the point of this change is not to rename anything.
-    QA_NLI_Training_Data_Report = list(
-      dims = c("assessment", "granularity", "nli_config"),
-      deps = function(p) c(nli_training_qa_data = "nli_training_qa_data"),
-      params = function(p) {
-        list(
-          assessment_id = p$assessment,
-          nli_config = p$nli_config,
-          granularity = p$granularity
-        )
-      },
-      name = function(p) {
-        paste0(
-          "QA_NLI_Training_Data_Report_", p$assessment, "_", p$nli_config,
-          "_", p$granularity
-        )
-      }
-    ),
-    QA_NLI_Finetuned_Model_Report = list(
-      dims = c("nli_config"),
-      deps = function(p) c(nli_finetuned_model_qa_data = "nli_finetuned_model_qa_data"),
-      params = function(p) list(nli_config = p$nli_config),
-      name = function(p) {
-        paste0("QA_NLI_Finetuned_Model_Report_", p$nli_config)
       }
     )
   )
@@ -240,7 +229,7 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
   qmd_name <- entry[["qmd_name"]]
   dims <- spec$dims
 
-  assessments <- vapply(cfg$assessments, function(a) a$id, character(1))
+  assessments <- vapply(config_assessments(cfg), function(a) a$id, character(1))
   nli_configs <- cfg$nli$configs
 
   vals <- list()
@@ -307,16 +296,16 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
     data.frame(.dummy = NA)
   }
 
-  # nli_config last: when not pinned it is DERIVED per granularity via
+  # scorer_config last: when not pinned it is DERIVED per granularity via
   # nli_config_for_granularity(), which is the safe default -- naming the
   # wrong config silently makes already-scored data look unscored.
-  if ("nli_config" %in% dims) {
-    pinned <- unlist(entry[["nli_config"]])
+  if ("scorer_config" %in% dims) {
+    pinned <- unlist(entry[["scorer_config"]])
     if (!is.null(pinned) && length(pinned)) {
       unknown <- setdiff(pinned, names(nli_configs))
       if (length(unknown)) {
         stop(sprintf(
-          "reports: entry '%s' names unknown nli_config(s): %s (known: %s)",
+          "reports: entry '%s' names unknown scorer_config(s): %s (known: %s)",
           qmd_name, paste(unknown, collapse = ", "),
           paste(names(nli_configs), collapse = ", ")
         ), call. = FALSE)
@@ -330,12 +319,12 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
           if (!nrow(rows)) {
             return(NULL)
           }
-          rows$nli_config <- cf
+          rows$scorer_config <- cf
           rows
         }))
         if (is.null(keep) || !nrow(keep)) {
           stop(sprintf(
-            "reports: entry '%s' pins nli_config(s) %s, but none of them declares any of the requested granularities (%s)",
+            "reports: entry '%s' pins scorer_config(s) %s, but none of them declares any of the requested granularities (%s)",
             qmd_name, paste(pinned, collapse = ", "),
             paste(grid$granularity, collapse = ", ")
           ), call. = FALSE)
@@ -343,18 +332,18 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
         grid <- keep
       } else {
         grid <- expand.grid(
-          c(as.list(grid), list(nli_config = pinned)),
+          c(as.list(grid), list(scorer_config = pinned)),
           stringsAsFactors = FALSE, KEEP.OUT.ATTRS = FALSE
         )
       }
     } else {
       if (!"granularity" %in% names(grid)) {
         stop(sprintf(
-          "reports: entry '%s' needs an explicit `nli_config:` (it has no granularity to derive one from)",
+          "reports: entry '%s' needs an explicit `scorer_config:` (it has no granularity to derive one from)",
           qmd_name
         ), call. = FALSE)
       }
-      grid$nli_config <- nli_config_for_granularity(
+      grid$scorer_config <- nli_config_for_granularity(
         nli_configs, grid$granularity, purpose_config(cfg, "fact_checking")$nli
       )
     }
@@ -362,38 +351,24 @@ report_wrapper_combinations <- function(entry, cfg, spec) {
 
   grid$.dummy <- NULL
 
-  # The fine-tuned-model report only exists for a config that was actually
-  # trained. This replaces the old `.skipped_<cfg>` placeholder-file hack:
-  # no wrapper, so nothing is rendered and nothing needs pruning downstream.
-  if (identical(qmd_name, "QA_NLI_Finetuned_Model_Report") && nrow(grid)) {
-    # Fine-tuning is now gated by training.finetune.enabled on the TRAINING
-    # purpose block, not by a `train:` field on each serving config -- so the
-    # report exists for exactly the one config that block selects, when enabled.
-    tr <- purpose_config(cfg, "training")
-    trained <- vapply(grid$nli_config, function(cf) {
-      isTRUE(tr$finetune_enabled) && identical(cf, tr$nli)
-    }, logical(1))
-    dropped <- grid$nli_config[!trained]
-    if (length(dropped)) {
-      message(sprintf(
-        "[report wrappers] %s: skipping %s (train: false)",
-        qmd_name, paste(dropped, collapse = ", ")
-      ))
-    }
-    grid <- grid[trained, , drop = FALSE]
-  }
 
   grid
 }
 
 #' Generate the wrapper .qmd files declared by config.yaml's `reports:` section
 #'
-#' Called from _targets.R's preamble. Idempotent: rewrites nothing when the
+#' Called from _targets_collection.R's preamble. Idempotent: rewrites nothing when the
 #' resulting content is unchanged, and prunes generated wrappers that the
 #' current config no longer asks for.
+# Writes EVERY entry's wrappers, into whichever directory its `project:`
+# names, regardless of which pipeline called it. Called from both
+# _targets_reporting.R's preamble (it was called from _targets_training.R's too,
+# idempotent (write_if_changed() leaves unchanged bytes alone), so running
+# either project leaves both directories correct, and neither can drift behind
+# a config edit made while only the other was being run.
 generate_report_wrappers <- function(
   config_file = "input/config.yaml",
-  dir = "input/reports",
+  dirs = report_project_dirs(),
   quiet = FALSE
 ) {
   if (!file.exists(config_file)) {
@@ -426,11 +401,20 @@ generate_report_wrappers <- function(
       ), call. = FALSE)
     }
 
+    project <- entry[["project"]] %||% "reporting"
+    if (!project %in% names(dirs)) {
+      stop(sprintf(
+        "reports: entry '%s' names project '%s'; known projects: %s",
+        qmd_name, project, paste(names(dirs), collapse = ", ")
+      ), call. = FALSE)
+    }
+    dir <- dirs[[project]]
+
     body_include <- paste0("_", qmd_name, "_body.qmd")
     if (!file.exists(file.path(dir, body_include))) {
       stop(sprintf(
-        "reports: entry '%s' has no shared body at %s",
-        qmd_name, file.path(dir, body_include)
+        "reports: entry '%s' declares project '%s' but has no shared body at %s",
+        qmd_name, project, file.path(dir, body_include)
       ), call. = FALSE)
     }
 
@@ -458,11 +442,19 @@ generate_report_wrappers <- function(
   }
 
   # Prune: only files carrying the marker, so hand-written sources are safe.
-  existing <- list.files(dir, pattern = "\\.qmd$", full.names = TRUE)
-  generated <- Filter(function(f) {
-    any(grepl(report_wrapper_marker, readLines(f, warn = FALSE), fixed = TRUE))
-  }, existing)
-  stale <- setdiff(generated, expected)
+  # Per DIRECTORY, not once over the union -- a single pass keyed on one dir
+  # would never visit the other, so a wrapper left behind by an entry that
+  # changed project (or was deleted while only the other pipeline was being
+  # run) would render forever against targets its project does not have.
+  stale <- character()
+  for (d in dirs) {
+    if (!dir.exists(d)) next
+    existing <- list.files(d, pattern = "\\.qmd$", full.names = TRUE)
+    generated <- Filter(function(f) {
+      any(grepl(report_wrapper_marker, readLines(f, warn = FALSE), fixed = TRUE))
+    }, existing)
+    stale <- c(stale, setdiff(generated, expected))
+  }
   for (s in stale) unlink(s, force = TRUE)
 
   if (!quiet) {

@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "The question Jev is asked per (claim, work) pair, by R/score_one_claim_jev.R.",
+    "",
+    "Tracked as a format = 'file' target, so EDITING THIS FILE INVALIDATES SCORING.",
+    "Different question, different scores; a tree scored under two versions would be",
+    "meaningless. A real edit means a full rescore of whatever nli_config= uses the",
+    "jev backend.",
+    "",
+    "A CHOICE, not three Nouls. The three labels are mutually exclusive, which is what",
+    "Choice is for -- the TypeSafe skill puts it as 'Choice: picks one option; its",
+    "distribution compares competing options' against 'Noul: ... use one per label when",
+    "several may apply'. Choice returns `probabilities` over the three labels and a",
+    "`confidence` directly, so (p_supports, p_refutes, p_nei) and confidence come back",
+    "native instead of being cross-normalised from three independent binaries. One",
+    "question per paper instead of three also means the premise is sent once.",
+    "",
+    "The item goes in `instructions.paper`, NOT in the shared state. Question ids are",
+    "for code and are never sent to the model, so a question keyed by work_id against a",
+    "state full of papers has no way to say which paper it means -- measured: 40 papers",
+    "that way collapse to 3 distinct answers, and a paper plainly supporting a claim",
+    "scored 0.89 for CONTRADICTS. With the item inline, batch size has no measurable",
+    "effect: Spearman against per-paper scoring is 0.91 at 10 per request, 0.85 at 20,",
+    "0.88 at 40, against a 0.87 run-to-run baseline.",
+    "",
+    "NOT_ENOUGH_INFO is the no-match outcome the skill calls for -- 'include a no-match",
+    "outcome when nothing may fit'. It must stay catch-all: a paper can fail to bear on",
+    "the claim either by being off-topic or by being on-topic and reporting nothing that",
+    "settles it, and both are NEI for this pipeline."
+  ],
+  "question": {
+    "type": "choice",
+    "instructions_question": "Judged only from this paper, what is its relationship to the claim?",
+    "criteria": {
+      "SUPPORTS": "the paper reports a finding consistent with the claim and bearing on it, making the claim more likely to be true",
+      "REFUTES": "the paper reports a finding inconsistent with the claim, or pointing in the opposite direction, making the claim less likely to be true",
+      "NOT_ENOUGH_INFO": "the paper does not report a finding that bears on the claim either way -- whether because it is about a related but different topic, or because it is on topic but reports nothing that settles the claim"
+    }
+  },
+  "label_map": {
+    "SUPPORTS": "p_supports",
+    "REFUTES": "p_refutes",
+    "NOT_ENOUGH_INFO": "p_nei"
+  }
+}

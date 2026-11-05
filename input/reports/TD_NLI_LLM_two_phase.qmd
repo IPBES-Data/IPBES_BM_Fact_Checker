@@ -15,7 +15,7 @@ format:
 
 **Status: implemented.** The `llm_verification_parquet` target
 (`R/build_llm_verification_parquet.R`) runs Phase 2 below on top of the live
-Phase 1 NLI scoring chain (`nli_scores_by_claim_evidence`, see
+Phase 1 NLI scoring chain (`claim_scores_by_claim`, see
 [TD_BM_NLI_approach](TD_BM_NLI_approach.html)). Its architecture is ported
 from the sibling `Categorisation_Literature` project's LLM epistemology
 classifier (`R/llm_epistemology.R` there) — see [Ported
@@ -35,7 +35,7 @@ classifier and explainer on top of the NLI output.
 
 ## Phase 1 — NLI (all pairs)
 
-Run the existing `nli_scores_by_claim_evidence` pipeline across all citing
+Run the existing `claim_scores_by_claim` pipeline across all citing
 works × BM claims. The NLI model returns `label` + `p_supports` / `p_refutes`
 / `p_nei` / `confidence` / `uncertain` for every pair.
 
@@ -173,26 +173,26 @@ builder itself, so the scoping logic and its target-level identity stay
 separately inspectable and independently cacheable. It reads only
 already-existing, unmodified targets (`key_messages_parquet`, `refs_parquet`,
 `works_parquet`, the snowball edges dataset, and — for a drift sanity check
-only — `nli_ready_evidence_parquet`) and writes to its own output root.
+only — `claim_work_pairs`) and writes to its own output root.
 Nothing about it edits `download_works.R`, `build_snowball_parquet.R`,
-`build_works_citing_parquet.R`, `build_nli_ready_evidence_parquet.R`, or the
+`build_works_citing_parquet.R`, `build_claim_work_pairs.R`, or the
 NLI scoring chain — `targets` invalidation only flows forward from something
 that actually changes, and adding a new *consumer* of an existing target's
 output does not retroactively invalidate it.
 
 One deliberate non-reuse: `extract_claim_evidence_tokens()` in the new file
 duplicates the sentence-splitting/terminal-brace/buffer logic from
-`segment_bm_by_evidence()` (`R/build_nli_ready_evidence_parquet.R`) rather
+`segment_bm_by_evidence()` (`R/build_claim_work_pairs.R`) rather
 than calling it, so that the two stay behaviorally identical (verified
 directly: run against the real BM text, both functions produce exactly the
 same segment count and boundaries in every test case, including a segment
 with multiple inline brace groups). Calling the original instead would work
 too — until someone edits it: `targets` hashes function *bodies* as
 dependencies, so even a behavior-preserving change there would mark
-`nli_ready_evidence_parquet`, and everything downstream of it including the
+`claim_work_pairs`, and everything downstream of it including the
 NLI scoring chain, outdated. `build_llm_candidate_scope_parquet()` also
 cross-checks its own derived `claim_id`s against
-`nli_ready_evidence_parquet`'s real ones at build time and `warning()`s
+`claim_work_pairs`'s real ones at build time and `warning()`s
 (not `stop()`s) on any mismatch, so a future edit to either segmentation
 implementation that silently drifts out of sync gets caught rather than
 silently mis-attributing evidence.
@@ -209,7 +209,7 @@ extractor also re-runs completion and re-derives the surviving order via
 `build_bm_split_highlighted.R` already uses for its own atomic_bm
 highlighting) — relying on the resumable per-fragment completion cache
 (`output/claim_completion/raw/`) to make this a cache-hit-only call in
-practice, once a real atomic_bm `nli_ready_evidence_parquet` build has
+practice, once a real atomic_bm `claim_work_pairs` build has
 already populated it. `complete_bm` has **no** counterpart at all: its
 whole-field claims carry no per-sub-claim evidence tokens to match by, so
 `build_llm_candidate_scope_parquet()` returns its "no matches available"
@@ -358,7 +358,7 @@ vary within it based on the data:
 ```r
 tibble(
   llm_config          = character(), # selected input/config.yaml llm_verification.configs entry name
-  nli_config          = character(), # NLI profile used in Phase 1
+  scorer_config          = character(), # NLI profile used in Phase 1
   assessment          = character(),
   nli_route           = character(), # this ROW's own outcome, e.g. "REFUTES-certain" -- see nli_route_label()
   km                  = character(),
@@ -517,7 +517,7 @@ oversight; see [Recommended Workflow](#recommended-workflow).
 
 ## Recommended Workflow {#recommended-workflow}
 
-1. Run `nli_scores_by_claim_evidence` (Phase 1) — existing pipeline
+1. Run `claim_scores_by_claim` (Phase 1) — existing pipeline
 2. Run `llm_verification_parquet` (Phase 2) — reviews whichever bucket(s) the active config's `nli_labels`/`nli_certainty` select (currently `REFUTES` + `SUPPORTS`, both `certain`, on every shipped config)
 3. Widen coverage incrementally: define or switch to a config targeting the next bucket (`REFUTES`/`SUPPORTS` + `uncertain`, then `NOT_ENOUGH_INFO` + `uncertain`) once the current one is reviewed
 4. Merge: use `llm_label` where available, fall back to `nli_label` elsewhere — **not yet wired into `nli_overview_data`/the report**

@@ -2,30 +2,16 @@
 # IPBES BM Fact Checker — operator interface.
 #
 # `make help` prints all targets.
-# Override image versions on the command line:
-#   make docker-nli-build   VERSION=v0.2.3
-#   make docker-nli-push    VERSION=v0.2.3
+#
+# The docker-nli* targets are GONE (2026-10-09). They forwarded to the
+# external/runpod submodule, which was removed with the NLI backend it served;
+# its final state is on that repo's `untested_fact_checker` branch. Image build
+# variables (REGISTRY, VERSION, PLATFORM, NLI_MODEL) went with them — nothing
+# here builds an image any more.
 # ----------------------------------------------------------------------------
-
-# Image registry namespace. Override with REGISTRY=ghcr.io/<other-user> if you fork.
-REGISTRY ?= ghcr.io/rkrug
-
-# Default image version. Bump for each new build (see
-# external/runpod/docker/nli-runpod/README.md).
-VERSION  ?= v0.1.0
-
-# Docker buildx platform — RunPod nodes are amd64 even from Apple Silicon.
-PLATFORM ?= linux/amd64
-
-# Model baked into the NLI image. Empty = use the Dockerfile default
-# (deberta-v3-large-zeroshot-v2.0). Override to bake the faster base model:
-#   make docker-nli VERSION=v0.2.3-base \
-#     NLI_MODEL=MoritzLaurer/deberta-v3-base-zeroshot-v2.0
-NLI_MODEL ?=
 
 .PHONY: help \
         tar-make tar-visnetwork tar-outdated tar-invalidate tar-clean \
-        docker-nli-build docker-nli-push docker-nli \
         mmd mmd-clean
 
 # Mermaid CLI binary. Install via `npm i -g @mermaid-js/mermaid-cli` or
@@ -64,20 +50,6 @@ tar-invalidate: ## Invalidate all targets (force rebuild)
 
 tar-clean: ## Remove all target outputs
 	Rscript -e "targets::tar_destroy()"
-
-# --- docker images ----------------------------------------------------------
-# The NLI image's Dockerfile and build logic now live in the external/runpod
-# submodule (see runpod_migration_IPBES_BM_Fact_Checker/TODO_migration_runpod.md);
-# these targets just forward REGISTRY/VERSION/NLI_MODEL to it.
-
-docker-nli-build: ## Build the NLI RunPod image (NLI_MODEL=... to override the baked model)
-	$(MAKE) -C external/runpod docker-nli-build REGISTRY=$(REGISTRY) VERSION=$(VERSION) NLI_MODEL=$(NLI_MODEL)
-
-docker-nli-push: ## Push the NLI RunPod image to the registry
-	$(MAKE) -C external/runpod docker-nli-push REGISTRY=$(REGISTRY) VERSION=$(VERSION)
-
-docker-nli: ## Build + push the NLI RunPod image
-	$(MAKE) -C external/runpod docker-nli REGISTRY=$(REGISTRY) VERSION=$(VERSION) NLI_MODEL=$(NLI_MODEL)
 
 # --- mermaid diagrams -------------------------------------------------------
 # Renders every .mmd under input/mmd/ to SVG (vector) and PNG (raster) in

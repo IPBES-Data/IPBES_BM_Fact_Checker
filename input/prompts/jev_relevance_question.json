@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "The question the relevance screen asks per (claim, work) pair, by",
+    "R/build_llm_relevance_screen.R. Sibling of jev_claim_questions.json, which",
+    "holds Phase 1's.",
+    "",
+    "Tracked as a format = 'file' target, so EDITING THIS FILE INVALIDATES SCORING.",
+    "`version` below is what enforces that: the screen discards any row scored under",
+    "a lower version before its resume diff. Resumability is keyed on the pair, so",
+    "without the bump an edit would leave every existing row looking done. BUMP IT",
+    "whenever instructions or criteria change in meaning.",
+    "",
+    "A NOUL, not a Choice, unlike Phase 1. The question has one axis -- does this",
+    "paper bear on the claim at all -- with no competing options to distribute",
+    "probability across. The skill: 'Noul: whether a condition holds ... probability",
+    "of yes'. Phase 1 uses Choice because its three labels are mutually exclusive",
+    "and compete.",
+    "",
+    "THE PAPER GOES IN instructions.paper, NOT in the shared state. Question ids are",
+    "for code and are never sent to the model, so a question keyed by work_id against",
+    "a state full of papers cannot say which paper it means -- the model answers",
+    "about the chunk. That was version 1, and it produced 170,405 rows in which 7,889",
+    "works under one claim share 23 distinct values. Those are archived under",
+    "deep_archive/2026-10-05_relevance_v1_chunk_level/.",
+    "",
+    "WHY THIS QUESTION EXISTS AT ALL. quote_is_verbatim() checks that a quote OCCURS",
+    "in the premise, never that it BEARS on the claim -- found in real data, not",
+    "hypothesised: REFUTES verdicts citing verbatim but topically adjacent sentences,",
+    "every one passing the verbatim check.",
+    "",
+    "ITS FUTURE IS OPEN. Under a jev Phase 1 this duplicates part of the Choice's own",
+    "NOT_ENOUGH_INFO criterion: measured on 2,000 routed pairs, p_nei and",
+    "(1 - addresses) agree on 95.4% of keep/drop calls, Spearman 0.781. Left in for",
+    "the first KM C. run because it costs $0.65 and produces the population that test",
+    "lacked -- pairs Jev itself routed. See design_notes.md point 9."
+  ],
+  "version": 2,
+  "question": {
+    "type": "noul",
+    "instructions_question": "Does this paper address the specific subject of the claim closely enough that its findings bear on whether the claim is true?",
+    "criteria": {
+      "true": "the paper studies the same phenomenon, taxa, driver or region the claim is about, and its findings speak to the claim",
+      "false": "the paper is about a related but different topic, so its findings cannot settle the claim either way"
+    }
+  }
+}

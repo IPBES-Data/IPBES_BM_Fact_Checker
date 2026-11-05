@@ -117,8 +117,8 @@ build_llm_verification_chat <- function(cfg, system_prompt, api_key) {
 # partitions by the row's own outcome, not by the filter that let it through.
 #
 # nli_scores_path is the on-disk output directory for ONE assessment (same
-# path construction as build_nli_overview_data.R); nli_ready_path is the
-# per-assessment nli_ready_evidence_parquet value, which carries `premise`
+# path construction as build_claim_scores_overview_data.R); nli_ready_path is the
+# per-assessment claim_work_pairs value, which carries `premise`
 # (cleaned title + abstract) -- score_one_claim() does not store premise text
 # in its output, only work_id, so the two are joined back here.
 select_llm_verification_candidates <- function(nli_scores_path, nli_ready_path,
@@ -185,7 +185,7 @@ select_llm_verification_candidates <- function(nli_scores_path, nli_ready_path,
   # Both `scored` and `premises` can carry duplicate (km, bm, sentence_number,
   # sentence_source, work_id) rows for a small number of BMs -- confirmed on
   # the real corpus: 6,277 duplicated (km, bm, work_id) keys (2.2%) in
-  # nli_ready_evidence_parquet, concentrated in 4 BMs, most likely inherited
+  # claim_work_pairs, concentrated in 4 BMs, most likely inherited
   # from works_citing_parquet's own snowball edges (a work cited under more
   # than one edge_type). score_one_claim() propagates the same duplication
   # into nli_scores_evidence, since it scores every row of its input
@@ -336,22 +336,31 @@ quote_is_verbatim <- function(quote, source_text) {
 build_llm_verification_parquet <- function(
   assessment,
   nli_ready_path,
-  nli_active,
+  scorer_name,
   llm_active,
   cfg,
   system_prompt_file,
   user_prompt_file,
   llm_candidate_scope_path,
   granularity,
-  nli_scores_by_claim_evidence = NULL, # unused -- establishes the DAG dependency on Phase 1 scoring
-  cache_dir = "output/llm_verification/raw",
-  output_root = "output/llm_verification/scores"
+  claim_scores_by_claim = NULL, # unused -- establishes the DAG dependency on Phase 1 scoring
+  # Relevance screen (R/build_llm_relevance_screen.R). BOTH default to NULL,
+  # i.e. no filtering: the threshold stays unset until validated against human
+  # labels, because a wrongly dropped pair is never reviewed and leaves no trace.
+  relevance_path = NULL,
+  relevance_threshold = NULL,
+  cache_dir = out_factcheck("llm_verification/raw"),
+  output_root = out_factcheck("llm_verification/scores"),
+  # Which chain this is -- a hive level between llm_config= and assessment=, so
+  # each chain owns a disjoint subtree and the unconditional unlink() below can
+  # never delete the other chain's verified rows.
+  keypaper = FALSE
 ) {
   assessment_id <- assessment$id
 
   # llm_config in the output path/columns is the SELECTED config's NAME
   # (e.g. "openrouter_cheap"), distinct from llm_model (the actual model
-  # string) -- same distinction nli_config/nli_model make for Phase 1. Keeping
+  # string) -- same distinction scorer_config/scorer_model make for Phase 1. Keeping
   # each named config's output on its own path means switching `active` in
   # input/config.yaml, or running two configs side by side for comparison,
   # never overwrites another config's already-scored rows. `nli_route` (e.g.
@@ -362,29 +371,33 @@ build_llm_verification_parquet <- function(
   # rewritten each call (below), and what's returned as this target's value.
   output_path <- file.path(
     output_root, paste0("llm_config=", llm_active),
+    paste0("keypaper=", tolower(as.character(isTRUE(keypaper)))),
     paste0("assessment=", assessment_id)
   )
 
-  # Same reasoning as build_nli_overview_data.R: this path is reconstructed
-  # rather than taken from nli_scores_by_claim_evidence's own (per-claim,
+  # Same reasoning as build_claim_scores_overview_data.R: this path is reconstructed
+  # rather than taken from claim_scores_by_claim's own (per-claim,
   # not per-assessment) branch values, which come from the dynamic scoring
   # chain and can't be sliced by assessment directly. MUST include
-  # granularity=<g>/ ahead of nli_config=<cfg>/ -- confirmed directly against
-  # the real on-disk layout (output/nli_scores_evidence/granularity=<g>/
-  # nli_config=<cfg>/assessment=<id>/); omitting it made dir.exists() fail
+  # granularity=<g>/ ahead of scorer_config=<cfg>/ -- confirmed directly against
+  # the real on-disk layout (output/claim_scores/granularity=<g>/
+  # scorer_config=<cfg>/assessment=<id>/); omitting it made dir.exists() fail
   # silently inside select_llm_verification_candidates(), which returns an
   # empty tibble rather than erroring -- this function had apparently never
   # been run for real before that was caught (output/llm_verification/raw
   # and scores/ didn't exist on disk until then).
   nli_scores_path <- file.path(
-    "output/nli_scores_evidence", paste0("granularity=", granularity),
-    paste0("nli_config=", nli_active), paste0("assessment=", assessment_id)
+    out_factcheck("claim_scores"), paste0("granularity=", granularity),
+    paste0("scorer_config=", scorer_name),
+    paste0("keypaper=", tolower(as.character(isTRUE(keypaper)))),
+    paste0("assessment=", assessment_id)
   )
 
   candidates <- select_llm_verification_candidates(
     nli_scores_path, nli_ready_path,
     nli_labels = cfg$nli_labels, nli_certainty = cfg$nli_certainty
   )
+  candidates <- apply_relevance_screen(candidates, relevance_path, relevance_threshold)
   if (nrow(candidates)) {
     candidates <- tag_direct_evidence_match(candidates, llm_candidate_scope_path)
     message(sprintf(
@@ -401,14 +414,17 @@ build_llm_verification_parquet <- function(
     # missing files" the moment a real assessment/config combo has zero
     # routed candidates (confirmed directly: this is what happened on the
     # first real run against GA1, before nli_scores_path was fixed above).
-    if (dir.exists(output_path)) unlink(output_path, recursive = TRUE, force = TRUE)
+    # Deliberately does NOT unlink what is already there. "This run routed no
+    # candidates" is not "nothing was ever verified" -- under a KM scope it is
+    # the ordinary outcome for a narrow selection, and wiping the tree would
+    # discard every previously verified row for the whole assessment.
     dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
     return(output_path)
   }
 
   api_key <- Sys.getenv("API_openrouter")
   if (!nzchar(api_key)) {
-    stop("API_openrouter environment variable is required (set from keyring in _targets.R)")
+    stop("API_openrouter environment variable is required (set from keyring in _targets_collection.R)")
   }
 
   system_prompt <- load_text_file(system_prompt_file)
@@ -642,24 +658,46 @@ build_llm_verification_parquet <- function(
   # tag_direct_evidence_match() above -- both carried through the
   # inner_join with verdicts above.
   out$llm_model <- cfg$model
-  out$nli_config <- nli_active
+  out$scorer_config <- scorer_name
   out$assessment <- assessment_id
 
   out <- out |>
     dplyr::select(
-      llm_config, nli_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
+      llm_config, scorer_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
       nli_label, uncertain, nli_confidence, p_supports, p_refutes, p_nei,
       direct_evidence_match,
       llm_model, llm_label, llm_agrees, sufficient_evidence,
       quote, quote_verbatim, explanation
     )
 
-  if (dir.exists(output_path)) unlink(output_path, recursive = TRUE, force = TRUE)
+  # NO unlink() of output_path. It used to wipe llm_config=<cfg>/assessment=<id>/
+  # wholesale before writing, which made every narrowing of scope destructive:
+  # restricting to one KM deleted every other KM's verified rows, and the only
+  # way back was to re-run Phase 2 over them (the raw JSON cache makes that free
+  # in money but not in time). `delete_matching` already clears exactly the
+  # (llm_config, assessment, nli_route, km, bm) partitions this run writes, so a
+  # group outside the current scope is simply never visited.
+  # keypaper is a PARTITION LEVEL, added here as a column so write_dataset() can
+  # place it. Phase 1 of the keypaper fold migrated the data on disk into
+  # llm_config=/keypaper=/assessment=/... but did NOT update this write, so the
+  # builder went on emitting the pre-fold layout while RETURNING a keypaper=
+  # path. Three consequences, all of which were live on 2026-10-07:
+  #   * targets' format = "file" check failed on the path it was handed, which is
+  #     the only reason this surfaced at all;
+  #   * the rows landed at llm_config=/assessment=/..., invisible to every reader
+  #     that now opens the keypaper= tree;
+  #   * and because the two sides then shared partition keys, the key-paper
+  #     write's existing_data_behavior = "delete_matching" DELETED the citing
+  #     rows written minutes earlier -- 11,537 of them, leaving exactly the
+  #     4,418 key-paper rows behind.
+  # The level sits between llm_config= and assessment=, matching the tree
+  # scripts/migrate_keypaper_fold.R produced.
+  out$keypaper <- isTRUE(keypaper)
   arrow::write_dataset(
     dataset = out,
     path = output_root,
     format = "parquet",
-    partitioning = c("llm_config", "assessment", "nli_route", "km", "bm"),
+    partitioning = c("llm_config", "keypaper", "assessment", "nli_route", "km", "bm"),
     existing_data_behavior = "delete_matching"
   )
 

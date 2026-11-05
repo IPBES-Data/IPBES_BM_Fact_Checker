@@ -116,7 +116,7 @@ Three assessments available in ttl format are currently:
 #| label: td_doc_paths
 #| include: false
 
-# Rendered by the td_doc_html target (see _targets.R) from the TD_<name>.qmd
+# Rendered by the td_doc_html target (see _targets_collection.R) from the TD_<name>.qmd
 # design docs (each this report's format/layout block followed by its own
 # prose) and copied into the report's own _files/ sidecar so the links
 # below work in a distributed copy of the report too.
@@ -139,7 +139,7 @@ pipeline as it stands today.
 - [TD_formatting](`r td_doc_link("TD_formatting")`) — archived report design system
 
 The figures and tables in the Results section below are all produced by
-`targets` pipeline targets — see `_targets.R` and the corresponding
+`targets` pipeline targets — see `_targets_collection.R` and the corresponding
 `R/build_*.R` files for the exact computation behind each one.
 
 # Results
@@ -381,7 +381,7 @@ nli_bm_explorer_paths <- copy_into_report_files(targets::tar_read(
 
 for (data_path in nli_overview_data_paths) {
   x <- readRDS(data_path)
-  nli_active_this <- x$nli_active %||% "deberta_zeroshot"
+  nli_active_this <- x$scorer_name %||% "deberta_zeroshot"
   gran_this <- x$granularity %||% "naive_bm"
   cat(sprintf("\n### %s (%s, %s)\n\n", x$assessment, nli_active_this, gran_this))
 
@@ -391,7 +391,7 @@ for (data_path in nli_overview_data_paths) {
   }
 
   # Exact suffix match (not a loose substring grepl) -- filenames now carry
-  # both a model suffix ("" for deberta_zeroshot, "_<nli_active>" otherwise)
+  # both a model suffix ("" for deberta_zeroshot, "_<scorer_name>" otherwise)
   # and a granularity suffix (always "_<granularity>", explicit for every
   # value including naive_bm), so a bare "_<assessment>\\.png$" anchor
   # would silently only ever match one branch and miss the others.
@@ -661,7 +661,7 @@ label_funnel_html_paths <- rendered_report_html(
 # naive_bm, is explicit now). Both segments can contain underscores
 # themselves, so the combined trailing blob is split by checking whether it
 # ENDS in one of the fixed, known granularity values (same list
-# _targets.R's own nli_granularities uses) rather than a naive underscore
+# _targets_collection.R's own nli_granularities uses) rather than a naive underscore
 # split, which would be ambiguous for e.g. "bge_m3_zeroshot_complete_bm".
 known_granularities <- c("naive_bm", "complete_bm", "atomic_bm")
 for (p in label_funnel_html_paths) {
@@ -688,7 +688,7 @@ for (p in label_funnel_html_paths) {
 
 # QA Reports
 
-Per-assessment QA check for how `nli_ready_evidence_parquet` actually
+Per-assessment QA check for how `claim_work_pairs` actually
 split each Background Message into claims under the currently active
 `granularity` setting — not a scoring result. See the report's own
 Methodology section for details.

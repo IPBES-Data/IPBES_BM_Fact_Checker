@@ -11,7 +11,7 @@
 # Structural sibling of build_llm_verification_parquet()
 # (R/build_llm_verification_parquet.R) -- same "separate file, don't touch
 # the delicate already-working builder" precedent
-# R/build_nli_ready_evidence_keypaper_parquet.R already documents for its
+# R/build_claim_work_pairs_keypaper.R already documents for its
 # own Phase-1 counterpart, and doubly justified here since that function
 # was only just stabilized (a pair_id collision fix) and shouldn't be
 # touched again for an unrelated variant.
@@ -37,14 +37,23 @@ build_llm_verification_keypaper_parquet <- function(
   assessment,
   nli_ready_keypaper_path,
   nli_scores_keypaper_path,
-  nli_active,
+  scorer_name,
   llm_active,
   cfg,
   system_prompt_file,
   user_prompt_file,
-  nli_scores_keypaper_evidence = NULL, # unused -- establishes the DAG dependency on the key-paper NLI scoring chain
-  cache_dir = "output/llm_verification/raw_keypaper",
-  output_root = "output/llm_verification/scores_keypaper"
+  claim_scores_keypaper = NULL, # unused -- establishes the DAG dependency on the key-paper NLI scoring chain
+  # Relevance screen (R/build_llm_relevance_screen.R). BOTH default to NULL,
+  # i.e. no filtering: the threshold stays unset until validated against human
+  # labels, because a wrongly dropped pair is never reviewed and leaves no trace.
+  relevance_path = NULL,
+  relevance_threshold = NULL,
+  cache_dir = out_factcheck("llm_verification/raw_keypaper"),
+  output_root = out_factcheck("llm_verification/scores"),
+  # Which chain this is -- a hive level between llm_config= and assessment=, so
+  # each chain owns a disjoint subtree and the unconditional unlink() below can
+  # never delete the other chain's verified rows.
+  keypaper = FALSE
 ) {
   assessment_id <- assessment$id
 
@@ -54,6 +63,7 @@ build_llm_verification_keypaper_parquet <- function(
   # counterparts.
   output_path <- file.path(
     output_root, paste0("llm_config=", llm_active),
+    paste0("keypaper=", tolower(as.character(isTRUE(keypaper)))),
     paste0("assessment=", assessment_id)
   )
 
@@ -65,6 +75,7 @@ build_llm_verification_keypaper_parquet <- function(
     nli_scores_keypaper_path, nli_ready_keypaper_path,
     nli_labels = NULL, nli_certainty = NULL
   )
+  candidates <- apply_relevance_screen(candidates, relevance_path, relevance_threshold)
   if (!nrow(candidates)) {
     message(sprintf("[LLM verify keypaper %s] no key-paper pairs to review", assessment_id))
     # format = "file" targets require the returned path to actually exist --
@@ -80,7 +91,7 @@ build_llm_verification_keypaper_parquet <- function(
 
   api_key <- Sys.getenv("API_openrouter")
   if (!nzchar(api_key)) {
-    stop("API_openrouter environment variable is required (set from keyring in _targets.R)")
+    stop("API_openrouter environment variable is required (set from keyring in _targets_collection.R)")
   }
 
   system_prompt <- load_text_file(system_prompt_file)
@@ -274,12 +285,12 @@ build_llm_verification_keypaper_parquet <- function(
   out$llm_agrees <- out$llm_label == out$nli_label
   out$llm_config <- llm_active
   out$llm_model <- cfg$model
-  out$nli_config <- nli_active
+  out$scorer_config <- scorer_name
   out$assessment <- assessment_id
 
   out <- out |>
     dplyr::select(
-      llm_config, nli_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
+      llm_config, scorer_config, assessment, nli_route, km, bm, claim_id, work_id, claim,
       nli_label, uncertain, nli_confidence, p_supports, p_refutes, p_nei,
       llm_model, llm_label, llm_agrees, sufficient_evidence,
       quote, quote_verbatim, explanation
@@ -292,11 +303,27 @@ build_llm_verification_keypaper_parquet <- function(
   # dataset on them at the Arrow level (nli_route IS filtered on -- see
   # build_label_funnel_data.R -- so that level stays).
   if (dir.exists(output_path)) unlink(output_path, recursive = TRUE, force = TRUE)
+  # keypaper is a PARTITION LEVEL, added here as a column so write_dataset() can
+  # place it. Phase 1 of the keypaper fold migrated the data on disk into
+  # llm_config=/keypaper=/assessment=/... but did NOT update this write, so the
+  # builder went on emitting the pre-fold layout while RETURNING a keypaper=
+  # path. Three consequences, all of which were live on 2026-10-07:
+  #   * targets' format = "file" check failed on the path it was handed, which is
+  #     the only reason this surfaced at all;
+  #   * the rows landed at llm_config=/assessment=/..., invisible to every reader
+  #     that now opens the keypaper= tree;
+  #   * and because the two sides then shared partition keys, the key-paper
+  #     write's existing_data_behavior = "delete_matching" DELETED the citing
+  #     rows written minutes earlier -- 11,537 of them, leaving exactly the
+  #     4,418 key-paper rows behind.
+  # The level sits between llm_config= and assessment=, matching the tree
+  # scripts/migrate_keypaper_fold.R produced.
+  out$keypaper <- isTRUE(keypaper)
   arrow::write_dataset(
     dataset = out,
     path = output_root,
     format = "parquet",
-    partitioning = c("llm_config", "assessment", "nli_route"),
+    partitioning = c("llm_config", "keypaper", "assessment", "nli_route"),
     existing_data_behavior = "delete_matching"
   )
 

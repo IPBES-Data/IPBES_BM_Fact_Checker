@@ -1,3 +1,0 @@
-[submodule "external/runpod"]
-	path = external/runpod
-	url = https://github.com/rkrug/runpod
