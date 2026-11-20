@@ -1,0 +1,297 @@
+---
+title: "QA Gold Standard Report — GA1"
+subtitle: "Jev stage 1, Phase 2 and the pipeline against two human reviewers"
+date: today
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(dplyr)
+library(ggplot2)
+e <- targets::tar_read(goldstandard_eval_data)
+d <- e$rows
+pct <- function(x) ifelse(is.nan(x) | is.na(x), "–", sprintf("%.2f", x))
+tbl <- function(x, ...) knitr::kable(x, ...)
+k <- function(s, r, rv) {
+  x <- e$kappas[e$kappas$subset == s & e$kappas$rater == r & e$kappas$reviewer == rv, ]
+  sprintf("%.2f [%.2f–%.2f]", x$kappa, x$lo, x$hi)
+}
+nA <- e$notes |> filter(set == "A")
+r1_sup <- nA |> filter(reviewer == "R1", verdict == "SUPPORTS")
+r2_sup <- nA |> filter(reviewer == "R2", verdict == "SUPPORTS")
+split_ids <- d$id[d$set == "A" & d$R1 == "SUPPORTS" & d$R2 == "NOT_ENOUGH_INFO" & !is.na(d$R1) & !is.na(d$R2)]
+split_r1 <- r1_sup |> filter(id %in% split_ids)
+strat <- function(s, g) sum(d$set == "A" & d$stratum == s & d$gold %in% g)
+```
+
+# Conclusions
+
+::: {.callout-important}
+## In short
+**Jev stage 1 agrees with the human reviewers about as well as they agree with
+each other — but the two humans agree only weakly, and the main reason is a
+contradiction in the reviewer guide, not the difficulty of the task.** Until
+the guide is fixed and the SUPPORTS rows re-checked, this round cannot tell a
+better model from a worse one.
+:::
+
+1. **Jev sits inside the human spread.** On set A, human–human κ is
+   `r k("A: all", "R1 (human)", "R2")`. Jev agrees with R1 at
+   `r k("A: all", "Jev stage 1", "R1")` and with R2 at
+   `r k("A: all", "Jev stage 1", "R2")` — one above the human ceiling, one
+   below it. A third reviewer whose verdicts were Jev's would not stand out.
+
+2. **The human ceiling is low — κ around 0.3 is only "fair" agreement.**
+   Almost every disagreement is SUPPORTS or REFUTES against
+   NOT_ENOUGH_INFO; the reviewers practically never disagree on
+   *direction*, and neither does Jev when it is certain (no gold REFUTES in its
+   certain-SUPPORTS cell, `r strat("REFUTES/certain", "SUPPORTS")` gold
+   SUPPORTS in its certain-REFUTES cell).
+
+3. **The low ceiling is mostly the guide** (see [below](#the-reviewer-guide-contradicts-itself)).
+   It says both that SUPPORTS need not "cover all" of a claim and that it must
+   "reach all of it". R1 gave SUPPORTS `r nrow(r1_sup)` times in set A and R2
+   `r nrow(r2_sup)` times. Of the `r length(split_ids)` rows where R1 said
+   SUPPORTS and R2 NOT_ENOUGH_INFO, `r sum(split_r1$partial)` carry an R1 note
+   saying the support was partial or limited in scope ("only in Africa",
+   "supports part of the claim").
+
+4. **Phase 2 makes the call stricter; it does not make it more accurate.** On
+   the routed rows it moves agreement away from R1
+   (`r k("A: routed", "Jev stage 1", "R1")` → `r k("A: routed", "Phase 2", "R1")`)
+   and towards R2 (`r k("A: routed", "Jev stage 1", "R2")` →
+   `r k("A: routed", "Phase 2", "R2")`). Which reading is "right" is the
+   same open question as the guide's — what counts as support.
+
+5. **Routing drops real findings.** The uncertain cells, which Phase 2 never
+   sees, hold `r strat("REFUTES/uncertain", "REFUTES")` gold REFUTES
+   (REFUTES/uncertain) and `r strat("NOT_ENOUGH_INFO/uncertain", "SUPPORTS")`
+   gold SUPPORTS (NEI/uncertain). If recall matters, routing the uncertain
+   SUPPORTS/REFUTES cells is the lever.
+
+6. **Corpus-level recall is not measurable with this sample.** The
+   NEI/certain cell is ~99% of the corpus and has 40 rows; see the warning
+   under [Precision and recall](#precision-and-recall).
+
+7. **Set B (key papers) supports no conclusion about the models** — every
+   interval is wide and human κ is `r k("B: all", "R1 (human)", "R2")`. One
+   finding stands: most agreed key papers are NOT_ENOUGH_INFO
+   (`r sum(d$set == "B" & d$gold %in% "NOT_ENOUGH_INFO")` of
+   `r sum(d$set == "B" & !is.na(d$gold))`), i.e. the papers IPBES itself cites
+   mostly do not show the claim from their abstract. That bounds any
+   abstract-only fact checker, human or model.
+
+**Is it good enough?** As a stage-1 screen, yes: it behaves like a human
+reviewer and does not confuse the direction of evidence when certain. As a
+final verdict, not yet validated. **Next:** fix the guide, have *both*
+reviewers re-check their own SUPPORTS rows under the fixed rule, re-run this
+report, and only then judge model or routing changes.
+
+# What this measures
+
+Two reviewers (R1, R2) independently judged sampled (claim, paper) pairs from
+claim + title + abstract alone, blind to every model output. The sample was
+drawn from **Jev stage 1** (`scorer_config = jev_atomic_bm`) only; every
+"stage 1" label below, `NOT_ENOUGH_INFO` included, is Jev's.
+
+- **Set A** — citing works, balanced: 40 pairs per Jev cell (3 labels ×
+  certain/uncertain). The two *certain* SUPPORTS/REFUTES cells are exactly the
+  pairs Phase 2 reviews, so 80 rows carry an LLM verdict.
+- **Set B** — key papers, drawn proportional to Jev's own label ratio. Phase 2
+  reviews every key paper, so all rows carry an LLM verdict.
+
+**Gold** = rows where both reviewers agree (rule fixed before reviewing).
+Disagreements are the human ceiling and are excluded from gold.
+`CANNOT_JUDGE` is a property of the instrument and is never scored.
+
+# Humans against humans, models against humans
+
+Each point is Cohen's κ between a rater and one reviewer, on the same rows,
+with a 95% bootstrap interval. The grey band is the human–human κ and its
+interval: a rater inside the band agrees with a reviewer about as well as the
+other reviewer does. Unweighted — a like-for-like comparison on the sample,
+not a corpus estimate.
+
+```{r}
+#| label: kappa-plot
+#| fig-width: 9
+#| fig-height: 6
+kp <- e$kappas |>
+  mutate(subset = factor(subset, c("A: all", "A: routed", "A: not routed", "B: all")))
+hum <- kp |> filter(rater == "R1 (human)")
+mod <- kp |> filter(rater != "R1 (human)") |>
+  mutate(rater = factor(rater, c("Pipeline", "Phase 2", "Jev stage 1")))
+ggplot(mod, aes(kappa, rater, colour = reviewer)) +
+  geom_rect(data = hum, aes(xmin = lo, xmax = hi, ymin = -Inf, ymax = Inf),
+            inherit.aes = FALSE, fill = "grey85") +
+  geom_vline(data = hum, aes(xintercept = kappa), colour = "grey40", linetype = "dashed") +
+  geom_pointrange(aes(xmin = lo, xmax = hi), position = position_dodge(width = 0.5)) +
+  facet_wrap(~subset, ncol = 2) +
+  scale_colour_manual(values = c(R1 = "#1b6ca8", R2 = "#c4572a"), name = "against") +
+  labs(x = "Cohen's κ (grey band: R1 vs R2)", y = NULL) +
+  theme_minimal(base_size = 12) + theme(legend.position = "bottom")
+```
+
+```{r}
+#| label: kappa-table
+e$kappas |>
+  transmute(Subset = subset, Rater = rater, `vs` = reviewer, n,
+            Agreement = sprintf("%.0f%%", 100 * agreement),
+            `κ [95% CI]` = sprintf("%.2f [%.2f–%.2f]", kappa, lo, hi)) |>
+  tbl(caption = "Pipeline κ on 'A: not routed' is 0 by construction: it calls every unrouted row NOT_ENOUGH_INFO.")
+```
+
+# The reviewer guide contradicts itself
+
+Reviewer 2 pointed this out after finishing set A. `REVIEWER_GUIDE.md` defines
+`SUPPORTS` as:
+
+> The paper does not have to prove the claim, **cover all of it**, or use the
+> same words.
+
+and rule 3 says:
+
+> To support a compound claim the paper has to **reach all of it**.
+
+R2 reports applying the first (lenient) reading throughout, without checking
+whether a finding covered a whole compound claim. Yet R2 is the *stricter* of
+the two by a wide margin, so a re-check of R2's SUPPORTS under rule 3 can only
+make R2 stricter still and *widen* the gap. The notes show the gap comes from
+the other side: R1 gave SUPPORTS to partial and scope-limited findings.
+
+The guide also has a second, quieter gap: it says a contrary finding **for one
+region, taxon or period** is `REFUTES`, but is silent on whether a
+*confirming* finding for one region supports a general claim. Many of R1's
+notes are exactly that case.
+
+::: {.callout-note}
+## Fixed after round 1 (2026-11-20)
+The guide now (a) drops "cover all of it" from the `SUPPORTS` definition, so a
+compound claim must be reached in **every assertion**; and (b) adds rule 5 on
+**scope**: a confirming finding for one region, taxon, period or scale is
+`SUPPORTS`, a contrary one is `REFUTES`, and a paper reporting both is
+`REFUTES`. Everything in this report is round 1, judged under the old guide.
+
+Jev's prompt matches (b) only partly: regional support reads as `SUPPORTS`, but
+it has no whole-claim rule for compound claims and no REFUTES-wins precedence
+for mixed papers. Neither does the Phase 2 prompt. Changing either prompt means
+a full rescore, so it waits until round 2 shows whether the disagreements
+concentrate there.
+:::
+
+```{r}
+#| label: notes
+nA |>
+  filter(verdict == "SUPPORTS") |>
+  group_by(Reviewer = reviewer) |>
+  summarise(SUPPORTS = n(), `with a note` = sum(!is.na(note)),
+            `note says partial / limited scope` = sum(partial)) |>
+  tbl(caption = "Set A SUPPORTS verdicts and their notes. 'Partial' is a keyword match (part, only, though, but, not) — indicative, not exact.")
+```
+
+```{r}
+#| label: notes-examples
+split_r1 |>
+  filter(partial) |>
+  select(id, `R1 note` = note) |>
+  head(15) |>
+  tbl(caption = "R1 notes on rows where R1 said SUPPORTS and R2 NOT_ENOUGH_INFO (first 15).")
+```
+
+# Reviewer agreement
+
+```{r}
+#| label: agreement
+e$agreement |>
+  transmute(Set = set, `Double-reviewed` = n, Agreement = sprintf("%.1f%%", 100 * agreement),
+            `Cohen's κ` = sprintf("%.3f", kappa), Gold = n_gold, `Gold, scorable` = n_scorable) |>
+  tbl()
+```
+
+```{r}
+#| label: marginals
+d |>
+  tidyr::pivot_longer(c(R1, R2), names_to = "Reviewer", values_to = "verdict") |>
+  count(set, Reviewer, verdict) |>
+  tidyr::pivot_wider(names_from = verdict, values_from = n, values_fill = 0) |>
+  rename(Set = set) |>
+  tbl(caption = "Verdicts per reviewer.")
+```
+
+```{r}
+#| label: confusion
+d |>
+  filter(!is.na(R1), !is.na(R2), R1 != R2) |>
+  count(set, `R1 → R2` = paste(R1, "→", R2), sort = TRUE) |>
+  rename(Set = set) |>
+  tbl(caption = "Disagreements by direction.")
+```
+
+# Set A: gold per Jev cell
+
+Unweighted counts, so every cell reads at its own 40 rows.
+
+```{r}
+#| label: strata
+d |>
+  filter(set == "A") |>
+  mutate(gold = coalesce(gold, "(disagree)")) |>
+  count(`Jev stage 1` = stratum, gold) |>
+  tidyr::pivot_wider(names_from = gold, values_from = n, values_fill = 0) |>
+  mutate(`Routed to Phase 2` = grepl("^(SUPPORTS|REFUTES)/certain$", `Jev stage 1`)) |>
+  tbl()
+```
+
+```{r}
+#| label: phase2
+d |>
+  filter(set == "A", routed) |>
+  mutate(gold = coalesce(gold, "(disagree)")) |>
+  count(`Jev stage 1` = stratum, `Phase 2` = llm_label, gold) |>
+  tidyr::pivot_wider(names_from = gold, values_from = n, values_fill = 0) |>
+  tbl(caption = "Phase 2 verdict against gold, on the 80 routed rows.")
+```
+
+# Precision and recall
+
+Weighted by `1/p_include`, so these are **corpus-level** estimates, not
+sample-level ones. Three predictors: Jev stage 1 alone; Phase 2 on the rows it
+reviews; and the pipeline's final call (stage 1 routed **and** Phase 2 agreed,
+otherwise NOT_ENOUGH_INFO; for key papers Phase 2's verdict is final).
+
+::: {.callout-warning}
+**Read `hits` next to every rate.** The Jev NOT_ENOUGH_INFO/certain cell stands
+for ~99% of the corpus, so each of its 40 rows carries a weight in the hundreds
+of thousands. A single human REFUTES there outweighs every REFUTES stage 1
+caught, which is why recall swings between ~1.00 and ~0 depending on the
+reference. Precision is far more stable than recall. Figures against gold are
+also optimistic: the excluded disagreements cluster in the uncertain cells,
+which are the hard cases.
+:::
+
+```{r}
+#| label: metrics
+#| results: asis
+m <- e$metrics |>
+  mutate(cell = sprintf("%s / %s (%d/%d hits)", pct(precision), pct(recall), n_hit, n_pred))
+for (s in unique(m$set)) {
+  cat(sprintf("\n## Set %s\n\n", s))
+  m |>
+    filter(set == s) |>
+    select(Predictor = predictor, Label = label, reference, cell) |>
+    tidyr::pivot_wider(names_from = reference, values_from = cell) |>
+    rename(`vs gold` = gold, `vs R1` = R1, `vs R2` = R2) |>
+    tbl(caption = "precision / recall (hits / predicted)") |>
+    print()
+}
+```
+
+# Rows
+
+```{r}
+#| label: rows
+d |>
+  select(id, set, stratum, jev_label, jev_confidence, llm_label, pipeline, R1, R2, gold, w) |>
+  DT::datatable(filter = "top", rownames = FALSE, options = list(pageLength = 25))
+```

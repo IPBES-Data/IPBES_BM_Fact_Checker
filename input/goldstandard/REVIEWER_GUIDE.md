@@ -15,8 +15,11 @@ and that number is only meaningful if the judgements were made separately.
 Fill `verdict` with exactly one of these four words.
 
 **`SUPPORTS`** — the abstract contains a finding that makes the claim *more
-likely to be true*. The paper does not have to prove the claim, cover all of it,
-or use the same words. It does have to report something that bears on it.
+likely to be true*. The paper does not have to prove the claim or use the same
+words. It does have to report something that bears on it, and for a claim that
+bundles several assertions it has to reach every one of them (rule 3). A
+confirming finding for **one region, taxon, time period or scale** is enough to
+support a general claim (rule 5).
 
 **`REFUTES`** — the abstract contains a finding that makes the claim *less
 likely to be true*: a contrary result, a reversed direction of effect, a failure
@@ -59,7 +62,7 @@ all. Please say which in `note`.
 the question". Folding one into the other would hide a problem with how the
 material was assembled.
 
-## Four rules that matter more than they look
+## Five rules that matter more than they look
 
 **1. Judge only from the title and abstract in front of you.** Not from the
 full paper, not from what you know about the topic, not from what you know about
@@ -91,6 +94,21 @@ result you could put in a bracket after the sentence, it is `SUPPORTS`. If you
 would be citing it for background, framing or an adjacent fact, it is
 `NOT_ENOUGH_INFO`. Agreement in the same direction is not support — the paper
 must report a **finding**, not merely a compatible view.
+
+**5. Scope: one region is enough, either way — and REFUTES wins.** Rule 3 is
+about the claim's *assertions*; this rule is about its *scope* (where, what,
+when). They are separate: a paper must reach every assertion, but not every
+place.
+
+- A finding that agrees with a general claim **for one region, taxon, time
+  period or scale** is `SUPPORTS`.
+- A finding that runs against it for one region, taxon, period or scale is
+  `REFUTES`.
+- A paper that reports **both** — supporting in one region, contrary in another
+  — is `REFUTES`. Name the contrary part in `note`.
+
+In both cases say in `note` how far the finding reaches ("only boreal",
+"only 1990–2005").
 
 ## Filling in the file
 

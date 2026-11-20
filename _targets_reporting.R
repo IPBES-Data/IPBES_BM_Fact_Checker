@@ -288,6 +288,22 @@ list(
   # operator-ordering trade-off the split accepts generally (see
   # TD_targets.qmd, "What gets worse").
 
+  # ---- gold standard evaluation ---------------------------------------------
+  # The reviewer workbooks are hand-maintained input, tracked as a directory so
+  # a reconciled or new round invalidates the report. Phase 2 output is read
+  # untracked, same trade-off as llm_verification_parquet above. Free: reads
+  # disk only. GA1 only, because that is the only assessment with a gold round.
+  tar_target(goldstandard_dir, "input/goldstandard", format = "file"),
+  tar_target(
+    goldstandard_eval_data,
+    goldstandard_eval(
+      goldstandard_dir,
+      llm_scores = file.path(out_factcheck("llm_verification/scores"),
+                             paste0("llm_config=", llm_verification_active)),
+      assessment = "GA1"
+    )
+  ),
+
   tar_target(
     mmd_workflow_reporting,
     "input/mmd/workflow_reporting.mmd",

@@ -771,3 +771,14 @@ for (p in llm_verification_qa_html_paths) {
 }
 ```
 
+Human gold standard: two blinded reviewers against Jev stage 1, Phase 2 and
+the pipeline's final call.
+
+```{r}
+#| label: goldstandard_report_link
+#| results: asis
+for (p in rendered_report_html("^QA_GoldStandard_Report\\.html$")) {
+  cat(sprintf("- [GA1 QA Gold Standard Report](%s)\n", basename(p)))
+}
+```
+
