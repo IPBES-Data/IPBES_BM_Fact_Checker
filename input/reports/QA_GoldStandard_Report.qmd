@@ -84,9 +84,11 @@ better model from a worse one.
 
 **Is it good enough?** As a stage-1 screen, yes: it behaves like a human
 reviewer and does not confuse the direction of evidence when certain. As a
-final verdict, not yet validated. **Next:** fix the guide, have *both*
-reviewers re-check their own SUPPORTS rows under the fixed rule, re-run this
-report, and only then judge model or routing changes.
+final verdict, not yet validated. **Next:** with the guide fixed, *both*
+reviewers re-check their rows independently — mainly NOT_ENOUGH_INFO rows where
+the abstract had a finding on one part or one region, and SUPPORTS rows where
+another part is contradicted — then re-run this report, and only then judge
+model or routing changes.
 
 # What this measures
 
@@ -166,18 +168,23 @@ region, taxon or period** is `REFUTES`, but is silent on whether a
 notes are exactly that case.
 
 ::: {.callout-note}
-## Fixed after round 1 (2026-11-20)
-The guide now (a) drops "cover all of it" from the `SUPPORTS` definition, so a
-compound claim must be reached in **every assertion**; and (b) adds rule 5 on
-**scope**: a confirming finding for one region, taxon, period or scale is
-`SUPPORTS`, a contrary one is `REFUTES`, and a paper reporting both is
-`REFUTES`. Everything in this report is round 1, judged under the old guide.
+## Fixed after round 1 (2026-11-23)
+The contradiction is resolved in favour of the `SUPPORTS` definition, which was
+the intended reading: rule 3 now says a finding on **one part** of a claim (one
+assertion, one item of a list) is `SUPPORTS`, and a finding against **any** part
+is `REFUTES`, which wins over support. New rule 5 says the same for **scope**:
+one region, taxon, period or scale is enough either way, and `REFUTES` wins.
+Mentioning a part without a finding on it stays `NOT_ENOUGH_INFO`.
+Everything in this report is round 1, judged under the old guide.
 
-Jev's prompt matches (b) only partly: regional support reads as `SUPPORTS`, but
-it has no whole-claim rule for compound claims and no REFUTES-wins precedence
-for mixed papers. Neither does the Phase 2 prompt. Changing either prompt means
-a full rescore, so it waits until round 2 shows whether the disagreements
-concentrate there.
+(A first fix on 2026-11-20 went the other way — keeping the whole-claim rule —
+and was withdrawn before round 2 was judged.)
+
+Jev's prompt already reads partial and regional support as `SUPPORTS`. The
+one remaining mismatch is precedence: Jev picks one label and has no
+"REFUTES wins" rule for a paper that does both; nor does the Phase 2 prompt.
+Changing either prompt means a full rescore, so it waits until round 2 shows
+whether disagreements concentrate on such mixed papers.
 :::
 
 ```{r}

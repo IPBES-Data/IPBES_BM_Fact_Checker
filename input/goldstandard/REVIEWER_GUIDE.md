@@ -15,11 +15,11 @@ and that number is only meaningful if the judgements were made separately.
 Fill `verdict` with exactly one of these four words.
 
 **`SUPPORTS`** — the abstract contains a finding that makes the claim *more
-likely to be true*. The paper does not have to prove the claim or use the same
-words. It does have to report something that bears on it, and for a claim that
-bundles several assertions it has to reach every one of them (rule 3). A
-confirming finding for **one region, taxon, time period or scale** is enough to
-support a general claim (rule 5).
+likely to be true*. The paper does not have to prove the claim, cover all of it,
+or use the same words. It does have to report a finding that bears on it. A
+finding on **one part** of a claim (rule 3), or for **one region, taxon, time
+period or scale** (rule 5), is enough — unless something in the abstract
+refutes the claim, in which case it is `REFUTES`.
 
 **`REFUTES`** — the abstract contains a finding that makes the claim *less
 likely to be true*: a contrary result, a reversed direction of effect, a failure
@@ -37,20 +37,23 @@ to find what the claim asserts.
 > refutations at all. Earlier rounds produced almost none, and partial
 > contradictions being filed as `NOT_ENOUGH_INFO` was the main reason.
 
-**`NOT_ENOUGH_INFO`** — you have read the abstract and it does not settle the
-claim either way. This is the correct answer for many rows, and it is a real
+**`NOT_ENOUGH_INFO`** — you have read the abstract and it reports **no finding
+that bears on the claim, in either direction** — not even on one part of it or
+for one region. This is the correct answer for many rows, and it is a real
 judgement, not a fallback. It covers:
 
 - the paper is on a related topic but reports nothing that bears on this claim;
+- the abstract only *mentions* the claim's topic or one of its listed items,
+  without reporting a finding on it;
 - the abstract is descriptive or methodological and reports no finding;
 - the finding concerns a different taxon, region, driver or timescale **and
   nothing in it points either way** on the claim as stated.
 
-On that last point, note the asymmetry with `REFUTES` above: a result from
-outside the claim's scope that simply *does not reach* the claim is
-`NOT_ENOUGH_INFO`, but a result from inside part of the claim's scope that
-*runs against* it is `REFUTES`. "Different scope" is not by itself a reason to
-withhold a verdict.
+On that last point: a result from outside the claim's scope that simply *does
+not reach* the claim is `NOT_ENOUGH_INFO`, but a result from inside part of the
+claim's scope is not — it is `SUPPORTS` if it agrees and `REFUTES` if it runs
+against it. "Different scope" or "only part of the claim" is not by itself a
+reason to withhold a verdict.
 
 **`CANNOT_JUDGE`** — something is wrong with the *row*, not with the paper. Use
 it when the abstract is not in English, is truncated or garbled, is clearly not
@@ -61,6 +64,26 @@ all. Please say which in `note`.
 "you cannot ask me this"; the second means "I read it, and it does not answer
 the question". Folding one into the other would hide a problem with how the
 material was assembled.
+
+## Quick decision table
+
+Work down the table; the **first** row that applies is the verdict. The rules
+below explain each row.
+
+| # | What the abstract does | Verdict |
+|--|------------------------------------------|------------|
+| 1 | Row is unusable: not English, truncated, not an abstract, or the claim is unintelligible | `CANNOT_JUDGE` |
+| 2 | Reports a finding **against any part** of the claim, or against it **in any region, taxon or period** — whatever else it supports | `REFUTES` |
+| 3 | Reports a finding **for the whole claim** | `SUPPORTS` |
+| 4 | Reports a finding **for one part** of the claim (e.g. one item of a list), the rest untouched | `SUPPORTS` |
+| 5 | Reports a finding **for one region, taxon or period** of a general claim | `SUPPORTS` |
+| 6 | Only **mentions** the claim's topic or a listed item, without reporting a finding on it | `NOT_ENOUGH_INFO` |
+| 7 | On topic, but reports **no finding** (descriptive, methodological, background) | `NOT_ENOUGH_INFO` |
+| 8 | Finding is about something else, or outside the claim's scope **and points neither way** | `NOT_ENOUGH_INFO` |
+
+In short: a refutation anywhere wins; otherwise any real finding in the claim's
+direction — on one part or for one place — is `SUPPORTS`; no finding is
+`NOT_ENOUGH_INFO`.
 
 ## Five rules that matter more than they look
 
@@ -77,15 +100,16 @@ single most common error, and it is the specific failure we are trying to
 measure — so a row that feels "obviously relevant" deserves a second look before
 you write `SUPPORTS`.
 
-**3. Judge the whole claim — for `SUPPORTS`, but not for `REFUTES`.** Some
-claims bundle several assertions, or attach a mechanism to an observation. If
-the abstract supports one part and says nothing about the rest, that is
-`NOT_ENOUGH_INFO`, not `SUPPORTS` — note which part it did address.
+**3. Parts of a claim: one is enough — and REFUTES wins.** Many claims bundle
+several assertions, attach a mechanism to an observation, or list several items.
 
-The reverse is **not** symmetric. To support a compound claim the paper has to
-reach all of it; to refute one it only has to break a part, because a claim with
-a false component is not true as stated. One contradicted assertion out of three
-is `REFUTES`, with the part named in `note`.
+- A finding on **one** part, in the claim's direction, is `SUPPORTS` — even if
+  the abstract says nothing about the other parts or the rest of a list.
+- A finding against **any** part is `REFUTES`, whatever else the abstract says.
+- A paper that supports one part and contradicts another is `REFUTES`.
+
+Name the part in `note`. Merely *mentioning* a listed item, without reporting a
+finding on it, is still `NOT_ENOUGH_INFO` (rules 2 and 4).
 
 **4. The `SUPPORTS` / `NOT_ENOUGH_INFO` line.** This is where reviewers and
 models disagree most, so one test to apply consistently: *would someone writing
@@ -96,9 +120,9 @@ would be citing it for background, framing or an adjacent fact, it is
 must report a **finding**, not merely a compatible view.
 
 **5. Scope: one region is enough, either way — and REFUTES wins.** Rule 3 is
-about the claim's *assertions*; this rule is about its *scope* (where, what,
-when). They are separate: a paper must reach every assertion, but not every
-place.
+about the claim's *parts*; this rule is about its *scope* (where, what, when).
+The principle is the same: one part or one place is enough, and a contradiction
+anywhere wins.
 
 - A finding that agrees with a general claim **for one region, taxon, time
   period or scale** is `SUPPORTS`.
